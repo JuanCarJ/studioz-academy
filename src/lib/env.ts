@@ -20,6 +20,7 @@ export const env = {
   WOMPI_PUBLIC_KEY: () => requireEnv("NEXT_PUBLIC_WOMPI_PUBLIC_KEY"),
   WOMPI_PRIVATE_KEY: () => requireEnv("WOMPI_PRIVATE_KEY"),
   WOMPI_EVENTS_SECRET: () => requireEnv("WOMPI_EVENTS_SECRET"),
+  WOMPI_INTEGRITY_KEY: () => requireEnv("WOMPI_INTEGRITY_KEY"),
 
   // Bunny Stream
   BUNNY_API_KEY: () => requireEnv("BUNNY_API_KEY"),
