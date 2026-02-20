@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -13,7 +12,6 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { createBrowserClient } from "@/lib/supabase/client"
 import {
   Sheet,
   SheetContent,
@@ -30,30 +28,8 @@ const sheetLinks = [
   { href: "/contacto", label: "Contacto" },
 ]
 
-export function MobileBottomBar() {
+export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean }) {
   const pathname = usePathname()
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-
-  useEffect(() => {
-    const supabase = createBrowserClient()
-
-    async function checkAuth() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setIsAuthenticated(!!user)
-    }
-
-    checkAuth()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
 
   // Hide on admin routes
   if (pathname.startsWith("/admin")) return null

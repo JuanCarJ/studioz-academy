@@ -1,10 +1,24 @@
 import Link from "next/link"
 
+import { getCurrentUser } from "@/lib/supabase/auth"
+import { createServerClient } from "@/lib/supabase/server"
 import { NavAuthSection } from "./NavAuthSection"
 import { DesktopNavLinks } from "./DesktopNavLinks"
 import { MobileBottomBar } from "./MobileBottomBar"
 
-export function PublicNavbar() {
+export async function PublicNavbar() {
+  const user = await getCurrentUser()
+
+  let cartCount = 0
+  if (user) {
+    const supabase = await createServerClient()
+    const { count } = await supabase
+      .from("cart_items")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+    cartCount = count ?? 0
+  }
+
   return (
     <>
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
@@ -22,13 +36,25 @@ export function PublicNavbar() {
 
           {/* Right section: Auth (includes CartIcon when authenticated) — desktop only */}
           <div className="hidden items-center gap-2 md:flex">
-            <NavAuthSection />
+            <NavAuthSection
+              user={
+                user
+                  ? {
+                      id: user.id,
+                      full_name: user.full_name,
+                      role: user.role,
+                      avatar_url: user.avatar_url,
+                    }
+                  : null
+              }
+              cartCount={cartCount}
+            />
           </div>
         </nav>
       </header>
 
       {/* Mobile bottom bar */}
-      <MobileBottomBar />
+      <MobileBottomBar isAuthenticated={!!user} />
     </>
   )
 }

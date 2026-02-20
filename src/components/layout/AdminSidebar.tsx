@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -19,7 +18,6 @@ import {
   Menu,
 } from "lucide-react"
 
-import { createBrowserClient } from "@/lib/supabase/client"
 import { logout } from "@/actions/auth"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -143,40 +141,18 @@ function SidebarContent({ csrfToken, userInfo }: SidebarContentProps) {
   )
 }
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  user: AdminUserInfo | null
+}
+
+export function AdminSidebar({ user }: AdminSidebarProps) {
   const { csrfToken } = useCsrfToken()
-  const [userInfo, setUserInfo] = useState<AdminUserInfo | null>(null)
-
-  useEffect(() => {
-    const supabase = createBrowserClient()
-
-    async function fetchProfile() {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser()
-
-      if (authUser) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", authUser.id)
-          .single()
-
-        setUserInfo({
-          fullName: profile?.full_name ?? null,
-          email: authUser.email ?? null,
-        })
-      }
-    }
-
-    fetchProfile()
-  }, [])
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden w-64 border-r bg-card md:block">
-        <SidebarContent csrfToken={csrfToken} userInfo={userInfo} />
+        <SidebarContent csrfToken={csrfToken} userInfo={user} />
       </aside>
 
       {/* Mobile sheet trigger */}
@@ -192,7 +168,7 @@ export function AdminSidebar() {
             <SheetTitle className="sr-only">
               Menu de administracion
             </SheetTitle>
-            <SidebarContent csrfToken={csrfToken} userInfo={userInfo} />
+            <SidebarContent csrfToken={csrfToken} userInfo={user} />
           </SheetContent>
         </Sheet>
       </div>
