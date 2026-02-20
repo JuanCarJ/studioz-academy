@@ -6,7 +6,7 @@ export function CourseCard({ course }: { course: Course }) {
       <div className="aspect-video bg-muted" />
       <div className="p-4">
         <h3 className="font-semibold">{course.title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{course.shortDescription}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{course.short_description}</p>
       </div>
     </article>
   )

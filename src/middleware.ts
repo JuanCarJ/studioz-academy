@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server"
+import { createServerClient } from "@supabase/ssr"
+import { NextResponse, type NextRequest } from "next/server"
 
 const publicRoutes = [
   "/",
@@ -10,6 +11,8 @@ const publicRoutes = [
   "/contacto",
   "/pago/retorno",
   "/politica-de-privacidad",
+  "/terminos",
+  "/politica-de-reembolso",
 ]
 
 const authRoutes = ["/login", "/registro", "/recuperar-password"]
@@ -20,12 +23,16 @@ function isPublicRoute(path: string): boolean {
     path.startsWith("/cursos/") ||
     path.startsWith("/instructores/") ||
     path.startsWith("/noticias/") ||
-    path.startsWith("/api/webhooks/")
+    path.startsWith("/api/webhooks/") ||
+    path.startsWith("/api/csrf") ||
+    path.startsWith("/auth/callback")
   )
 }
 
 function isAuthRoute(path: string): boolean {
-  return authRoutes.includes(path)
+  return authRoutes.some(
+    (route) => path === route || path.startsWith(route + "/")
+  )
 }
 
 export async function middleware(request: NextRequest) {
@@ -34,30 +41,71 @@ export async function middleware(request: NextRequest) {
   // Public routes: always accessible
   if (isPublicRoute(path)) return NextResponse.next()
 
-  // TODO: Get session from Supabase
-  // const supabase = createServerClient(...)
-  // const { data: { session } } = await supabase.auth.getSession()
-  const session = null as { user: { role: string } } | null
+  // Create Supabase client with cookie handling
+  let supabaseResponse = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          )
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // Use getUser() for security (validates JWT server-side, not just session)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   // Auth routes: redirect if already logged in
-  if (isAuthRoute(path) && session) {
-    const dest = session.user.role === "admin" ? "/admin" : "/dashboard"
-    return NextResponse.redirect(new URL(dest, request.url))
+  if (isAuthRoute(path)) {
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+      const dest = profile?.role === "admin" ? "/admin" : "/dashboard"
+      return NextResponse.redirect(new URL(dest, request.url))
+    }
+    return supabaseResponse
   }
 
   // Protected routes: require authentication
-  if (!session) {
+  if (!user) {
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("redirect", path)
     return NextResponse.redirect(loginUrl)
   }
 
   // Admin routes: require admin role
-  if (path.startsWith("/admin") && session.user.role !== "admin") {
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+  if (path.startsWith("/admin")) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+
+    if (profile?.role !== "admin") {
+      return NextResponse.redirect(new URL("/dashboard", request.url))
+    }
   }
 
-  return NextResponse.next()
+  return supabaseResponse
 }
 
 export const config = {

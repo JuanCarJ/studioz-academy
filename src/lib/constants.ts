@@ -1,14 +1,9 @@
-export const CATEGORIES = [
-  "baile",
-  "tatuaje",
-  "piercing",
-  "maquillaje",
-] as const
+export const CATEGORIES = ["baile", "tatuaje"] as const
 
 export type Category = (typeof CATEGORIES)[number]
 
 export const ROLES = {
-  STUDENT: "student",
+  USER: "user",
   ADMIN: "admin",
 } as const
 
@@ -19,7 +14,12 @@ export const ORDER_STATUSES = [
   "approved",
   "declined",
   "voided",
-  "error",
+  "refunded",
+  "chargeback",
 ] as const
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
+
+export const ENROLLMENT_SOURCES = ["purchase", "free"] as const
+
+export type EnrollmentSource = (typeof ENROLLMENT_SOURCES)[number]

@@ -1,24 +1,28 @@
 // ── Users ────────────────────────────────────────────────
-export interface User {
+export interface Profile {
   id: string
-  email: string
-  fullName: string
+  full_name: string
   phone: string | null
-  role: "student" | "admin"
-  avatarUrl: string | null
-  createdAt: string
-  updatedAt: string
+  avatar_url: string | null
+  role: "user" | "admin"
+  email_notifications: boolean
+  last_login_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 // ── Instructors ──────────────────────────────────────────
 export interface Instructor {
   id: string
-  name: string
   slug: string
-  bio: string
-  photoUrl: string | null
+  full_name: string
+  bio: string | null
+  avatar_url: string | null
   specialties: string[]
-  createdAt: string
+  years_experience: number | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 // ── Courses ──────────────────────────────────────────────
@@ -26,141 +30,219 @@ export interface Course {
   id: string
   title: string
   slug: string
-  shortDescription: string
-  longDescription: string
-  category: string
-  priceInCents: number
-  thumbnailUrl: string | null
-  instructorId: string
+  description: string | null
+  short_description: string | null
+  category: "baile" | "tatuaje"
+  price: number
+  is_free: boolean
+  thumbnail_url: string | null
+  preview_video_url: string | null
+  instructor_id: string
   instructor?: Instructor
-  modules?: Module[]
-  isPublished: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface Module {
-  id: string
-  courseId: string
-  title: string
-  sortOrder: number
+  legacy_instructor_name: string | null
+  rating_avg: number | null
+  reviews_count: number
+  is_published: boolean
+  published_at: string | null
   lessons?: Lesson[]
+  created_at: string
+  updated_at: string
 }
 
+// ── Lessons ──────────────────────────────────────────────
 export interface Lesson {
   id: string
-  moduleId: string
+  course_id: string
   title: string
-  bunnyVideoId: string | null
-  durationSeconds: number
-  sortOrder: number
-  isFreePreview: boolean
+  description: string | null
+  bunny_video_id: string
+  bunny_library_id: string
+  duration_seconds: number
+  sort_order: number
+  is_free: boolean
+  created_at: string
+  updated_at: string
 }
 
-// ── Enrollments & Progress ───────────────────────────────
-export interface Enrollment {
+// ── Cart ─────────────────────────────────────────────────
+export interface CartItem {
   id: string
-  userId: string
-  courseId: string
-  lastLessonId: string | null
-  progressPercentage: number
-  enrolledAt: string
+  user_id: string
+  course_id: string
+  added_at: string
+  course?: Course
 }
 
-export interface LessonProgress {
+// ── Discount Rules ───────────────────────────────────────
+export interface DiscountRule {
   id: string
-  userId: string
-  lessonId: string
-  completedAt: string
+  name: string
+  category: "baile" | "tatuaje" | null
+  min_courses: number
+  discount_type: "percentage" | "fixed"
+  discount_value: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 // ── Orders & Payments ────────────────────────────────────
 export interface Order {
   id: string
-  userId: string
+  user_id: string | null
+  customer_name_snapshot: string
+  customer_email_snapshot: string
+  customer_phone_snapshot: string | null
   reference: string
-  status: "pending" | "approved" | "declined" | "voided" | "error"
-  totalInCents: number
-  wompiTransactionId: string | null
+  subtotal: number
+  discount_amount: number
+  total: number
+  discount_rule_id: string | null
+  status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
+  wompi_transaction_id: string | null
+  payment_method: string | null
+  payment_detail: string | null
+  currency: string
+  is_user_anonymized: boolean
+  anonymized_at: string | null
+  created_at: string
+  approved_at: string | null
+  reverted_at: string | null
+  updated_at: string
   items?: OrderItem[]
-  createdAt: string
-  updatedAt: string
 }
 
 export interface OrderItem {
   id: string
-  orderId: string
-  courseId: string
-  priceAtPurchaseInCents: number
+  order_id: string
+  course_id: string | null
+  course_title_snapshot: string
+  price_at_purchase: number
+  created_at: string
   course?: Course
+}
+
+export interface PaymentEvent {
+  id: string
+  order_id: string
+  source: "webhook" | "reconciliation" | "manual"
+  wompi_transaction_id: string | null
+  external_status: string
+  mapped_status: string
+  is_applied: boolean
+  reason: string | null
+  payload_hash: string
+  payload_json: Record<string, unknown>
+  processed_at: string
+}
+
+// ── Enrollments & Progress ───────────────────────────────
+export interface Enrollment {
+  id: string
+  user_id: string
+  course_id: string
+  source: "purchase" | "free"
+  order_id: string | null
+  enrolled_at: string
+}
+
+export interface CourseProgress {
+  id: string
+  user_id: string
+  course_id: string
+  last_lesson_id: string | null
+  completed_lessons: number
+  is_completed: boolean
+  last_accessed_at: string
+}
+
+export interface LessonProgress {
+  id: string
+  user_id: string
+  lesson_id: string
+  completed: boolean
+  completed_at: string | null
+}
+
+// ── Notifications ────────────────────────────────────────
+export interface CourseNotification {
+  id: string
+  course_id: string
+  sent_by: string
+  recipients_count: number
+  sent_at: string
 }
 
 // ── Reviews ──────────────────────────────────────────────
 export interface Review {
   id: string
-  userId: string
-  courseId: string
+  user_id: string
+  course_id: string
   rating: number
-  comment: string
-  isApproved: boolean
-  user?: Pick<User, "id" | "fullName" | "avatarUrl">
-  createdAt: string
+  text: string | null
+  is_visible: boolean
+  created_at: string
+  updated_at: string
+  user?: Pick<Profile, "id" | "full_name" | "avatar_url">
 }
 
-// ── Combos ───────────────────────────────────────────────
-export interface Combo {
+// ── Audit ────────────────────────────────────────────────
+export interface AdminAuditLog {
   id: string
-  title: string
-  description: string
-  discountPercentage: number
-  courseIds: string[]
-  isActive: boolean
-  createdAt: string
-}
-
-// ── Cart ─────────────────────────────────────────────────
-export interface CartItem {
-  courseId: string
-  course: Course
+  admin_user_id: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  before_data: Record<string, unknown> | null
+  after_data: Record<string, unknown> | null
+  result: "success" | "failure"
+  metadata: Record<string, unknown> | null
+  created_at: string
 }
 
 // ── Editorial ────────────────────────────────────────────
-export interface News {
+export interface Post {
   id: string
   title: string
   slug: string
-  content: string
-  coverImageUrl: string | null
-  isPublished: boolean
-  publishedAt: string | null
-  createdAt: string
+  content: string | null
+  excerpt: string | null
+  cover_image_url: string | null
+  is_published: boolean
+  published_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Event {
   id: string
   title: string
-  description: string
-  date: string
-  location: string
-  coverImageUrl: string | null
-  createdAt: string
+  description: string | null
+  image_url: string | null
+  event_date: string
+  location: string | null
+  is_published: boolean
+  created_at: string
+  updated_at: string
 }
 
-export interface GalleryImage {
+export interface GalleryItem {
   id: string
-  url: string
-  alt: string
-  category: string
-  createdAt: string
+  image_url: string
+  caption: string | null
+  category: "baile" | "tatuaje"
+  sort_order: number
+  created_at: string
+  updated_at: string
 }
 
-// ── Audit ────────────────────────────────────────────────
-export interface AuditLog {
+// ── Contact ──────────────────────────────────────────────
+export interface ContactMessage {
   id: string
-  userId: string
-  action: string
-  entityType: string
-  entityId: string
-  metadata: Record<string, unknown>
-  createdAt: string
+  name: string
+  email: string
+  subject: string | null
+  message: string
+  is_read: boolean
+  created_at: string
 }
