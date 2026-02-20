@@ -15,6 +15,24 @@ export interface AuthActionState {
 const INVALID_CSRF_MESSAGE =
   "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
 
+function parseAddToCartId(
+  formData: FormData,
+  redirectTo: string | null
+): string | null {
+  const addToCartFromForm = formData.get("addToCart")
+  if (typeof addToCartFromForm === "string" && addToCartFromForm.trim()) {
+    return addToCartFromForm.trim()
+  }
+
+  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
+    return null
+  }
+
+  const redirectUrl = new URL(redirectTo, "http://localhost")
+  const addToCartFromRedirect = redirectUrl.searchParams.get("addToCart")
+  return addToCartFromRedirect?.trim() || null
+}
+
 export async function register(
   _prevState: AuthActionState,
   formData: FormData
@@ -65,20 +83,17 @@ export async function register(
 
   revalidatePath("/", "layout")
 
-  // H-04: Handle redirect + addToCart for register flow
+  const addToCartId = parseAddToCartId(formData, redirectTo)
+  if (addToCartId) {
+    await addToCart(addToCartId)
+    redirect("/carrito")
+  }
+
   if (
     redirectTo &&
     redirectTo.startsWith("/") &&
     !redirectTo.startsWith("//")
   ) {
-    const redirectUrl = new URL(redirectTo, "http://localhost")
-    const addToCartId = redirectUrl.searchParams.get("addToCart")
-
-    if (addToCartId) {
-      await addToCart(addToCartId)
-      redirect("/carrito")
-    }
-
     redirect(redirectTo)
   }
 
@@ -126,20 +141,17 @@ export async function login(
 
     revalidatePath("/", "layout")
 
+    const addToCartId = parseAddToCartId(formData, redirectTo)
+    if (addToCartId) {
+      await addToCart(addToCartId)
+      redirect("/carrito")
+    }
+
     if (
       redirectTo &&
       redirectTo.startsWith("/") &&
       !redirectTo.startsWith("//")
     ) {
-      // H-04: Auto-add to cart if addToCart param is present in redirect URL
-      const redirectUrl = new URL(redirectTo, "http://localhost")
-      const addToCartId = redirectUrl.searchParams.get("addToCart")
-
-      if (addToCartId) {
-        await addToCart(addToCartId)
-        redirect("/carrito")
-      }
-
       redirect(redirectTo)
     }
 

@@ -1,25 +1,8 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import { Space_Grotesk } from "next/font/google"
 
 import { ThemeSync } from "@/components/layout/ThemeSync"
 
 import "./globals.css"
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-})
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-})
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-})
 
 export const metadata: Metadata = {
   title: "Studio Z Academy",
@@ -52,9 +35,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} font-sans antialiased`}
-      >
+      <body className="font-sans antialiased">
         <ThemeSync />
         {children}
       </body>

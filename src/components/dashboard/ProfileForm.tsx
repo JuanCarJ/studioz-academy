@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useState, useTransition } from "react"
+import Image from "next/image"
 
 import { updateProfile, requestAccountDeletion } from "@/actions/profile"
 import type { ProfileActionState } from "@/actions/profile"
@@ -59,9 +60,11 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
           <Label htmlFor="avatar">Foto de perfil</Label>
           <div className="flex items-center gap-4">
             {defaultValues.avatarUrl ? (
-              <img
+              <Image
                 src={defaultValues.avatarUrl}
                 alt="Avatar actual"
+                width={64}
+                height={64}
                 className="h-16 w-16 rounded-full border object-cover"
               />
             ) : (

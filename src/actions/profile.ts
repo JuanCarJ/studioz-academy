@@ -90,9 +90,9 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
   const user = await getCurrentUser()
   if (!user) return { error: "Debes iniciar sesion." }
 
-  const adminSupabase = createServiceRoleClient()
+  const supabase = await createServerClient()
 
-  const { error: rpcError } = await adminSupabase.rpc("anonymize_user_data", {
+  const { error: rpcError } = await supabase.rpc("anonymize_user_data", {
     target_user_id: user.id,
   })
 
@@ -101,7 +101,6 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
   }
 
   // Sign out the user
-  const supabase = await createServerClient()
   await supabase.auth.signOut()
 
   revalidatePath("/", "layout")

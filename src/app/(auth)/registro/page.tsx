@@ -18,6 +18,20 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function RegisterForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
+  const addToCart = searchParams.get("addToCart")
+  const loginParams = new URLSearchParams()
+
+  if (redirectTo) {
+    loginParams.set("redirect", redirectTo)
+  }
+
+  if (addToCart) {
+    loginParams.set("addToCart", addToCart)
+  }
+
+  const loginHref = loginParams.size > 0
+    ? `/login?${loginParams.toString()}`
+    : "/login"
 
   const [state, formAction, isPending] = useActionState<AuthActionState, FormData>(
     register,
@@ -77,9 +91,11 @@ function RegisterForm() {
             </div>
           )}
           <input type="hidden" name="csrfToken" value={csrfToken} />
-          {/* H-04: Pass redirect param so register action can handle addToCart */}
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
+          )}
+          {addToCart && (
+            <input type="hidden" name="addToCart" value={addToCart} />
           )}
 
           <div className="space-y-2">
@@ -161,7 +177,7 @@ function RegisterForm() {
       <CardFooter className="justify-center">
         <p className="text-sm text-muted-foreground">
           Ya tienes cuenta?{" "}
-          <Link href="/login" className="text-primary hover:underline">
+          <Link href={loginHref} className="text-primary hover:underline">
             Inicia sesion
           </Link>
         </p>

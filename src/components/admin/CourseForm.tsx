@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState } from "react"
+import Image from "next/image"
 
 import { createCourse, updateCourse } from "@/actions/admin/courses"
 import type { CourseActionState } from "@/actions/admin/courses"
@@ -150,9 +151,11 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
         <Label htmlFor="thumbnail">Imagen de portada</Label>
         {course?.thumbnail_url && (
           <div className="mb-2">
-            <img
+            <Image
               src={course.thumbnail_url}
               alt="Portada actual"
+              width={256}
+              height={144}
               className="h-32 w-auto rounded-md border object-cover"
             />
           </div>

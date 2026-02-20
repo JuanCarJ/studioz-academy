@@ -50,6 +50,9 @@
 
 /* ── Light theme (Admin panel) ─────────────────────────── */
 :root {
+  --font-geist-sans: "Avenir Next", "Segoe UI", "Noto Sans", sans-serif;
+  --font-geist-mono: "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", monospace;
+  --font-space-grotesk: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

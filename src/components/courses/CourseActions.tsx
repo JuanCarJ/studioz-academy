@@ -32,19 +32,26 @@ export function CourseActions({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  function requireAuth() {
-    // H-04: Include addToCart param so post-login can auto-add the course
-    router.push(`/login?redirect=/cursos/${slug}&addToCart=${courseId}`)
+  function requireAuth(options?: { includeAddToCart?: boolean }) {
+    const params = new URLSearchParams({ redirect: `/cursos/${slug}` })
+
+    if (options?.includeAddToCart) {
+      params.set("addToCart", courseId)
+    }
+
+    router.push(`/login?${params.toString()}`)
   }
 
   function handleAddToCart() {
-    if (!isAuthenticated) return requireAuth()
+    if (!isAuthenticated) return requireAuth({ includeAddToCart: true })
 
     setError(null)
     startTransition(async () => {
       const result = await addToCart(courseId)
       if (result && "error" in result) {
-        if (result.error === "AUTH_REQUIRED") return requireAuth()
+        if (result.error === "AUTH_REQUIRED") {
+          return requireAuth({ includeAddToCart: true })
+        }
         setError(result.error as string)
       } else {
         router.refresh()

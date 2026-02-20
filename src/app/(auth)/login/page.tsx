@@ -17,7 +17,21 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
+  const addToCart = searchParams.get("addToCart")
   const message = searchParams.get("message")
+  const registerParams = new URLSearchParams()
+
+  if (redirectTo) {
+    registerParams.set("redirect", redirectTo)
+  }
+
+  if (addToCart) {
+    registerParams.set("addToCart", addToCart)
+  }
+
+  const registerHref = registerParams.size > 0
+    ? `/registro?${registerParams.toString()}`
+    : "/registro"
 
   const [state, formAction, isPending] = useActionState<AuthActionState, FormData>(
     login,
@@ -86,6 +100,9 @@ function LoginForm() {
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
           )}
+          {addToCart && (
+            <input type="hidden" name="addToCart" value={addToCart} />
+          )}
           <input type="hidden" name="csrfToken" value={csrfToken} />
 
           <div className="space-y-2">
@@ -131,7 +148,7 @@ function LoginForm() {
       <CardFooter className="justify-center">
         <p className="text-sm text-muted-foreground">
           No tienes cuenta?{" "}
-          <Link href="/registro" className="text-primary hover:underline">
+          <Link href={registerHref} className="text-primary hover:underline">
             Registrate
           </Link>
         </p>

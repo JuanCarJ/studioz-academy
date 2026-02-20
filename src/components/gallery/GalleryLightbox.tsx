@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Image from "next/image"
 
 interface GalleryLightboxProps {
   images: { url: string; alt: string }[]
@@ -21,11 +22,16 @@ export function GalleryLightbox({ images, initialIndex = 0 }: GalleryLightboxPro
       >
         Cerrar
       </button>
-      <img
-        src={images[currentIndex].url}
-        alt={images[currentIndex].alt}
-        className="max-h-[90vh] max-w-[90vw] object-contain"
-      />
+      <div className="relative h-[90vh] w-[90vw]">
+        <Image
+          src={images[currentIndex].url}
+          alt={images[currentIndex].alt}
+          fill
+          sizes="90vw"
+          className="object-contain"
+          unoptimized
+        />
+      </div>
       <button
         onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
         className="absolute left-4 text-white"

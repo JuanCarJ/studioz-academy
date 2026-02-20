@@ -54,21 +54,35 @@ export async function POST(request: NextRequest) {
     const payloadHash = createHash("sha256").update(rawBody).digest("hex")
     const payloadJson = JSON.parse(rawBody) as Json
 
-    const { data: existingDup } = await supabase
+    const { data: existingDup, error: duplicateCheckError } = await supabase
       .from("payment_events")
       .select("id")
       .eq("payload_hash", payloadHash)
       .maybeSingle()
 
+    if (duplicateCheckError) {
+      return NextResponse.json(
+        { error: "Failed to check duplicate payment event" },
+        { status: 500 }
+      )
+    }
+
     if (!existingDup) {
-      const { data: relatedOrder } = await supabase
+      const { data: relatedOrder, error: relatedOrderError } = await supabase
         .from("orders")
         .select("id")
         .eq("reference", reference)
         .maybeSingle()
 
+      if (relatedOrderError) {
+        return NextResponse.json(
+          { error: "Failed to resolve related order" },
+          { status: 500 }
+        )
+      }
+
       if (relatedOrder) {
-        await supabase.from("payment_events").insert({
+        const { error: unknownEventError } = await supabase.from("payment_events").insert({
           order_id: relatedOrder.id,
           source: "webhook",
           payload_hash: payloadHash,
@@ -79,6 +93,13 @@ export async function POST(request: NextRequest) {
           is_applied: false,
           reason: `Unknown Wompi status: ${wompiStatus}`,
         })
+
+        if (unknownEventError) {
+          return NextResponse.json(
+            { error: "Failed to persist unknown payment event" },
+            { status: 500 }
+          )
+        }
       }
     }
 

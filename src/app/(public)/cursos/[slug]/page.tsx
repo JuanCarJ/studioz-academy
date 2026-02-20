@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { notFound, permanentRedirect } from "next/navigation"
 import Image from "next/image"
+import Link from "next/link"
 
 import type { Metadata } from "next"
 
@@ -125,7 +126,16 @@ export default async function CourseDetailPage({ params }: PageProps) {
             <h1 className="text-3xl font-bold">{course.title}</h1>
 
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <span>Por {course.instructor.full_name}</span>
+              {course.instructor.slug ? (
+                <Link
+                  href={`/instructores/${course.instructor.slug}`}
+                  className="transition-colors hover:text-primary"
+                >
+                  Por {course.instructor.full_name}
+                </Link>
+              ) : (
+                <span>Por {course.instructor.full_name}</span>
+              )}
               <span>{course.enrollmentCount} estudiantes</span>
               {course.lessonsCount > 0 && (
                 <span>

@@ -165,7 +165,7 @@ async function applyReconciliation(
     await supabase.from("cart_items").delete().eq("user_id", userId)
   }
 
-  // H-02: Use "polling" source (constraint allows only webhook/polling/manual)
+  // H-02: Use "polling" source for reconciliation fallback checks.
   await supabase.from("payment_events").insert({
     order_id: orderId,
     source: "polling",
@@ -173,7 +173,7 @@ async function applyReconciliation(
     mapped_status: newStatus,
     wompi_transaction_id: transactionId,
     is_applied: true,
-    payload_hash: `reconciliation-${orderId}-${now}`,
+    payload_hash: `polling-${orderId}-${now}`,
     payload_json: { source: "fallback_check", transactionId },
   })
 }

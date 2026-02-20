@@ -81,10 +81,14 @@ export async function createOrder(): Promise<never> {
     existingOrder.total === total
   ) {
     // Verify order_items exist for the reused order
-    const { count } = await supabase
+    const { count, error: orderItemsCountError } = await supabase
       .from("order_items")
       .select("id", { count: "exact", head: true })
       .eq("order_id", existingOrder.id)
+
+    if (orderItemsCountError) {
+      redirect("/carrito?error=order_failed")
+    }
 
     if (count && count > 0) {
       // Reuse existing pending order — same cart content
@@ -99,7 +103,13 @@ export async function createOrder(): Promise<never> {
         price_at_purchase: item.course.price,
       }))
 
-      await supabase.from("order_items").insert(orderItems)
+      const { error: recreateItemsError } = await supabase
+        .from("order_items")
+        .insert(orderItems)
+
+      if (recreateItemsError) {
+        redirect("/carrito?error=order_failed")
+      }
 
       orderReference = existingOrder.reference
       orderTotal = existingOrder.total
