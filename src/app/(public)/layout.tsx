@@ -1,3 +1,6 @@
+import { PublicNavbar } from "@/components/layout/PublicNavbar"
+import { Footer } from "@/components/layout/Footer"
+
 export default function PublicLayout({
   children,
 }: {
@@ -5,9 +8,9 @@ export default function PublicLayout({
 }) {
   return (
     <>
-      {/* TODO: <PublicNavbar /> */}
+      <PublicNavbar />
       <main className="min-h-screen">{children}</main>
-      {/* TODO: <Footer /> */}
+      <Footer />
     </>
   )
 }
