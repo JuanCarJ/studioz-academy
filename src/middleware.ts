@@ -39,10 +39,9 @@ function isAuthRoute(path: string): boolean {
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
-  // Public routes: always accessible
-  if (isPublicRoute(path)) return NextResponse.next()
-
-  // Create Supabase client with cookie handling
+  // Create Supabase client and refresh auth session for ALL routes.
+  // This follows the Supabase recommended pattern: session refresh must
+  // happen before any route-matching logic.
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -66,10 +65,14 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Use getUser() for security (validates JWT server-side, not just session)
+  // Refresh session for ALL routes — do not put code between
+  // createServerClient and getUser()
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  // Public routes: always accessible (session already refreshed above)
+  if (isPublicRoute(path)) return supabaseResponse
 
   // Auth routes: redirect if already logged in
   if (isAuthRoute(path)) {
