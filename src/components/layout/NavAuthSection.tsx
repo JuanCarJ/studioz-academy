@@ -1,10 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { User, LogOut, LayoutDashboard, Shield, ShoppingBag } from "lucide-react"
 
-import { createBrowserClient } from "@/lib/supabase/client"
 import { logout } from "@/actions/auth"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -18,67 +16,18 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { CartIcon } from "@/components/cart/CartIcon"
 
-interface UserInfo {
-  id: string
-  full_name: string
-  role: string
-  avatar_url: string | null
+interface NavAuthSectionProps {
+  user: {
+    id: string
+    full_name: string
+    role: string
+    avatar_url: string | null
+  } | null
+  cartCount: number
 }
 
-export function NavAuthSection() {
-  const [user, setUser] = useState<UserInfo | null>(null)
-  const [cartCount, setCartCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
   const { csrfToken } = useCsrfToken()
-
-  useEffect(() => {
-    const supabase = createBrowserClient()
-
-    async function getUser() {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser()
-
-      if (authUser) {
-        const [profileResult, cartResult] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id, full_name, role, avatar_url")
-            .eq("id", authUser.id)
-            .single(),
-          supabase
-            .from("cart_items")
-            .select("id", { count: "exact", head: true })
-            .eq("user_id", authUser.id),
-        ])
-
-        if (profileResult.data) {
-          setUser(profileResult.data)
-        }
-        setCartCount(cartResult.count ?? 0)
-      }
-      setLoading(false)
-    }
-
-    getUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        setUser(null)
-        setCartCount(0)
-      } else {
-        getUser()
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  if (loading) {
-    return <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
-  }
 
   if (!user) {
     return (
