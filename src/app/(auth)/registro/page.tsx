@@ -2,17 +2,37 @@
 
 import { useActionState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 
 import { register, loginWithGoogle } from "@/actions/auth"
 import type { AuthActionState } from "@/actions/auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useCsrfToken } from "@/hooks/use-csrf-token"
 
-export default function RegisterPage() {
+function RegisterForm() {
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get("redirect")
+  const addToCart = searchParams.get("addToCart")
+  const loginParams = new URLSearchParams()
+
+  if (redirectTo) {
+    loginParams.set("redirect", redirectTo)
+  }
+
+  if (addToCart) {
+    loginParams.set("addToCart", addToCart)
+  }
+
+  const loginHref = loginParams.size > 0
+    ? `/login?${loginParams.toString()}`
+    : "/login"
+
   const [state, formAction, isPending] = useActionState<AuthActionState, FormData>(
     register,
     {}
@@ -71,6 +91,12 @@ export default function RegisterPage() {
             </div>
           )}
           <input type="hidden" name="csrfToken" value={csrfToken} />
+          {redirectTo && (
+            <input type="hidden" name="redirect" value={redirectTo} />
+          )}
+          {addToCart && (
+            <input type="hidden" name="addToCart" value={addToCart} />
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="fullName">Nombre completo</Label>
@@ -120,6 +146,25 @@ export default function RegisterPage() {
             />
           </div>
 
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="acceptsPrivacy"
+              name="acceptsPrivacy"
+              required
+            />
+            <Label htmlFor="acceptsPrivacy" className="text-sm leading-snug">
+              Autorizo el tratamiento de mis datos personales conforme a la{" "}
+              <a
+                href="/politica-de-privacidad"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                Politica de Privacidad
+              </a>
+            </Label>
+          </div>
+
           <Button
             type="submit"
             className="w-full"
@@ -132,11 +177,19 @@ export default function RegisterPage() {
       <CardFooter className="justify-center">
         <p className="text-sm text-muted-foreground">
           Ya tienes cuenta?{" "}
-          <Link href="/login" className="text-primary hover:underline">
+          <Link href={loginHref} className="text-primary hover:underline">
             Inicia sesion
           </Link>
         </p>
       </CardFooter>
     </Card>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   )
 }

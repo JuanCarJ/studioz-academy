@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
 import { createServerClient } from "@/lib/supabase/server"
+import { addToCart } from "@/actions/cart"
 
 export interface AuthActionState {
   error?: string
@@ -13,6 +14,24 @@ export interface AuthActionState {
 
 const INVALID_CSRF_MESSAGE =
   "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
+
+function parseAddToCartId(
+  formData: FormData,
+  redirectTo: string | null
+): string | null {
+  const addToCartFromForm = formData.get("addToCart")
+  if (typeof addToCartFromForm === "string" && addToCartFromForm.trim()) {
+    return addToCartFromForm.trim()
+  }
+
+  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
+    return null
+  }
+
+  const redirectUrl = new URL(redirectTo, "http://localhost")
+  const addToCartFromRedirect = redirectUrl.searchParams.get("addToCart")
+  return addToCartFromRedirect?.trim() || null
+}
 
 export async function register(
   _prevState: AuthActionState,
@@ -28,9 +47,15 @@ export async function register(
   const password = formData.get("password") as string
   const fullName = formData.get("fullName") as string
   const phone = (formData.get("phone") as string) || undefined
+  const acceptsPrivacy = formData.get("acceptsPrivacy")
+  const redirectTo = formData.get("redirect") as string | null
 
   if (!email || !password || !fullName) {
     return { error: "Todos los campos obligatorios deben ser completados." }
+  }
+
+  if (acceptsPrivacy !== "on") {
+    return { error: "Debes aceptar la politica de privacidad para continuar." }
   }
 
   if (password.length < 8) {
@@ -57,6 +82,21 @@ export async function register(
   }
 
   revalidatePath("/", "layout")
+
+  const addToCartId = parseAddToCartId(formData, redirectTo)
+  if (addToCartId) {
+    await addToCart(addToCartId)
+    redirect("/carrito")
+  }
+
+  if (
+    redirectTo &&
+    redirectTo.startsWith("/") &&
+    !redirectTo.startsWith("//")
+  ) {
+    redirect(redirectTo)
+  }
+
   redirect("/dashboard")
 }
 
@@ -100,6 +140,12 @@ export async function login(
       .single()
 
     revalidatePath("/", "layout")
+
+    const addToCartId = parseAddToCartId(formData, redirectTo)
+    if (addToCartId) {
+      await addToCart(addToCartId)
+      redirect("/carrito")
+    }
 
     if (
       redirectTo &&

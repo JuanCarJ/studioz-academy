@@ -6,7 +6,17 @@ export type OrderStatus =
   | "voided"
   | "refunded"
   | "chargeback"
-type WebhookOrderStatus = "pending" | "approved" | "declined" | "voided"
+
+// H-10: Expanded to include refunded and chargeback as valid mapped statuses.
+// Wompi doesn't send these via webhook directly, but they can appear in the
+// transactions API response or be triggered by manual operations.
+export type WebhookOrderStatus =
+  | "pending"
+  | "approved"
+  | "declined"
+  | "voided"
+  | "refunded"
+  | "chargeback"
 
 const WOMPI_STATUS_MAP: Record<WompiStatus, WebhookOrderStatus> = {
   APPROVED: "approved",
@@ -31,10 +41,12 @@ export function isValidTransition(
 ): boolean {
   const validTransitions: Record<OrderStatus, WebhookOrderStatus[]> = {
     pending: ["pending", "approved", "declined", "voided"],
-    // Self-transitions are allowed for idempotent webhook retries.
-    approved: ["approved"],
+    // Self-transitions allowed for idempotent webhook retries.
+    // H-10: approved can transition to refunded or chargeback per CA-022.6.
+    approved: ["approved", "refunded", "chargeback"],
     declined: ["declined"],
     voided: ["voided"],
+    // Terminal states — no transitions out
     refunded: [],
     chargeback: [],
   }

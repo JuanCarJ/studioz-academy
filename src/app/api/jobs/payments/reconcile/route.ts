@@ -1,10 +1,21 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
-export async function POST() {
-  // TODO: Query pending orders older than 15 min
-  // TODO: Check status with Wompi API
-  // TODO: Update order status in Supabase
-  console.log("Payment reconciliation job triggered")
+import { reconcilePendingOrders } from "@/actions/payments"
 
-  return NextResponse.json({ reconciled: 0 })
+export async function POST(request: NextRequest) {
+  // Verify cron secret
+  const authHeader = request.headers.get("authorization")
+  const cronSecret = process.env.CRON_SECRET
+
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const result = await reconcilePendingOrders()
+
+  return NextResponse.json({
+    ok: true,
+    reconciled: result.reconciled,
+    timestamp: new Date().toISOString(),
+  })
 }
