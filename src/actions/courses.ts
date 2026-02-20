@@ -153,26 +153,53 @@ export async function getCourseBySlug(
 export async function getRelatedCourses(
   courseId: string,
   category: string,
+  instructorId: string,
   limit = 4
 ): Promise<(Course & { instructor: Pick<Instructor, "id" | "full_name">; isNew: boolean })[]> {
   const supabase = await createServerClient()
 
-  const { data, error } = await supabase
+  // Determine enrolled course IDs for the current user so we can exclude them
+  const user = await getCurrentUser()
+  let enrolledCourseIds: string[] = []
+
+  if (user) {
+    const { data: enrollments } = await supabase
+      .from("enrollments")
+      .select("course_id")
+      .eq("user_id", user.id)
+
+    enrolledCourseIds = (enrollments ?? []).map((e) => e.course_id)
+  }
+
+  // Fetch a larger pool so we can sort and slice after prioritization
+  let query = supabase
     .from("courses")
     .select("*, instructors(id, full_name)")
     .eq("is_published", true)
     .eq("category", category)
     .neq("id", courseId)
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(limit)
+    .limit(limit * 3) // fetch extra to allow filtering
+
+  if (enrolledCourseIds.length > 0) {
+    query = query.not("id", "in", `(${enrolledCourseIds.join(",")})`)
+  }
+
+  const { data, error } = await query
 
   if (error) return []
 
-  return (data ?? []).map((c) => ({
+  const mapped = (data ?? []).map((c) => ({
     ...c,
     instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
     isNew: computeIsNew(c.published_at),
   })) as (Course & { instructor: Pick<Instructor, "id" | "full_name">; isNew: boolean })[]
+
+  // Prioritize: same instructor first, then others (both groups already sorted by newest)
+  const sameInstructor = mapped.filter((c) => c.instructor_id === instructorId)
+  const others = mapped.filter((c) => c.instructor_id !== instructorId)
+
+  return [...sameInstructor, ...others].slice(0, limit)
 }
 
 /**

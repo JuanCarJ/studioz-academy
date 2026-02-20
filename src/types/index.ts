@@ -125,7 +125,7 @@ export interface OrderItem {
 export interface PaymentEvent {
   id: string
   order_id: string
-  source: "webhook" | "reconciliation" | "manual"
+  source: "webhook" | "reconciliation" | "manual" | "polling"
   wompi_transaction_id: string | null
   external_status: string
   mapped_status: string
@@ -162,6 +162,21 @@ export interface LessonProgress {
   lesson_id: string
   completed: boolean
   completed_at: string | null
+  video_position: number
+}
+
+// ── Email Outbox ────────────────────────────────────────────
+export interface OrderEmailOutbox {
+  id: string
+  order_id: string
+  email_type: string
+  status: "pending" | "sent" | "failed"
+  attempts: number
+  next_attempt_at: string
+  last_error: string | null
+  sent_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 // ── Notifications ────────────────────────────────────────

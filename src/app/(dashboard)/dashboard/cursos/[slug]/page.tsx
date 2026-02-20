@@ -19,7 +19,7 @@ export default async function CoursePlayerPage({
 
   const supabase = await createServerClient()
 
-  // Fetch course + lessons + enrollment in parallel
+  // Fetch course + lessons
   const { data: course } = await supabase
     .from("courses")
     .select("id, title, slug, lessons(*)")
@@ -28,6 +28,7 @@ export default async function CoursePlayerPage({
 
   if (!course) redirect("/cursos")
 
+  // Verify enrollment
   const { data: enrollment } = await supabase
     .from("enrollments")
     .select("id")
@@ -37,33 +38,55 @@ export default async function CoursePlayerPage({
 
   if (!enrollment) redirect(`/cursos/${slug}`)
 
-  // Get course progress
-  const { data: progress } = await supabase
-    .from("course_progress")
-    .select("*")
-    .eq("user_id", user.id)
-    .eq("course_id", course.id)
-    .maybeSingle()
-
-  // Get completed lesson IDs
+  // Sort lessons by sort_order
   const lessons = ((course.lessons ?? []) as Lesson[]).sort(
     (a, b) => a.sort_order - b.sort_order
   )
+
+  if (lessons.length === 0) {
+    return (
+      <section className="space-y-4">
+        <h1 className="text-2xl font-bold">{course.title}</h1>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/30 py-16 px-6 text-center">
+          <h2 className="text-lg font-semibold">Contenido en actualizacion</h2>
+          <p className="mt-2 text-sm text-muted-foreground max-w-xs">
+            Estamos preparando el contenido de este curso. Te notificaremos cuando este listo.
+          </p>
+        </div>
+      </section>
+    )
+  }
+
   const lessonIds = lessons.map((l) => l.id)
 
-  const { data: lessonProgressData } = await supabase
-    .from("lesson_progress")
-    .select("lesson_id, completed")
-    .eq("user_id", user.id)
-    .in("lesson_id", lessonIds)
+  // Fetch course progress + lesson progress in parallel.
+  // lesson_progress includes video_position so we can restore playback.
+  const [{ data: progress }, { data: lessonProgressData }] = await Promise.all([
+    supabase
+      .from("course_progress")
+      .select("last_lesson_id")
+      .eq("user_id", user.id)
+      .eq("course_id", course.id)
+      .maybeSingle(),
+    supabase
+      .from("lesson_progress")
+      .select("lesson_id, completed, video_position")
+      .eq("user_id", user.id)
+      .in("lesson_id", lessonIds),
+  ])
 
-  const completedLessonIds = new Set(
-    lessonProgressData
-      ?.filter((lp) => lp.completed)
-      .map((lp) => lp.lesson_id) ?? []
-  )
+  // Build lookup maps from lesson progress rows
+  const completedLessonIds = new Set<string>()
+  const videoPositionMap = new Map<string, number>()
 
-  // Determine active lesson
+  for (const lp of lessonProgressData ?? []) {
+    if (lp.completed) completedLessonIds.add(lp.lesson_id)
+    if (typeof lp.video_position === "number" && lp.video_position > 0) {
+      videoPositionMap.set(lp.lesson_id, lp.video_position)
+    }
+  }
+
+  // Determine active lesson (resume from last accessed, or first lesson)
   const activeLessonId = progress?.last_lesson_id ?? lessons[0]?.id
   const activeLesson = lessons.find((l) => l.id === activeLessonId) ?? lessons[0]
 
@@ -72,6 +95,11 @@ export default async function CoursePlayerPage({
   if (activeLesson?.bunny_video_id) {
     initialSignedUrl = generateSignedUrl(activeLesson.bunny_video_id)
   }
+
+  // Restore saved video position for the active lesson (0 if none saved)
+  const initialPosition = activeLesson
+    ? (videoPositionMap.get(activeLesson.id) ?? 0)
+    : 0
 
   const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
   const whatsappUrl = whatsappNumber
@@ -85,7 +113,7 @@ export default async function CoursePlayerPage({
       <h1 className="text-2xl font-bold">{course.title}</h1>
 
       <PlayerView
-        courseSlug={course.slug}
+        courseId={course.id}
         lessons={lessons.map((l) => ({
           id: l.id,
           title: l.title,
@@ -95,6 +123,7 @@ export default async function CoursePlayerPage({
         }))}
         activeLessonId={activeLesson?.id ?? ""}
         initialSignedUrl={initialSignedUrl}
+        initialPosition={initialPosition}
       />
 
       {whatsappUrl && (

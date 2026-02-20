@@ -3,6 +3,7 @@ import Link from "next/link"
 
 import { getAdminCourses } from "@/actions/admin/courses"
 import { AdminTableSkeleton } from "@/components/skeletons/AdminTableSkeleton"
+import { DeleteCourseButton } from "@/components/admin/DeleteCourseButton"
 import { formatCOP } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,13 +30,14 @@ async function CoursesTable() {
           <TableHead>Instructor</TableHead>
           <TableHead>Precio</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead>Inscritos</TableHead>
           <TableHead className="text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {courses.length === 0 && (
           <TableRow>
-            <TableCell colSpan={6} className="text-center text-muted-foreground">
+            <TableCell colSpan={7} className="text-center text-muted-foreground">
               No hay cursos registrados.
             </TableCell>
           </TableRow>
@@ -61,10 +63,20 @@ async function CoursesTable() {
                 {course.is_published ? "Publicado" : "Borrador"}
               </Badge>
             </TableCell>
+            <TableCell>
+              <span className="text-sm">{course.enrollment_count}</span>
+            </TableCell>
             <TableCell className="text-right">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={`/admin/cursos/${course.id}/editar`}>Editar</Link>
-              </Button>
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/admin/cursos/${course.id}/editar`}>Editar</Link>
+                </Button>
+                <DeleteCourseButton
+                  courseId={course.id}
+                  courseTitle={course.title}
+                  enrollmentCount={course.enrollment_count}
+                />
+              </div>
             </TableCell>
           </TableRow>
         ))}
