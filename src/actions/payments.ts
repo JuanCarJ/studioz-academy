@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { queryWompiByReference } from "@/lib/wompi"
 import { mapWompiStatus, isValidTransition } from "@/lib/payments"
+import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Order } from "@/types"
 
@@ -176,6 +177,15 @@ async function applyReconciliation(
     payload_hash: `polling-${orderId}-${now}`,
     payload_json: { source: "fallback_check", transactionId },
   })
+
+  // Enqueue purchase confirmation email after successful reconciliation (non-blocking)
+  if (newStatus === "approved") {
+    try {
+      await enqueuePurchaseConfirmation(orderId)
+    } catch {
+      // Non-blocking: email enqueue failure must not abort reconciliation
+    }
+  }
 }
 
 export async function reconcilePendingOrders(): Promise<{

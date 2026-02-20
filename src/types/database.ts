@@ -486,6 +486,7 @@ export type Database = {
           id: string
           lesson_id: string
           user_id: string
+          video_position: number | null
         }
         Insert: {
           completed?: boolean
@@ -493,6 +494,7 @@ export type Database = {
           id?: string
           lesson_id: string
           user_id: string
+          video_position?: number | null
         }
         Update: {
           completed?: boolean
@@ -500,6 +502,7 @@ export type Database = {
           id?: string
           lesson_id?: string
           user_id?: string
+          video_position?: number | null
         }
         Relationships: [
           {
@@ -564,6 +567,53 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_email_outbox: {
+        Row: {
+          attempts: number
+          created_at: string
+          email_type: string
+          id: string
+          last_error: string | null
+          next_attempt_at: string
+          order_id: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          email_type?: string
+          id?: string
+          last_error?: string | null
+          next_attempt_at?: string
+          order_id: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          email_type?: string
+          id?: string
+          last_error?: string | null
+          next_attempt_at?: string
+          order_id?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_email_outbox_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]

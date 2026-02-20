@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { env } from "@/lib/env"
 import { verifyWebhookSignature, type WompiWebhookEvent } from "@/lib/wompi"
 import { mapWompiStatus, isValidTransition } from "@/lib/payments"
+import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Json } from "@/types/database"
 
@@ -262,6 +263,16 @@ export async function POST(request: NextRequest) {
       { error: "Failed to persist payment event" },
       { status: 500 }
     )
+  }
+
+  // 13. Enqueue purchase confirmation email (non-blocking, idempotent)
+  // Must be the last operation before returning so it never blocks the 200 response.
+  if (mappedStatus === "approved") {
+    try {
+      await enqueuePurchaseConfirmation(order.id)
+    } catch {
+      // Email enqueue failure must NOT block the 200 response
+    }
   }
 
   return NextResponse.json({ received: true, applied: true })

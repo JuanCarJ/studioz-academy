@@ -10,8 +10,10 @@ import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { CourseActions } from "@/components/courses/CourseActions"
 import { CourseGrid } from "@/components/courses/CourseGrid"
+import { FreeLessonPlayer } from "@/components/courses/FreeLessonPlayer"
 import { CoursesSkeleton } from "@/components/skeletons/CoursesSkeleton"
 import { PreviewPlayer } from "@/components/courses/PreviewPlayer"
+import { ReviewSection } from "@/components/courses/ReviewSection"
 import { Badge } from "@/components/ui/badge"
 
 interface PageProps {
@@ -48,11 +50,13 @@ function formatDuration(seconds: number): string {
 async function RelatedCourses({
   courseId,
   category,
+  instructorId,
 }: {
   courseId: string
   category: string
+  instructorId: string
 }) {
-  const related = await getRelatedCourses(courseId, category, 3)
+  const related = await getRelatedCourses(courseId, category, instructorId, 3)
   if (related.length === 0) return null
 
   return (
@@ -163,29 +167,37 @@ export default async function CourseDetailPage({ params }: PageProps) {
             <div>
               <h2 className="mb-3 text-xl font-bold">Temario</h2>
               <ul className="divide-y rounded-lg border">
-                {course.lessons.map((lesson, idx) => (
-                  <li
-                    key={lesson.id}
-                    className="flex items-center justify-between px-4 py-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                        {idx + 1}
+                {course.lessons.map((lesson, idx) =>
+                  lesson.is_free ? (
+                    <li key={lesson.id}>
+                      <FreeLessonPlayer
+                        lessonId={lesson.id}
+                        lessonTitle={lesson.title}
+                        lessonIndex={idx + 1}
+                        durationFormatted={formatDuration(
+                          lesson.duration_seconds
+                        )}
+                      />
+                    </li>
+                  ) : (
+                    <li
+                      key={lesson.id}
+                      className="flex items-center justify-between px-4 py-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                          {idx + 1}
+                        </span>
+                        <span className="text-sm font-medium">
+                          {lesson.title}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDuration(lesson.duration_seconds)}
                       </span>
-                      <span className="text-sm font-medium">
-                        {lesson.title}
-                      </span>
-                      {lesson.is_free && (
-                        <Badge variant="secondary" className="text-xs">
-                          Gratis
-                        </Badge>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDuration(lesson.duration_seconds)}
-                    </span>
-                  </li>
-                ))}
+                    </li>
+                  )
+                )}
               </ul>
             </div>
           )}
@@ -241,12 +253,31 @@ export default async function CourseDetailPage({ params }: PageProps) {
         </div>
       </div>
 
+      {/* Reviews */}
+      <div className="mt-16">
+        <Suspense
+          fallback={
+            <div className="space-y-4">
+              <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+              <div className="h-24 animate-pulse rounded-lg bg-muted" />
+            </div>
+          }
+        >
+          <ReviewSection
+            courseId={course.id}
+            ratingAvg={course.rating_avg}
+            reviewsCount={course.reviews_count}
+          />
+        </Suspense>
+      </div>
+
       {/* Related courses */}
       <div className="mt-16">
         <Suspense fallback={<CoursesSkeleton />}>
           <RelatedCourses
             courseId={course.id}
             category={course.category}
+            instructorId={course.instructor_id}
           />
         </Suspense>
       </div>

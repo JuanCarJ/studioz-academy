@@ -51,7 +51,7 @@ export default async function CartPage() {
         </div>
 
         {/* Summary sidebar */}
-        <div>
+        <div className="space-y-4">
           <CartSummary
             subtotal={subtotal}
             discountAmount={discountAmount}
@@ -59,6 +59,16 @@ export default async function CartPage() {
             total={total}
             itemCount={items.length}
           />
+          <p className="text-center text-xs text-muted-foreground">
+            Al realizar tu compra aceptas nuestra{" "}
+            <Link
+              href="/politica-de-reembolso"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              politica de reembolso
+            </Link>
+            .
+          </p>
         </div>
       </div>
     </section>

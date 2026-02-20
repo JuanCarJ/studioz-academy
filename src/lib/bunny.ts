@@ -75,3 +75,87 @@ export async function uploadVideo(
 
   return guid
 }
+
+/**
+ * Create a video entry in Bunny Stream and return the video ID plus the
+ * direct upload URL so the client can upload directly, bypassing Vercel.
+ */
+export async function createBunnyVideo(
+  title: string
+): Promise<{ videoId: string; uploadUrl: string }> {
+  const libraryId = env.BUNNY_LIBRARY_ID()
+  const apiKey = env.BUNNY_API_KEY()
+
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/videos`,
+    {
+      method: "POST",
+      headers: {
+        AccessKey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title }),
+    }
+  )
+
+  if (!res.ok) {
+    throw new Error(`Bunny: Failed to create video entry (${res.status})`)
+  }
+
+  const { guid } = (await res.json()) as { guid: string }
+
+  // The direct PUT upload URL for client-side upload
+  const uploadUrl = `https://video.bunnycdn.com/library/${libraryId}/videos/${guid}`
+
+  return { videoId: guid, uploadUrl }
+}
+
+/**
+ * Delete a video from Bunny Stream library.
+ * Silently succeeds if the video does not exist (404 is ignored).
+ */
+export async function deleteBunnyVideo(videoId: string): Promise<void> {
+  const libraryId = env.BUNNY_LIBRARY_ID()
+  const apiKey = env.BUNNY_API_KEY()
+
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`,
+    {
+      method: "DELETE",
+      headers: { AccessKey: apiKey },
+    }
+  )
+
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Bunny: Failed to delete video ${videoId} (${res.status})`)
+  }
+}
+
+/**
+ * Get the processing status and duration of a video in Bunny Stream.
+ *
+ * Status codes (from Bunny docs):
+ *   0 = Created, 1 = Uploaded, 2 = Processing, 3 = Transcoding,
+ *   4 = Finished, 5 = Error, 6 = UploadFailed
+ */
+export async function getVideoStatus(
+  videoId: string
+): Promise<{ status: number; length: number }> {
+  const libraryId = env.BUNNY_LIBRARY_ID()
+  const apiKey = env.BUNNY_API_KEY()
+
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`,
+    {
+      method: "GET",
+      headers: { AccessKey: apiKey },
+    }
+  )
+
+  if (!res.ok) {
+    throw new Error(`Bunny: Failed to get video status (${res.status})`)
+  }
+
+  const data = (await res.json()) as { status: number; length: number }
+  return { status: data.status, length: data.length }
+}
