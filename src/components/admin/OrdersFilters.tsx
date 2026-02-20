@@ -23,11 +23,29 @@ const STATUS_OPTIONS = [
   { value: "chargeback", label: "Contracargo" },
 ]
 
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "all", label: "Todos los metodos" },
+  { value: "CARD", label: "Tarjeta" },
+  { value: "NEQUI", label: "Nequi" },
+  { value: "PSE", label: "PSE" },
+  { value: "BANCOLOMBIA_TRANSFER", label: "Bancolombia" },
+  { value: "BANCOLOMBIA_COLLECT", label: "Bancolombia Collect" },
+  { value: "EFECTY", label: "Efecty" },
+]
+
+const COMBO_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "with", label: "Con combo" },
+  { value: "without", label: "Sin combo" },
+]
+
 interface OrdersFiltersProps {
   status: string
   dateFrom: string
   dateTo: string
   search: string
+  paymentMethod: string
+  combo: string
 }
 
 export function OrdersFilters({
@@ -35,6 +53,8 @@ export function OrdersFilters({
   dateFrom,
   dateTo,
   search,
+  paymentMethod,
+  combo,
 }: OrdersFiltersProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -64,7 +84,7 @@ export function OrdersFilters({
     router.push(pathname)
   }
 
-  const hasFilters = status !== "all" || dateFrom || dateTo || search
+  const hasFilters = status !== "all" || dateFrom || dateTo || search || paymentMethod !== "all" || combo !== "all"
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -78,6 +98,42 @@ export function OrdersFilters({
           </SelectTrigger>
           <SelectContent>
             {STATUS_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="min-w-[180px]">
+        <Select
+          value={paymentMethod}
+          onValueChange={(val) => updateParam("paymentMethod", val)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Metodo de pago" />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_METHOD_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="min-w-[140px]">
+        <Select
+          value={combo}
+          onValueChange={(val) => updateParam("combo", val)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Combo" />
+          </SelectTrigger>
+          <SelectContent>
+            {COMBO_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -116,7 +172,7 @@ export function OrdersFilters({
       <form onSubmit={handleSearchSubmit} className="flex gap-2">
         <Input
           name="search"
-          placeholder="Referencia, nombre o email..."
+          placeholder="Referencia, nombre, email o ID Wompi..."
           defaultValue={search}
           className="w-64"
         />

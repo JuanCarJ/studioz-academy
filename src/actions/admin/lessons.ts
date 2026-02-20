@@ -13,7 +13,7 @@ import type { Lesson } from "@/types"
 export interface LessonActionState {
   error?: string
   success?: boolean
-  /** Returned to client for direct upload to Bunny (create flow only). */
+  /** Returned to client for direct upload to Bunny. */
   uploadUrl?: string
   videoId?: string
 }
@@ -121,11 +121,16 @@ export async function createLesson(
   revalidatePath(`/admin/cursos/${courseId}/editar`)
   revalidatePath(`/cursos`)
 
+  await recalculateCourseProgress(adminSupabase, courseId)
+
   return { success: true, uploadUrl, videoId }
 }
 
 /**
- * Update lesson metadata. Does not touch the Bunny video entry.
+ * Update lesson metadata only.
+ * Video replacement is handled in a separate 2-step flow:
+ *   1. prepareLessonVideoReplacement
+ *   2. commitLessonVideoReplacement
  */
 export async function updateLesson(
   lessonId: string,
@@ -178,6 +183,102 @@ export async function updateLesson(
   revalidatePath(`/cursos`)
 
   return { success: true }
+}
+
+/**
+ * Step 1 of video replacement:
+ * Create a new Bunny video entry and return upload URL.
+ * This does not mutate the lesson row yet.
+ */
+export async function prepareLessonVideoReplacement(
+  lessonId: string,
+  titleHint?: string
+): Promise<LessonActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  const adminSupabase = createServiceRoleClient()
+  const { data: lesson } = await adminSupabase
+    .from("lessons")
+    .select("id, title")
+    .eq("id", lessonId)
+    .single()
+
+  if (!lesson) return { error: "Leccion no encontrada." }
+
+  const effectiveTitle = titleHint?.trim() || lesson.title || "Leccion"
+
+  try {
+    const result = await createBunnyVideo(effectiveTitle)
+    return {
+      success: true,
+      uploadUrl: result.uploadUrl,
+      videoId: result.videoId,
+    }
+  } catch {
+    return { error: "No se pudo preparar el nuevo video en Bunny. Intenta de nuevo." }
+  }
+}
+
+/**
+ * Step 2 of video replacement:
+ * After successful upload, persist the new video ID in DB and delete old video.
+ */
+export async function commitLessonVideoReplacement(
+  lessonId: string,
+  newVideoId: string
+): Promise<LessonActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  if (!newVideoId?.trim()) {
+    return { error: "Video invalido para reemplazo." }
+  }
+
+  const adminSupabase = createServiceRoleClient()
+  const { data: lesson } = await adminSupabase
+    .from("lessons")
+    .select("course_id, bunny_video_id")
+    .eq("id", lessonId)
+    .single()
+
+  if (!lesson) return { error: "Leccion no encontrada." }
+
+  const oldVideoId = lesson.bunny_video_id
+  const libraryId = env.BUNNY_LIBRARY_ID()
+
+  const { error } = await adminSupabase
+    .from("lessons")
+    .update({
+      bunny_video_id: newVideoId,
+      bunny_library_id: libraryId,
+    })
+    .eq("id", lessonId)
+
+  if (error) {
+    return { error: "No se pudo confirmar el reemplazo de video." }
+  }
+
+  if (oldVideoId && oldVideoId !== newVideoId) {
+    await deleteBunnyVideo(oldVideoId).catch(() => undefined)
+  }
+
+  revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
+  revalidatePath(`/cursos`)
+
+  return { success: true }
+}
+
+/**
+ * Best-effort cleanup for orphan Bunny videos that were prepared but not used.
+ */
+export async function discardPreparedVideo(videoId: string): Promise<void> {
+  const admin = await verifyAdmin()
+  if (!admin) return
+
+  if (!videoId?.trim()) return
+
+  await deleteBunnyVideo(videoId).catch(() => undefined)
 }
 
 /**

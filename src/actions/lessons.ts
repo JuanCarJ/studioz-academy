@@ -76,6 +76,15 @@ export async function saveVideoPosition(
 
   if (!lesson) return { error: "Leccion no encontrada." }
 
+  const { data: enrollment } = await supabase
+    .from("enrollments")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("course_id", lesson.course_id)
+    .maybeSingle()
+
+  if (!enrollment) return { error: "No estas inscrito en este curso." }
+
   const adminClient = createServiceRoleClient()
 
   await adminClient.from("lesson_progress").upsert(

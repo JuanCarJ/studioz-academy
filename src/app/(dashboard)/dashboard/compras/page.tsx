@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 
 export default async function ComprasPage() {
   const { orders, error } = await getUserOrders()
+  const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? ""
 
   return (
     <section className="space-y-6">
@@ -51,7 +52,7 @@ export default async function ComprasPage() {
       {orders.length > 0 && (
         <div className="space-y-3">
           {orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard key={order.id} order={order} whatsappNumber={whatsappNumber} />
           ))}
         </div>
       )}

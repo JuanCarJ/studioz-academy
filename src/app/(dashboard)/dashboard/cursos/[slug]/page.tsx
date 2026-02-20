@@ -42,6 +42,21 @@ export default async function CoursePlayerPage({
   const lessons = ((course.lessons ?? []) as Lesson[]).sort(
     (a, b) => a.sort_order - b.sort_order
   )
+
+  if (lessons.length === 0) {
+    return (
+      <section className="space-y-4">
+        <h1 className="text-2xl font-bold">{course.title}</h1>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/30 py-16 px-6 text-center">
+          <h2 className="text-lg font-semibold">Contenido en actualizacion</h2>
+          <p className="mt-2 text-sm text-muted-foreground max-w-xs">
+            Estamos preparando el contenido de este curso. Te notificaremos cuando este listo.
+          </p>
+        </div>
+      </section>
+    )
+  }
+
   const lessonIds = lessons.map((l) => l.id)
 
   // Fetch course progress + lesson progress in parallel.

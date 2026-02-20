@@ -120,53 +120,76 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
   let failed = 0
 
   for (const entry of entries) {
-    const success = await sendPurchaseConfirmation(entry.order_id)
+    try {
+      const success = await sendPurchaseConfirmation(entry.order_id)
 
-    if (success) {
-      // Mark as sent
+      if (success) {
+        // Mark as sent
+        await supabase
+          .from("order_email_outbox")
+          .update({
+            status: "sent",
+            sent_at: new Date().toISOString(),
+            attempts: entry.attempts + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", entry.id)
+
+        sent++
+      } else {
+        const newAttempts = entry.attempts + 1
+        const isFinalAttempt = newAttempts >= MAX_ATTEMPTS
+
+        if (isFinalAttempt) {
+          // Mark as failed after max retries
+          await supabase
+            .from("order_email_outbox")
+            .update({
+              status: "failed",
+              attempts: newAttempts,
+              last_error: "Max retries exceeded",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", entry.id)
+
+          failed++
+        } else {
+          // Schedule next retry with exponential backoff
+          const delayMs = RETRY_DELAY_MS[newAttempts - 1] ?? RETRY_DELAY_MS[RETRY_DELAY_MS.length - 1]
+          const nextAttempt = new Date(Date.now() + delayMs).toISOString()
+
+          await supabase
+            .from("order_email_outbox")
+            .update({
+              attempts: newAttempts,
+              next_attempt_at: nextAttempt,
+              last_error: "Send failed, will retry",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", entry.id)
+        }
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error"
+      const newAttempts = entry.attempts + 1
+      const isFinalAttempt = newAttempts >= MAX_ATTEMPTS
+
       await supabase
         .from("order_email_outbox")
         .update({
-          status: "sent",
-          sent_at: new Date().toISOString(),
-          attempts: entry.attempts + 1,
+          status: isFinalAttempt ? "failed" : "pending",
+          attempts: newAttempts,
+          last_error: errorMessage,
+          next_attempt_at: isFinalAttempt
+            ? undefined
+            : new Date(
+                Date.now() + (RETRY_DELAY_MS[newAttempts - 1] ?? RETRY_DELAY_MS[RETRY_DELAY_MS.length - 1])
+              ).toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", entry.id)
 
-      sent++
-    } else {
-      const newAttempts = entry.attempts + 1
-      const isFinalAttempt = newAttempts >= MAX_ATTEMPTS
-
-      if (isFinalAttempt) {
-        // Mark as failed after max retries
-        await supabase
-          .from("order_email_outbox")
-          .update({
-            status: "failed",
-            attempts: newAttempts,
-            last_error: "Max retries exceeded",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", entry.id)
-
-        failed++
-      } else {
-        // Schedule next retry with exponential backoff
-        const delayMs = RETRY_DELAY_MS[newAttempts - 1] ?? RETRY_DELAY_MS[RETRY_DELAY_MS.length - 1]
-        const nextAttempt = new Date(Date.now() + delayMs).toISOString()
-
-        await supabase
-          .from("order_email_outbox")
-          .update({
-            attempts: newAttempts,
-            next_attempt_at: nextAttempt,
-            last_error: "Send failed, will retry",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", entry.id)
-      }
+      failed++
     }
   }
 

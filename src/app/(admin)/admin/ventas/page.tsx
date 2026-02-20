@@ -29,6 +29,8 @@ interface PageProps {
     dateFrom?: string
     dateTo?: string
     search?: string
+    paymentMethod?: string
+    combo?: string
     page?: string
   }>
 }
@@ -40,6 +42,8 @@ export default async function AdminSalesPage({ searchParams }: PageProps) {
   const dateFrom = params.dateFrom ?? ""
   const dateTo = params.dateTo ?? ""
   const search = params.search ?? ""
+  const paymentMethod = params.paymentMethod ?? "all"
+  const combo = params.combo ?? "all"
   const page = Math.max(1, parseInt(params.page ?? "1", 10))
 
   const result = await getOrders({
@@ -47,6 +51,8 @@ export default async function AdminSalesPage({ searchParams }: PageProps) {
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
     search: search || undefined,
+    paymentMethod: paymentMethod !== "all" ? paymentMethod : undefined,
+    combo: combo !== "all" ? combo : undefined,
     page,
   })
 
@@ -69,6 +75,8 @@ export default async function AdminSalesPage({ searchParams }: PageProps) {
           dateFrom={dateFrom}
           dateTo={dateTo}
           search={search}
+          paymentMethod={paymentMethod}
+          combo={combo}
         />
 
         <div className="overflow-x-auto rounded-lg border">

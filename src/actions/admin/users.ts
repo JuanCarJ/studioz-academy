@@ -1,10 +1,19 @@
 "use server"
 
+import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
 import type { OrderItem, Course } from "@/types"
 
 const PAGE_SIZE = 20
+
+async function verifyAdmin() {
+  const user = await getCurrentUser()
+  if (!user || user.role !== "admin") {
+    return null
+  }
+  return user
+}
 
 export interface UserListItem {
   id: string
@@ -73,77 +82,53 @@ export async function getUsers(filters?: {
   search?: string
   page?: number
 }): Promise<UsersResult> {
+  const admin = await verifyAdmin()
+  if (!admin) return { users: [], totalCount: 0, page: 1, pageSize: PAGE_SIZE }
+
   const supabase = createServiceRoleClient()
   const page = Math.max(1, filters?.page ?? 1)
   const from = (page - 1) * PAGE_SIZE
-  const to = from + PAGE_SIZE - 1
 
-  // Use auth admin API to list users (includes email)
-  const { data: authData, error: authError } = await supabase.auth.admin.listUsers({
-    page: 1,
-    perPage: 10000, // fetch all then filter in memory for search
+  const { data, error } = await supabase.rpc("search_users_with_email", {
+    search_term: filters?.search?.trim() || undefined,
+    page_offset: from,
+    page_limit: PAGE_SIZE,
   })
 
-  if (authError) {
-    console.error("[admin.getUsers] auth.admin.listUsers error:", authError)
+  if (error) {
+    console.error("[admin.getUsers] rpc error:", error)
     return { users: [], totalCount: 0, page, pageSize: PAGE_SIZE }
   }
 
-  // Build a map of userId -> email
-  const emailMap: Record<string, string> = {}
-  for (const u of authData.users) {
-    emailMap[u.id] = u.email ?? ""
-  }
+  const rows = data ?? []
+  const totalCount = rows.length > 0 ? Number(rows[0].total_count) : 0
 
-  // Fetch profiles
-  let profileQuery = supabase
-    .from("profiles")
-    .select("id, full_name, phone, role, last_login_at, created_at, deleted_at")
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-
-  if (filters?.search) {
-    const term = filters.search.trim()
-    profileQuery = profileQuery.or(
-      `full_name.ilike.%${term}%,phone.ilike.%${term}%`
-    )
-  }
-
-  const { data: profiles, error: profileError } = await profileQuery
-
-  if (profileError) {
-    console.error("[admin.getUsers] profiles error:", profileError)
-    return { users: [], totalCount: 0, page, pageSize: PAGE_SIZE }
-  }
-
-  let allUsers: UserListItem[] = (profiles ?? []).map((p) => ({
-    id: p.id,
-    full_name: p.full_name,
-    email: emailMap[p.id] ?? "",
-    phone: p.phone,
-    role: p.role,
-    last_login_at: p.last_login_at,
-    created_at: p.created_at,
+  const users: UserListItem[] = rows.map((r: {
+    id: string
+    full_name: string
+    email: string
+    phone: string | null
+    role: string
+    last_login_at: string | null
+    created_at: string
+    total_count: number
+  }) => ({
+    id: r.id,
+    full_name: r.full_name,
+    email: r.email ?? "",
+    phone: r.phone,
+    role: r.role,
+    last_login_at: r.last_login_at,
+    created_at: r.created_at,
   }))
-
-  // If searching by email (not matched by profile search), also filter by email
-  if (filters?.search) {
-    const term = filters.search.trim().toLowerCase()
-    allUsers = allUsers.filter(
-      (u) =>
-        u.full_name.toLowerCase().includes(term) ||
-        u.email.toLowerCase().includes(term) ||
-        (u.phone ?? "").toLowerCase().includes(term)
-    )
-  }
-
-  const totalCount = allUsers.length
-  const users = allUsers.slice(from, to + 1)
 
   return { users, totalCount, page, pageSize: PAGE_SIZE }
 }
 
 export async function getUserDetail(userId: string): Promise<UserDetail | null> {
+  const admin = await verifyAdmin()
+  if (!admin) return null
+
   const supabase = createServiceRoleClient()
 
   // 1. Profile

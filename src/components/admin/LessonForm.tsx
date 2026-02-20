@@ -2,8 +2,13 @@
 
 import { useRef, useState, useTransition } from "react"
 
-import { createLesson, updateLesson } from "@/actions/admin/lessons"
-import type { LessonActionState } from "@/actions/admin/lessons"
+import {
+  commitLessonVideoReplacement,
+  createLesson,
+  discardPreparedVideo,
+  prepareLessonVideoReplacement,
+  updateLesson,
+} from "@/actions/admin/lessons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,8 +34,9 @@ type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error"
  *   3. Calls onSuccess when done
  *
  * Edit flow:
- *   1. Submit form → Server Action updates metadata only
- *   2. Calls onSuccess when done
+ *   1. Submit form → Server Action updates metadata
+ *   2. If "reemplazar video", prepara nuevo video, sube bytes y confirma swap
+ *   3. Calls onSuccess when done
  */
 export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
   const isEditing = !!lesson
@@ -40,6 +46,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [wantsReplace, setWantsReplace] = useState(false)
 
   const isLoading = isPending || phase === "creating" || phase === "uploading"
 
@@ -53,47 +60,98 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
     const formData = new FormData(form)
 
     startTransition(async () => {
-      let result: LessonActionState
-
-      if (isEditing) {
-        result = await updateLesson(lesson.id, formData)
-      } else {
+      if (!isEditing) {
         setPhase("creating")
-        result = await createLesson(courseId, formData)
+
+        const createResult = await createLesson(courseId, formData)
+        if (createResult.error) {
+          setErrorMsg(createResult.error)
+          setPhase("error")
+          return
+        }
+
+        if (createResult.uploadUrl) {
+          const file = fileRef.current?.files?.[0]
+          if (!file) {
+            setPhase("done")
+            onSuccess?.()
+            return
+          }
+
+          setPhase("uploading")
+
+          try {
+            await uploadToBunnyDirect(createResult.uploadUrl, file, (progress) => {
+              setUploadProgress(progress)
+            })
+          } catch {
+            setErrorMsg(
+              "La leccion fue creada pero el video no pudo ser cargado. Intenta subir el video de nuevo."
+            )
+            setPhase("error")
+            return
+          }
+        }
+
+        setPhase("done")
+        onSuccess?.()
+        return
       }
 
-      if (result.error) {
-        setErrorMsg(result.error)
+      const updateResult = await updateLesson(lesson.id, formData)
+      if (updateResult.error) {
+        setErrorMsg(updateResult.error)
         setPhase("error")
         return
       }
 
-      // For new lessons: upload file bytes directly to Bunny
-      if (!isEditing && result.uploadUrl) {
+      if (wantsReplace) {
         const file = fileRef.current?.files?.[0]
         if (!file) {
-          // No file selected — creation succeeded without upload
-          setPhase("done")
-          onSuccess?.()
+          setErrorMsg("Debes seleccionar un archivo para reemplazar el video.")
+          setPhase("error")
+          return
+        }
+
+        setPhase("creating")
+        const titleHint = (formData.get("title") as string)?.trim() || lesson.title
+        const prepareResult = await prepareLessonVideoReplacement(lesson.id, titleHint)
+
+        if (
+          prepareResult.error ||
+          !prepareResult.uploadUrl ||
+          !prepareResult.videoId
+        ) {
+          setErrorMsg(prepareResult.error ?? "No se pudo preparar el reemplazo de video.")
+          setPhase("error")
           return
         }
 
         setPhase("uploading")
-
         try {
-          await uploadToBunnyDirect(result.uploadUrl, file, (progress) => {
+          await uploadToBunnyDirect(prepareResult.uploadUrl, file, (progress) => {
             setUploadProgress(progress)
           })
-          setPhase("done")
-          onSuccess?.()
         } catch {
+          await discardPreparedVideo(prepareResult.videoId)
           setErrorMsg(
-            "La leccion fue creada pero el video no pudo ser cargado. Intenta subir el video de nuevo."
+            "No se pudo cargar el nuevo video. El video anterior se mantuvo sin cambios."
           )
           setPhase("error")
+          return
         }
 
-        return
+        const commitResult = await commitLessonVideoReplacement(
+          lesson.id,
+          prepareResult.videoId
+        )
+
+        if (commitResult.error) {
+          await discardPreparedVideo(prepareResult.videoId)
+          setErrorMsg(commitResult.error)
+          setPhase("error")
+          return
+        }
       }
 
       setPhase("done")
@@ -199,16 +257,52 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
         </div>
       )}
 
-      {/* Editing: show current video ID */}
+      {/* Editing: show current video ID + replace option */}
       {isEditing && lesson.bunny_video_id && (
-        <div className="space-y-1">
-          <Label>Video actual</Label>
-          <p className="rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground">
-            {lesson.bunny_video_id}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Para reemplazar el video, elimina esta leccion y crea una nueva.
-          </p>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Video actual</Label>
+            <p className="rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground">
+              {lesson.bunny_video_id}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Switch
+              id="lesson-replaceVideo"
+              name="replaceVideo"
+              checked={wantsReplace}
+              onCheckedChange={setWantsReplace}
+              disabled={isLoading}
+            />
+            <div>
+              <Label htmlFor="lesson-replaceVideo" className="font-medium">
+                Reemplazar video
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                El video anterior sera eliminado y reemplazado por uno nuevo.
+              </p>
+            </div>
+          </div>
+
+          {wantsReplace && (
+            <div className="space-y-2">
+              <Label htmlFor="lesson-video-replace">Nuevo archivo de video</Label>
+              <Input
+                ref={fileRef}
+                id="lesson-video-replace"
+                name="video"
+                type="file"
+                accept="video/*"
+                required={wantsReplace}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                El video se sube directamente a Bunny Stream. Formatos: MP4, MOV,
+                AVI, MKV. Maximo recomendado: 4 GB.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

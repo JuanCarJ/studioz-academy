@@ -9,12 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { getOrderStatusWithFallback } from "@/actions/payments"
 import { formatCOP } from "@/lib/utils"
-import { env } from "@/lib/env"
-
 import type { OrderSummary } from "@/actions/purchases"
 
 interface OrderCardProps {
   order: OrderSummary
+  whatsappNumber?: string
 }
 
 type OrderStatus = OrderSummary["status"]
@@ -71,17 +70,18 @@ function formatPaymentMethod(method: string | null): string {
   return labels[method.toUpperCase()] ?? method
 }
 
-export function OrderCard({ order }: OrderCardProps) {
+export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [currentStatus, setCurrentStatus] = useState<OrderStatus>(order.status)
   const [isPending, startTransition] = useTransition()
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null)
 
-  const whatsappNumber = env.WHATSAPP_NUMBER()
   const whatsappMessage = encodeURIComponent(
     `Hola, necesito soporte con mi orden Studio Z. Referencia: ${order.reference}`
   )
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
+  const whatsappUrl = whatsappNumber
+    ? `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
+    : null
 
   function handleRecheck() {
     setRecheckMsg(null)
@@ -211,12 +211,14 @@ export function OrderCard({ order }: OrderCardProps) {
                 )}
               </div>
             )}
-            <Button asChild variant="ghost" size="sm" className="gap-2 text-muted-foreground">
-              <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="h-3.5 w-3.5" />
-                Solicitar soporte
-              </a>
-            </Button>
+            {whatsappUrl && (
+              <Button asChild variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Solicitar soporte
+                </a>
+              </Button>
+            )}
           </div>
         </CardContent>
       )}

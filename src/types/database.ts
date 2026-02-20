@@ -959,6 +959,23 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: undefined
       }
+      search_users_with_email: {
+        Args: {
+          page_limit?: number
+          page_offset?: number
+          search_term?: string
+        }
+        Returns: {
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          last_login_at: string
+          phone: string
+          role: string
+          total_count: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

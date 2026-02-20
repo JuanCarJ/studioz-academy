@@ -2,10 +2,19 @@
 
 import { createClient } from "@supabase/supabase-js"
 
+import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Order, OrderItem, PaymentEvent } from "@/types"
+
+async function verifyAdmin() {
+  const user = await getCurrentUser()
+  if (!user || user.role !== "admin") {
+    return null
+  }
+  return user
+}
 
 // Untyped client used only for tables not yet reflected in the generated types
 // (order_email_outbox). The service role key never leaves the server.
@@ -49,6 +58,7 @@ export interface SalesSummary {
   averageOrderValue: number
   totalDiscountGiven: number
   topPaymentMethod: string | null
+  statusDistribution: Record<string, number>
 }
 
 export async function getOrders(filters?: {
@@ -56,8 +66,13 @@ export async function getOrders(filters?: {
   dateFrom?: string
   dateTo?: string
   search?: string
+  paymentMethod?: string
+  combo?: string
   page?: number
 }): Promise<OrdersResult> {
+  const admin = await verifyAdmin()
+  if (!admin) return { orders: [], totalCount: 0, page: 1, pageSize: PAGE_SIZE }
+
   const supabase = createServiceRoleClient()
   const page = Math.max(1, filters?.page ?? 1)
   const from = (page - 1) * PAGE_SIZE
@@ -85,10 +100,20 @@ export async function getOrders(filters?: {
     query = query.lte("created_at", `${filters.dateTo}T23:59:59`)
   }
 
+  if (filters?.paymentMethod && filters.paymentMethod !== "all") {
+    query = query.eq("payment_method", filters.paymentMethod)
+  }
+
+  if (filters?.combo === "with") {
+    query = query.not("discount_rule_id", "is", null)
+  } else if (filters?.combo === "without") {
+    query = query.is("discount_rule_id", null)
+  }
+
   if (filters?.search) {
     const term = filters.search.trim()
     query = query.or(
-      `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%`
+      `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%,wompi_transaction_id.ilike.%${term}%`
     )
   }
 
@@ -138,6 +163,9 @@ export async function getOrders(filters?: {
 export async function getOrderDetail(
   orderId: string
 ): Promise<OrderDetailResult | null> {
+  const admin = await verifyAdmin()
+  if (!admin) return null
+
   const supabase = createServiceRoleClient()
 
   const { data: order, error } = await supabase
@@ -181,6 +209,18 @@ export async function getOrderDetail(
 }
 
 export async function getSalesSummary(): Promise<SalesSummary> {
+  const admin = await verifyAdmin()
+  if (!admin) {
+    return {
+      totalOrders: 0,
+      totalRevenue: 0,
+      averageOrderValue: 0,
+      totalDiscountGiven: 0,
+      topPaymentMethod: null,
+      statusDistribution: {},
+    }
+  }
+
   const supabase = createServiceRoleClient()
 
   const { data: approvedOrders, error } = await supabase
@@ -196,6 +236,7 @@ export async function getSalesSummary(): Promise<SalesSummary> {
       averageOrderValue: 0,
       totalDiscountGiven: 0,
       topPaymentMethod: null,
+      statusDistribution: {},
     }
   }
 
@@ -222,18 +263,32 @@ export async function getSalesSummary(): Promise<SalesSummary> {
     }
   }
 
+  // Status distribution across ALL orders (not just approved)
+  const statusDistribution: Record<string, number> = {}
+  const { data: allOrders } = await supabase
+    .from("orders")
+    .select("status")
+
+  for (const o of allOrders ?? []) {
+    statusDistribution[o.status] = (statusDistribution[o.status] ?? 0) + 1
+  }
+
   return {
     totalOrders,
     totalRevenue,
     averageOrderValue,
     totalDiscountGiven,
     topPaymentMethod,
+    statusDistribution,
   }
 }
 
 export async function resendPurchaseEmail(
   orderId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const admin = await verifyAdmin()
+  if (!admin) return { success: false, error: "No autorizado." }
+
   // Use raw untyped client because order_email_outbox is not yet in the
   // generated Database types.
   const rawClient = createRawServiceClient()
@@ -255,8 +310,12 @@ export async function resendPurchaseEmail(
 
   if (upsertError) {
     console.error("[admin.resendPurchaseEmail] upsert failed:", upsertError)
-    // Fall back to direct enqueue helper which handles its own errors
-    await enqueuePurchaseConfirmation(orderId)
+    try {
+      await enqueuePurchaseConfirmation(orderId)
+    } catch (fallbackError) {
+      console.error("[admin.resendPurchaseEmail] fallback failed:", fallbackError)
+      return { success: false, error: "No se pudo encolar el reenvio. Intenta de nuevo." }
+    }
   }
 
   return { success: true }

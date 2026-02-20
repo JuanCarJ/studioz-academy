@@ -125,7 +125,7 @@ export interface OrderItem {
 export interface PaymentEvent {
   id: string
   order_id: string
-  source: "webhook" | "reconciliation" | "manual"
+  source: "webhook" | "reconciliation" | "manual" | "polling"
   wompi_transaction_id: string | null
   external_status: string
   mapped_status: string
