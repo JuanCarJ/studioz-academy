@@ -27,6 +27,7 @@ interface UserInfo {
 
 export function NavAuthSection() {
   const [user, setUser] = useState<UserInfo | null>(null)
+  const [cartCount, setCartCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const { csrfToken } = useCsrfToken()
 
@@ -39,15 +40,22 @@ export function NavAuthSection() {
       } = await supabase.auth.getUser()
 
       if (authUser) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, full_name, role, avatar_url")
-          .eq("id", authUser.id)
-          .single()
+        const [profileResult, cartResult] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, role, avatar_url")
+            .eq("id", authUser.id)
+            .single(),
+          supabase
+            .from("cart_items")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", authUser.id),
+        ])
 
-        if (profile) {
-          setUser(profile)
+        if (profileResult.data) {
+          setUser(profileResult.data)
         }
+        setCartCount(cartResult.count ?? 0)
       }
       setLoading(false)
     }
@@ -59,6 +67,7 @@ export function NavAuthSection() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setUser(null)
+        setCartCount(0)
       } else {
         getUser()
       }
@@ -93,7 +102,7 @@ export function NavAuthSection() {
 
   return (
     <div className="flex items-center gap-2">
-      <CartIcon />
+      <CartIcon itemCount={cartCount} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-full">

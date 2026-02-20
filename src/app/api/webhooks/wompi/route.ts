@@ -45,11 +45,45 @@ export async function POST(request: NextRequest) {
 
   // 5. Map Wompi status to internal status
   const mappedStatus = mapWompiStatus(String(wompiStatus))
-  if (!mappedStatus) {
-    return NextResponse.json({ received: true, note: "Unknown status logged" })
-  }
 
   const supabase = createServiceRoleClient()
+
+  // H-10: If status is unknown, persist event for traceability before returning
+  if (!mappedStatus) {
+    const rawBody = JSON.stringify(body)
+    const payloadHash = createHash("sha256").update(rawBody).digest("hex")
+    const payloadJson = JSON.parse(rawBody) as Json
+
+    const { data: existingDup } = await supabase
+      .from("payment_events")
+      .select("id")
+      .eq("payload_hash", payloadHash)
+      .maybeSingle()
+
+    if (!existingDup) {
+      const { data: relatedOrder } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("reference", reference)
+        .maybeSingle()
+
+      if (relatedOrder) {
+        await supabase.from("payment_events").insert({
+          order_id: relatedOrder.id,
+          source: "webhook",
+          payload_hash: payloadHash,
+          payload_json: payloadJson,
+          external_status: String(wompiStatus),
+          mapped_status: "unknown",
+          wompi_transaction_id: transactionId,
+          is_applied: false,
+          reason: `Unknown Wompi status: ${wompiStatus}`,
+        })
+      }
+    }
+
+    return NextResponse.json({ received: true, note: "Unknown status persisted" })
+  }
 
   // 6. Idempotency: hash payload and check for duplicates
   const rawBody = JSON.stringify(body)

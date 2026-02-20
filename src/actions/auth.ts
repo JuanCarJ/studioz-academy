@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
 import { createServerClient } from "@/lib/supabase/server"
+import { addToCart } from "@/actions/cart"
 
 export interface AuthActionState {
   error?: string
@@ -28,9 +29,15 @@ export async function register(
   const password = formData.get("password") as string
   const fullName = formData.get("fullName") as string
   const phone = (formData.get("phone") as string) || undefined
+  const acceptsPrivacy = formData.get("acceptsPrivacy")
+  const redirectTo = formData.get("redirect") as string | null
 
   if (!email || !password || !fullName) {
     return { error: "Todos los campos obligatorios deben ser completados." }
+  }
+
+  if (acceptsPrivacy !== "on") {
+    return { error: "Debes aceptar la politica de privacidad para continuar." }
   }
 
   if (password.length < 8) {
@@ -57,6 +64,24 @@ export async function register(
   }
 
   revalidatePath("/", "layout")
+
+  // H-04: Handle redirect + addToCart for register flow
+  if (
+    redirectTo &&
+    redirectTo.startsWith("/") &&
+    !redirectTo.startsWith("//")
+  ) {
+    const redirectUrl = new URL(redirectTo, "http://localhost")
+    const addToCartId = redirectUrl.searchParams.get("addToCart")
+
+    if (addToCartId) {
+      await addToCart(addToCartId)
+      redirect("/carrito")
+    }
+
+    redirect(redirectTo)
+  }
+
   redirect("/dashboard")
 }
 
@@ -106,6 +131,15 @@ export async function login(
       redirectTo.startsWith("/") &&
       !redirectTo.startsWith("//")
     ) {
+      // H-04: Auto-add to cart if addToCart param is present in redirect URL
+      const redirectUrl = new URL(redirectTo, "http://localhost")
+      const addToCartId = redirectUrl.searchParams.get("addToCart")
+
+      if (addToCartId) {
+        await addToCart(addToCartId)
+        redirect("/carrito")
+      }
+
       redirect(redirectTo)
     }
 

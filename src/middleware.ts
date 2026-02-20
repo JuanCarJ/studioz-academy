@@ -24,6 +24,7 @@ function isPublicRoute(path: string): boolean {
     path.startsWith("/instructores/") ||
     path.startsWith("/noticias/") ||
     path.startsWith("/api/webhooks/") ||
+    path.startsWith("/api/jobs/") ||
     path.startsWith("/api/csrf") ||
     path.startsWith("/auth/callback")
   )

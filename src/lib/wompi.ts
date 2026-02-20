@@ -1,5 +1,7 @@
 import { createHash } from "crypto"
 
+import { env } from "@/lib/env"
+
 /**
  * Wompi webhook event payload shape.
  * Properties may vary per event — never hard-code the properties array.
@@ -93,6 +95,9 @@ export function verifyWebhookSignature(
 
 /**
  * Create a Wompi Web Checkout URL for an order.
+ *
+ * Integrity signature = SHA256(reference + amountInCents + currency + integrityKey)
+ * URL: https://checkout.wompi.co/p/?public-key=...&currency=COP&amount-in-cents=...&reference=...&redirect-url=...&signature:integrity=...
  */
 export function createCheckoutUrl(params: {
   reference: string
@@ -100,7 +105,52 @@ export function createCheckoutUrl(params: {
   currency?: string
   redirectUrl: string
 }): string {
-  // TODO: Build Wompi checkout URL with public key (Increment 2)
-  console.log("createCheckoutUrl", params)
-  return ""
+  const currency = params.currency ?? "COP"
+  const integrityString = `${params.reference}${params.amountInCents}${currency}${env.WOMPI_INTEGRITY_KEY()}`
+  const signature = createHash("sha256").update(integrityString).digest("hex")
+
+  const url = new URL("https://checkout.wompi.co/p/")
+  url.searchParams.set("public-key", env.WOMPI_PUBLIC_KEY())
+  url.searchParams.set("currency", currency)
+  url.searchParams.set("amount-in-cents", String(params.amountInCents))
+  url.searchParams.set("reference", params.reference)
+  url.searchParams.set("redirect-url", params.redirectUrl)
+  url.searchParams.set("signature:integrity", signature)
+
+  return url.toString()
+}
+
+/**
+ * Query Wompi API for a transaction by reference.
+ * Used for reconciliation and fallback status checks.
+ *
+ * H-03: Wrapped in try/catch with 10s timeout to prevent crashes
+ * when Wompi is unreachable. Returns null on any network error.
+ */
+export async function queryWompiByReference(
+  reference: string
+): Promise<{ status: string; transactionId: string } | null> {
+  try {
+    const res = await fetch(
+      `https://sandbox.wompi.co/v1/transactions?reference=${encodeURIComponent(reference)}`,
+      {
+        headers: { Authorization: `Bearer ${env.WOMPI_PRIVATE_KEY()}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      }
+    )
+
+    if (!res.ok) return null
+
+    const json = await res.json()
+    const tx = json.data?.[0]
+    if (!tx) return null
+
+    return {
+      status: tx.status as string,
+      transactionId: tx.id as string,
+    }
+  } catch {
+    return null
+  }
 }

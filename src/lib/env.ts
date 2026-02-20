@@ -34,4 +34,7 @@ export const env = {
   // App
   APP_URL: () => requireEnv("NEXT_PUBLIC_APP_URL"),
   WHATSAPP_NUMBER: () => requireEnv("WHATSAPP_NUMBER"),
+
+  // Cron
+  CRON_SECRET: () => requireEnv("CRON_SECRET"),
 } as const
