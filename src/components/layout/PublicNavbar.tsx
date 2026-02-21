@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
+import { AuthStateSync } from "./AuthStateSync"
 import { NavAuthSection } from "./NavAuthSection"
 import { DesktopNavLinks } from "./DesktopNavLinks"
 import { MobileBottomBar } from "./MobileBottomBar"
@@ -21,6 +22,7 @@ export async function PublicNavbar() {
 
   return (
     <>
+      <AuthStateSync isAuthenticated={!!user} />
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
         <nav className="container mx-auto flex h-16 items-center justify-center px-4 md:justify-between">
           {/* Logo — centered on mobile, start-aligned on desktop */}

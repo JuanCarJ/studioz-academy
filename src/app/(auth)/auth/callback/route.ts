@@ -1,6 +1,8 @@
 import { cookies } from "next/headers"
+import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 
+import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 
 export async function GET(request: Request) {
@@ -18,10 +20,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=no-code`)
   }
 
-  // Clear stale Supabase cookies before exchanging code for a new session
+  // Clear stale auth-token chunks while preserving OAuth PKCE verifier cookie.
   const cookieStore = await cookies()
   for (const cookie of cookieStore.getAll()) {
-    if (cookie.name.startsWith("sb-")) {
+    if (isSupabaseAuthTokenCookieName(cookie.name)) {
       cookieStore.delete(cookie.name)
     }
   }
@@ -49,6 +51,8 @@ export async function GET(request: Request) {
       next = "/admin"
     }
   }
+
+  revalidatePath("/", "layout")
 
   const forwardedHost = request.headers.get("x-forwarded-host")
   const isLocalEnv = process.env.NODE_ENV === "development"
