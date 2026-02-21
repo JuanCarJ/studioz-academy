@@ -1,3 +1,4 @@
+import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
 import { createServerClient } from "@/lib/supabase/server"
@@ -15,6 +16,14 @@ export async function GET(request: Request) {
   // No code provided — redirect to login with error
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=no-code`)
+  }
+
+  // Clear stale Supabase cookies before exchanging code for a new session
+  const cookieStore = await cookies()
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith("sb-")) {
+      cookieStore.delete(cookie.name)
+    }
   }
 
   const supabase = await createServerClient()

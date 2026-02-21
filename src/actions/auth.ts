@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
@@ -33,6 +34,19 @@ function parseAddToCartId(
   return addToCartFromRedirect?.trim() || null
 }
 
+/**
+ * Clear all Supabase auth cookies (sb-*) to prevent stale chunked
+ * cookie parts from a previous session interfering with the new one.
+ */
+async function clearStaleSbCookies() {
+  const cookieStore = await cookies()
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith("sb-")) {
+      cookieStore.delete(cookie.name)
+    }
+  }
+}
+
 export async function register(
   _prevState: AuthActionState,
   formData: FormData
@@ -40,8 +54,6 @@ export async function register(
   if (!(await isValidCsrfToken(formData))) {
     return { error: INVALID_CSRF_MESSAGE }
   }
-
-  const supabase = await createServerClient()
 
   const email = formData.get("email") as string
   const password = formData.get("password") as string
@@ -61,6 +73,9 @@ export async function register(
   if (password.length < 8) {
     return { error: "La contrasena debe tener al menos 8 caracteres." }
   }
+
+  await clearStaleSbCookies()
+  const supabase = await createServerClient()
 
   const { error } = await supabase.auth.signUp({
     email,
@@ -108,8 +123,6 @@ export async function login(
     return { error: INVALID_CSRF_MESSAGE }
   }
 
-  const supabase = await createServerClient()
-
   const email = formData.get("email") as string
   const password = formData.get("password") as string
   const redirectTo = formData.get("redirect") as string | null
@@ -117,6 +130,9 @@ export async function login(
   if (!email || !password) {
     return { error: "Email y contrasena son obligatorios." }
   }
+
+  await clearStaleSbCookies()
+  const supabase = await createServerClient()
 
   const { error } = await supabase.auth.signInWithPassword({
     email,
@@ -190,6 +206,8 @@ export async function logout(formData: FormData) {
 
   const supabase = await createServerClient()
   await supabase.auth.signOut()
+  await clearStaleSbCookies()
+
   revalidatePath("/", "layout")
   redirect("/")
 }
