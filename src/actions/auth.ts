@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
@@ -190,6 +191,16 @@ export async function logout(formData: FormData) {
 
   const supabase = await createServerClient()
   await supabase.auth.signOut()
+
+  // Explicitly delete all Supabase auth cookies to ensure no stale
+  // chunks remain (signOut may not clear all chunked cookie parts)
+  const cookieStore = await cookies()
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith("sb-")) {
+      cookieStore.delete(cookie.name)
+    }
+  }
+
   revalidatePath("/", "layout")
   redirect("/")
 }
