@@ -5,6 +5,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
+import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 import { addToCart } from "@/actions/cart"
 
@@ -35,13 +36,13 @@ function parseAddToCartId(
 }
 
 /**
- * Clear all Supabase auth cookies (sb-*) to prevent stale chunked
+ * Clear Supabase auth-token cookies (base + chunks) to prevent stale
  * cookie parts from a previous session interfering with the new one.
  */
-async function clearStaleSbCookies() {
+async function clearStaleAuthTokenCookies() {
   const cookieStore = await cookies()
   for (const cookie of cookieStore.getAll()) {
-    if (cookie.name.startsWith("sb-")) {
+    if (isSupabaseAuthTokenCookieName(cookie.name)) {
       cookieStore.delete(cookie.name)
     }
   }
@@ -74,7 +75,7 @@ export async function register(
     return { error: "La contrasena debe tener al menos 8 caracteres." }
   }
 
-  await clearStaleSbCookies()
+  await clearStaleAuthTokenCookies()
   const supabase = await createServerClient()
 
   const { error } = await supabase.auth.signUp({
@@ -131,7 +132,7 @@ export async function login(
     return { error: "Email y contrasena son obligatorios." }
   }
 
-  await clearStaleSbCookies()
+  await clearStaleAuthTokenCookies()
   const supabase = await createServerClient()
 
   const { error } = await supabase.auth.signInWithPassword({
@@ -206,7 +207,7 @@ export async function logout(formData: FormData) {
 
   const supabase = await createServerClient()
   await supabase.auth.signOut()
-  await clearStaleSbCookies()
+  await clearStaleAuthTokenCookies()
 
   revalidatePath("/", "layout")
   redirect("/")
