@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 
 import { getOrderDetail, resendPurchaseEmail } from "@/actions/admin/orders"
 import { formatCOP } from "@/lib/utils"
@@ -69,21 +69,55 @@ export function OrderDetailModal({
   const [detail, setDetail] = useState<OrderDetailResult | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [emailMessage, setEmailMessage] = useState<string | null>(null)
-  const [isPendingLoad, startLoad] = useTransition()
+  const [isLoading, setIsLoading] = useState(false)
   const [isPendingEmail, startEmail] = useTransition()
 
-  function handleOpenChange(nextOpen: boolean) {
-    if (nextOpen && !detail) {
+  useEffect(() => {
+    if (!open) {
+      setEmailMessage(null)
       setLoadError(null)
-      startLoad(async () => {
+      return
+    }
+
+    if (detail?.order.id === order.id) {
+      return
+    }
+
+    let cancelled = false
+
+    setIsLoading(true)
+    setLoadError(null)
+    setDetail(null)
+
+    ;(async () => {
+      try {
         const result = await getOrderDetail(order.id)
+        if (cancelled) return
+
         if (!result) {
           setLoadError("No se pudo cargar el detalle de la orden.")
-        } else {
-          setDetail(result)
+          return
         }
-      })
+
+        setDetail(result)
+      } catch (error) {
+        console.error("[OrderDetailModal] load failed", error)
+        if (!cancelled) {
+          setLoadError("No se pudo cargar el detalle de la orden.")
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
     }
+  }, [detail?.order.id, open, order.id])
+
+  function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
       setEmailMessage(null)
     }
@@ -93,10 +127,15 @@ export function OrderDetailModal({
   function handleResendEmail() {
     setEmailMessage(null)
     startEmail(async () => {
-      const result = await resendPurchaseEmail(order.id)
-      if (result.success) {
-        setEmailMessage("El email fue encolado para reenvio.")
-      } else {
+      try {
+        const result = await resendPurchaseEmail(order.id)
+        if (result.success) {
+          setEmailMessage("El email fue encolado para reenvio.")
+        } else {
+          setEmailMessage("Error al reenviar el email.")
+        }
+      } catch (error) {
+        console.error("[OrderDetailModal] resend failed", error)
         setEmailMessage("Error al reenviar el email.")
       }
     })
@@ -113,7 +152,7 @@ export function OrderDetailModal({
           </DialogTitle>
         </DialogHeader>
 
-        {isPendingLoad && (
+        {isLoading && (
           <div className="space-y-3 py-4">
             {[1, 2, 3].map((i) => (
               <div
@@ -128,7 +167,7 @@ export function OrderDetailModal({
           <p className="py-4 text-sm text-destructive">{loadError}</p>
         )}
 
-        {d && !isPendingLoad && (
+        {d && !isLoading && (
           <div className="space-y-5">
             {/* Header row */}
             <div className="flex flex-wrap items-center justify-between gap-3">

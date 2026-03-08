@@ -30,6 +30,9 @@ export const env = {
     optionalEnv("WOMPI_API_BASE_URL") ?? "https://sandbox.wompi.co/v1",
   WOMPI_CHECKOUT_URL: () =>
     optionalEnv("WOMPI_CHECKOUT_URL") ?? "https://checkout.wompi.co/p/",
+  VERCEL_PROTECTION_BYPASS_SECRET: () =>
+    optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET") ??
+    optionalEnv("VERCEL_PROTECTION_BYPASS_SECRET"),
 
   // Bunny Stream
   BUNNY_API_KEY: () => requireEnv("BUNNY_API_KEY"),

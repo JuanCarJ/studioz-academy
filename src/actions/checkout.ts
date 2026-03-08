@@ -10,6 +10,7 @@ import { createServerClient } from "@/lib/supabase/server"
 import { env } from "@/lib/env"
 import { getBestDiscount } from "@/lib/discounts"
 import { generateReference } from "@/lib/utils"
+import { withVercelProtectionBypass } from "@/lib/vercel-protection"
 import { createCheckoutUrl } from "@/lib/wompi"
 import { getCart } from "@/actions/cart"
 import type { DiscountRule } from "@/types"
@@ -197,7 +198,10 @@ export async function createOrder(): Promise<never> {
   )
 
   // Build Wompi checkout URL and redirect
-  const redirectUrl = `${env.APP_URL()}/pago/retorno?reference=${orderReference}`
+  const redirectUrl = withVercelProtectionBypass(
+    `${env.APP_URL()}/pago/retorno?reference=${orderReference}`,
+    { setCookie: true }
+  )
   const checkoutUrl = createCheckoutUrl({
     reference: orderReference,
     amountInCents: orderTotal,

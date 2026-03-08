@@ -11,7 +11,8 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "qa:seed": "node scripts/qa/seed-staging.mjs",
-    "qa:reset": "node scripts/qa/reset-staging.mjs"
+    "qa:reset": "node scripts/qa/reset-staging.mjs",
+    "wompi:webhook:url": "node scripts/wompi/print-webhook-url.mjs"
   },
   "dependencies": {
     "@react-email/components": "^1.0.8",

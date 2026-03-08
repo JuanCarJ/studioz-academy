@@ -31,7 +31,11 @@ export default async function AdminNewsPage() {
           <CardTitle>Nueva noticia</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={createNews} className="space-y-4">
+          <form
+            action={createNews}
+            className="space-y-4"
+            data-testid="news-create-form"
+          >
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-2">
                 <label htmlFor="create-title" className="text-sm font-medium">
@@ -112,7 +116,7 @@ export default async function AdminNewsPage() {
           const deleteAction = deleteNews.bind(null, post.id)
 
           return (
-            <Card key={post.id}>
+            <Card key={post.id} data-testid={`news-card-${post.id}`}>
               <CardHeader className="gap-2">
                 <CardTitle className="text-xl">{post.title}</CardTitle>
                 <p className="text-sm text-muted-foreground">

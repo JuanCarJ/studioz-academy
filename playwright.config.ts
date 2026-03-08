@@ -1,24 +1,36 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const baseURL =
-  process.env.PLAYWRIGHT_BASE_URL ||
-  process.env.NEXT_PUBLIC_APP_URL ||
-  "http://127.0.0.1:3000"
+import { loadLocalEnv } from "./e2e/support/env"
 
-const useExistingServer =
-  process.env.PLAYWRIGHT_USE_EXISTING_SERVER === "1" ||
-  !baseURL.includes("127.0.0.1")
+loadLocalEnv()
+
+const baseURL =
+  process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000"
+
+const useExistingServer = process.env.PLAYWRIGHT_USE_EXISTING_SERVER === "1"
+const vercelBypassSecret =
+  process.env.PLAYWRIGHT_VERCEL_BYPASS_SECRET ||
+  process.env.VERCEL_AUTOMATION_BYPASS_SECRET ||
+  process.env.VERCEL_PROTECTION_BYPASS_SECRET
 
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global.setup.ts",
   timeout: 60_000,
   expect: {
     timeout: 10_000,
   },
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
+    extraHTTPHeaders: vercelBypassSecret
+      ? {
+          "x-vercel-protection-bypass": vercelBypassSecret,
+          "x-vercel-set-bypass-cookie": "true",
+        }
+      : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

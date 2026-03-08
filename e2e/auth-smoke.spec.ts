@@ -23,7 +23,6 @@ test("admin QA puede iniciar sesion y llegar al panel", async ({ page }) => {
   test.skip(!adminEmail || !adminPassword, "Faltan credenciales QA de admin.")
 
   await login(page, adminEmail!, adminPassword!)
-  await page.goto("/admin")
   await expect(page).toHaveURL(/\/admin/)
   await expect(
     page.getByRole("heading", { level: 1, name: /panel de administracion/i })

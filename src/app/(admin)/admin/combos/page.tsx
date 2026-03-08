@@ -35,7 +35,11 @@ export default async function AdminCombosPage() {
           <CardTitle>Nuevo combo</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={createCombo} className="space-y-4">
+          <form
+            action={createCombo}
+            className="space-y-4"
+            data-testid="combo-create-form"
+          >
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Nombre</label>
@@ -106,7 +110,7 @@ export default async function AdminCombosPage() {
               : String(rule.discount_value)
 
           return (
-            <Card key={rule.id}>
+            <Card key={rule.id} data-testid={`combo-card-${rule.id}`}>
               <CardHeader className="gap-2">
                 <CardTitle className="text-xl">{rule.name}</CardTitle>
                 <p className="text-sm text-muted-foreground">
