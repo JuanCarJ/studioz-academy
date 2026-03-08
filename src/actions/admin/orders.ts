@@ -41,6 +41,8 @@ export interface OrderListItem {
   customer_name_snapshot: string
   customer_email_snapshot: string
   total: number
+  discount_amount: number
+  discount_rule_name: string | null
   status: string
   payment_method: string | null
   created_at: string
@@ -49,7 +51,11 @@ export interface OrderListItem {
 }
 
 export interface OrderDetailResult {
-  order: Order & { items: OrderItem[]; payment_events: PaymentEvent[] }
+  order: Order & {
+    items: OrderItem[]
+    payment_events: PaymentEvent[]
+    discount_rule_name: string | null
+  }
 }
 
 export interface SalesSummary {
@@ -81,7 +87,7 @@ export async function getOrders(filters?: {
   let query = supabase
     .from("orders")
     .select(
-      "id, reference, customer_name_snapshot, customer_email_snapshot, total, status, payment_method, created_at, approved_at",
+      "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)",
       { count: "exact" }
     )
     .order("created_at", { ascending: false })
@@ -145,6 +151,10 @@ export async function getOrders(filters?: {
     customer_name_snapshot: o.customer_name_snapshot,
     customer_email_snapshot: o.customer_email_snapshot,
     total: o.total,
+    discount_amount: o.discount_amount,
+    discount_rule_name: Array.isArray(o.discount_rules)
+      ? (o.discount_rules[0]?.name ?? null)
+      : ((o.discount_rules as { name?: string } | null)?.name ?? null),
     status: o.status,
     payment_method: o.payment_method,
     created_at: o.created_at,
@@ -170,7 +180,7 @@ export async function getOrderDetail(
 
   const { data: order, error } = await supabase
     .from("orders")
-    .select("*")
+    .select("*, discount_rules(name)")
     .eq("id", orderId)
     .single()
 
@@ -199,6 +209,9 @@ export async function getOrderDetail(
     order: {
       ...order,
       status: typedStatus,
+      discount_rule_name: Array.isArray(order.discount_rules)
+        ? (order.discount_rules[0]?.name ?? null)
+        : ((order.discount_rules as { name?: string } | null)?.name ?? null),
       items: (items ?? []) as OrderItem[],
       payment_events: (paymentEvents ?? []).map((pe) => ({
         ...pe,

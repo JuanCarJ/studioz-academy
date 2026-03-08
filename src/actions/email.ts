@@ -32,7 +32,13 @@ export async function enqueuePurchaseConfirmation(orderId: string): Promise<void
     )
 
   if (error) {
-    console.error("[email] Failed to enqueue purchase confirmation:", error)
+    console.error(
+      JSON.stringify({
+        scope: "email.enqueuePurchaseConfirmation.error",
+        orderId,
+        error,
+      })
+    )
   }
 }
 
@@ -51,7 +57,13 @@ export async function sendPurchaseConfirmation(orderId: string): Promise<boolean
     .single()
 
   if (orderError || !order) {
-    console.error("[email] Order not found:", orderId, orderError)
+    console.error(
+      JSON.stringify({
+        scope: "email.sendPurchaseConfirmation.orderNotFound",
+        orderId,
+        error: orderError,
+      })
+    )
     return false
   }
 
@@ -78,6 +90,16 @@ export async function sendPurchaseConfirmation(orderId: string): Promise<boolean
       dashboardUrl: `${appUrl}/dashboard`,
     }),
   })
+
+  console.info(
+    JSON.stringify({
+      scope: "email.sendPurchaseConfirmation",
+      orderId,
+      reference: order.reference,
+      recipient: order.customer_email_snapshot,
+      sent: result !== null,
+    })
+  )
 
   return result !== null
 }
@@ -112,7 +134,12 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
     .limit(batchSize)
 
   if (error || !entries) {
-    console.error("[email] Failed to fetch outbox entries:", error)
+    console.error(
+      JSON.stringify({
+        scope: "email.processOutbox.fetchError",
+        error,
+      })
+    )
     return { processed: 0, sent: 0, failed: 0 }
   }
 
@@ -124,6 +151,13 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
       const success = await sendPurchaseConfirmation(entry.order_id)
 
       if (success) {
+        console.info(
+          JSON.stringify({
+            scope: "email.processOutbox.sent",
+            orderId: entry.order_id,
+            outboxId: entry.id,
+          })
+        )
         // Mark as sent
         await supabase
           .from("order_email_outbox")
@@ -141,6 +175,13 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
         const isFinalAttempt = newAttempts >= MAX_ATTEMPTS
 
         if (isFinalAttempt) {
+          console.error(
+            JSON.stringify({
+              scope: "email.processOutbox.finalFailure",
+              orderId: entry.order_id,
+              outboxId: entry.id,
+            })
+          )
           // Mark as failed after max retries
           await supabase
             .from("order_email_outbox")
@@ -154,6 +195,14 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
 
           failed++
         } else {
+          console.warn(
+            JSON.stringify({
+              scope: "email.processOutbox.retryScheduled",
+              orderId: entry.order_id,
+              outboxId: entry.id,
+              attempts: newAttempts,
+            })
+          )
           // Schedule next retry with exponential backoff
           const delayMs = RETRY_DELAY_MS[newAttempts - 1] ?? RETRY_DELAY_MS[RETRY_DELAY_MS.length - 1]
           const nextAttempt = new Date(Date.now() + delayMs).toISOString()
@@ -173,6 +222,16 @@ export async function processEmailOutboxBatch(batchSize = 10): Promise<{
       const errorMessage = err instanceof Error ? err.message : "Unknown error"
       const newAttempts = entry.attempts + 1
       const isFinalAttempt = newAttempts >= MAX_ATTEMPTS
+
+      console.error(
+        JSON.stringify({
+          scope: "email.processOutbox.exception",
+          orderId: entry.order_id,
+          outboxId: entry.id,
+          attempts: newAttempts,
+          error: errorMessage,
+        })
+      )
 
       await supabase
         .from("order_email_outbox")

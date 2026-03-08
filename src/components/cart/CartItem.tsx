@@ -29,6 +29,7 @@ export function CartItem({ item }: { item: CartItemWithCourse }) {
             fill
             className="object-cover"
             sizes="128px"
+            unoptimized
           />
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">

@@ -109,7 +109,7 @@ export function createCheckoutUrl(params: {
   const integrityString = `${params.reference}${params.amountInCents}${currency}${env.WOMPI_INTEGRITY_KEY()}`
   const signature = createHash("sha256").update(integrityString).digest("hex")
 
-  const url = new URL("https://checkout.wompi.co/p/")
+  const url = new URL(env.WOMPI_CHECKOUT_URL())
   url.searchParams.set("public-key", env.WOMPI_PUBLIC_KEY())
   url.searchParams.set("currency", currency)
   url.searchParams.set("amount-in-cents", String(params.amountInCents))
@@ -132,7 +132,7 @@ export async function queryWompiByReference(
 ): Promise<{ status: string; transactionId: string } | null> {
   try {
     const res = await fetch(
-      `https://sandbox.wompi.co/v1/transactions?reference=${encodeURIComponent(reference)}`,
+      `${env.WOMPI_API_BASE_URL()}/transactions?reference=${encodeURIComponent(reference)}`,
       {
         headers: { Authorization: `Bearer ${env.WOMPI_PRIVATE_KEY()}` },
         cache: "no-store",

@@ -6,11 +6,25 @@ import { Badge } from "@/components/ui/badge"
 
 import type { Course, Instructor } from "@/types"
 
+type CourseCardData = Pick<
+  Course,
+  | "id"
+  | "title"
+  | "slug"
+  | "short_description"
+  | "category"
+  | "price"
+  | "is_free"
+  | "thumbnail_url"
+  | "rating_avg"
+  | "reviews_count"
+> & {
+  instructor?: Pick<Instructor, "id" | "full_name">
+  isNew?: boolean
+}
+
 interface CourseCardProps {
-  course: Course & {
-    instructor?: Pick<Instructor, "id" | "full_name">
-    isNew?: boolean
-  }
+  course: CourseCardData
 }
 
 export function CourseCard({ course }: CourseCardProps) {
@@ -28,6 +42,7 @@ export function CourseCard({ course }: CourseCardProps) {
               fill
               className="object-cover transition-transform duration-300 group-hover:scale-105"
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              unoptimized
             />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">

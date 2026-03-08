@@ -212,7 +212,12 @@ export function OrderDetailModal({
               </div>
               {d.discount_amount > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Descuento</span>
+                  <span className="text-muted-foreground">
+                    Descuento
+                    {d.discount_rule_name
+                      ? ` (${d.discount_rule_name})`
+                      : ""}
+                  </span>
                   <span className="text-green-600">
                     -{formatCOP(d.discount_amount)}
                   </span>

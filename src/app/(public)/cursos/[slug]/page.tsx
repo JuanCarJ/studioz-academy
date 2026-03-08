@@ -106,6 +106,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 priority
                 className="object-cover"
                 sizes="(max-width: 1024px) 100vw, 66vw"
+                unoptimized
               />
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">

@@ -56,6 +56,12 @@ function LoginForm() {
 
         <form action={loginWithGoogle}>
           <input type="hidden" name="csrfToken" value={csrfToken} />
+          {redirectTo && (
+            <input type="hidden" name="redirect" value={redirectTo} />
+          )}
+          {addToCart && (
+            <input type="hidden" name="addToCart" value={addToCart} />
+          )}
           <Button
             variant="outline"
             className="w-full"

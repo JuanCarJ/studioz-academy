@@ -6,10 +6,13 @@ import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
+import { createServerClient } from "@/lib/supabase/server"
 import { env } from "@/lib/env"
+import { getBestDiscount } from "@/lib/discounts"
 import { generateReference } from "@/lib/utils"
 import { createCheckoutUrl } from "@/lib/wompi"
 import { getCart } from "@/actions/cart"
+import type { DiscountRule } from "@/types"
 
 /**
  * Compute a deterministic hash of cart contents for idempotency.
@@ -43,9 +46,24 @@ export async function createOrder(): Promise<never> {
 
   const subtotal = paidItems.reduce((acc, item) => acc + item.course.price, 0)
 
-  // Discount placeholder — ready for Inc 4
-  const discountAmount = 0
-  const discountRuleId: string | null = null
+  const supabase = createServiceRoleClient()
+  const rlsClient = await createServerClient()
+  const { data: discountRules } = await rlsClient
+    .from("discount_rules")
+    .select("*")
+    .eq("is_active", true)
+
+  const discount = getBestDiscount(
+    paidItems.map((item) => ({
+      category: item.course.category,
+      price: item.course.price,
+      isFree: item.course.is_free,
+    })),
+    (discountRules ?? []) as DiscountRule[]
+  )
+
+  const discountAmount = discount.amount
+  const discountRuleId = discount.rule?.id ?? null
 
   const total = subtotal - discountAmount
 
@@ -57,8 +75,6 @@ export async function createOrder(): Promise<never> {
   )
 
   const reference = generateReference("SZ")
-
-  const supabase = createServiceRoleClient()
 
   // Idempotency: check for recent pending order with same cart content
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
@@ -166,6 +182,19 @@ export async function createOrder(): Promise<never> {
     orderReference = reference
     orderTotal = total
   }
+
+  console.info(
+    JSON.stringify({
+      scope: "checkout.createOrder",
+      userId: user.id,
+      reference: orderReference,
+      subtotal,
+      discountAmount,
+      discountRuleId,
+      total: orderTotal,
+      itemCount: paidItems.length,
+    })
+  )
 
   // Build Wompi checkout URL and redirect
   const redirectUrl = `${env.APP_URL()}/pago/retorno?reference=${orderReference}`
