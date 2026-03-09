@@ -42,7 +42,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No transaction data" }, { status: 400 })
   }
 
-  const { reference, status: wompiStatus, id: transactionId, payment_method_type } = transaction
+  const {
+    reference,
+    status: wompiStatus,
+    id: transactionId,
+    payment_method_type,
+    amount_in_cents,
+    currency,
+  } = transaction
 
   // 5. Map Wompi status to internal status
   const mappedStatus = mapWompiStatus(String(wompiStatus))
@@ -126,7 +133,7 @@ export async function POST(request: NextRequest) {
   // 7. Find order by reference
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, user_id")
+    .select("id, status, user_id, total, currency")
     .eq("reference", reference)
     .maybeSingle()
 
@@ -135,6 +142,35 @@ export async function POST(request: NextRequest) {
       { error: "Order not found", reference },
       { status: 400 }
     )
+  }
+
+  const amountMatches =
+    typeof amount_in_cents === "number" && amount_in_cents === order.total
+  const currencyMatches =
+    typeof currency === "string" &&
+    currency.toUpperCase() === String(order.currency).toUpperCase()
+
+  if (!amountMatches || !currencyMatches) {
+    const { error: paymentEventError } = await supabase.from("payment_events").insert({
+      order_id: order.id,
+      source: "webhook",
+      payload_hash: payloadHash,
+      payload_json: payloadJson,
+      external_status: String(wompiStatus),
+      mapped_status: mappedStatus,
+      wompi_transaction_id: transactionId,
+      is_applied: false,
+      reason: `Order mismatch: expected ${order.total} ${order.currency}, received ${String(amount_in_cents)} ${String(currency)}`,
+    })
+
+    if (paymentEventError) {
+      return NextResponse.json(
+        { error: "Failed to persist mismatched payment event" },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ received: true, applied: false, reason: "order_mismatch" })
   }
 
   // 8. Validate state transition

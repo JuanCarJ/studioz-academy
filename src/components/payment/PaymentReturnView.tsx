@@ -12,6 +12,7 @@ import type { Order } from "@/types"
 
 interface PaymentReturnViewProps {
   reference: string
+  transactionId?: string
   initialOrder: Order | null
   orderItems?: OrderItem[]
   isFirstPurchase?: boolean
@@ -21,6 +22,7 @@ const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
 
 export function PaymentReturnView({
   reference,
+  transactionId,
   initialOrder,
   orderItems: initialOrderItems,
   isFirstPurchase: initialIsFirst,
@@ -48,7 +50,7 @@ export function PaymentReturnView({
 
   function handleRefresh() {
     startTransition(async () => {
-      const result = await getOrderStatusWithFallback(reference)
+      const result = await getOrderStatusWithFallback(reference, transactionId)
       if (result.order) {
         setOrder(result.order)
         if (result.orderItems) setOrderItems(result.orderItems)

@@ -2,6 +2,7 @@
 
 import { createHash } from "crypto"
 
+import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
@@ -27,6 +28,27 @@ function computeCartHash(
   )
   const payload = sorted.map((i) => `${i.courseId}:${i.price}`).join(",")
   return createHash("sha256").update(payload).digest("hex")
+}
+
+function parseCustomerPhone(
+  phone: string | null | undefined
+): { phoneNumber: string | null; phonePrefix: string | null } {
+  if (!phone) {
+    return { phoneNumber: null, phonePrefix: null }
+  }
+
+  const normalized = phone.replace(/\s+/g, "")
+  const withPlus = normalized.startsWith("+") ? normalized : `+${normalized}`
+  const match = withPlus.match(/^(\+\d{1,4})(\d{6,14})$/)
+
+  if (!match) {
+    return { phoneNumber: null, phonePrefix: null }
+  }
+
+  return {
+    phonePrefix: match[1],
+    phoneNumber: match[2],
+  }
 }
 
 export async function createOrder(): Promise<never> {
@@ -188,6 +210,8 @@ export async function createOrder(): Promise<never> {
     JSON.stringify({
       scope: "checkout.createOrder",
       userId: user.id,
+      requestIp:
+        (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       reference: orderReference,
       subtotal,
       discountAmount,
@@ -198,6 +222,7 @@ export async function createOrder(): Promise<never> {
   )
 
   // Build Wompi checkout URL and redirect
+  const { phoneNumber, phonePrefix } = parseCustomerPhone(user.phone)
   const redirectUrl = withVercelProtectionBypass(
     `${env.APP_URL()}/pago/retorno?reference=${orderReference}`,
     { setCookie: true }
@@ -206,6 +231,10 @@ export async function createOrder(): Promise<never> {
     reference: orderReference,
     amountInCents: orderTotal,
     redirectUrl,
+    customerEmail: user.email,
+    customerFullName: user.full_name,
+    customerPhoneNumber: phoneNumber,
+    customerPhoneNumberPrefix: phonePrefix,
   })
 
   redirect(checkoutUrl)
