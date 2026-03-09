@@ -36,6 +36,24 @@ function isAuthRoute(path: string): boolean {
   )
 }
 
+function copySupabaseCookies(
+  targetResponse: NextResponse,
+  sourceResponse: NextResponse
+) {
+  sourceResponse.cookies.getAll().forEach((cookie) => {
+    targetResponse.cookies.set(cookie)
+  })
+
+  return targetResponse
+}
+
+function redirectWithSupabaseCookies(
+  url: URL,
+  sourceResponse: NextResponse
+) {
+  return copySupabaseCookies(NextResponse.redirect(url), sourceResponse)
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
 
@@ -84,7 +102,10 @@ export async function proxy(request: NextRequest) {
         .single()
 
       const dest = profile?.role === "admin" ? "/admin" : "/dashboard"
-      return NextResponse.redirect(new URL(dest, request.url))
+      return redirectWithSupabaseCookies(
+        new URL(dest, request.url),
+        supabaseResponse
+      )
     }
     return supabaseResponse
   }
@@ -93,7 +114,7 @@ export async function proxy(request: NextRequest) {
   if (!user) {
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("redirect", path)
-    return NextResponse.redirect(loginUrl)
+    return redirectWithSupabaseCookies(loginUrl, supabaseResponse)
   }
 
   // Admin routes: require admin role
@@ -105,7 +126,10 @@ export async function proxy(request: NextRequest) {
       .single()
 
     if (profile?.role !== "admin") {
-      return NextResponse.redirect(new URL("/dashboard", request.url))
+      return redirectWithSupabaseCookies(
+        new URL("/dashboard", request.url),
+        supabaseResponse
+      )
     }
   }
 
