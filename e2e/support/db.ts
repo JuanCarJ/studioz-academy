@@ -53,6 +53,8 @@ const supabase = createClient(
   }
 )
 
+export const e2eSupabase = supabase
+
 function payloadHash(payload: string) {
   return createHash("sha256").update(payload).digest("hex")
 }
@@ -796,6 +798,77 @@ export async function resetCourseProgressForEmail(input: {
   )
 
   if (progressError) throw progressError
+}
+
+export async function deleteCourseProgressForEmail(input: {
+  email: string
+  courseId: string
+}) {
+  const profile = await getProfileByEmail(input.email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${input.email}`)
+  }
+
+  const { error } = await supabase
+    .from("course_progress")
+    .delete()
+    .eq("user_id", profile.authUser.id)
+    .eq("course_id", input.courseId)
+
+  if (error) throw error
+}
+
+export async function upsertCourseProgressForEmail(input: {
+  email: string
+  courseId: string
+  lastLessonId?: string | null
+  completedLessons?: number
+  isCompleted?: boolean
+  lastAccessedAt?: string
+}) {
+  const profile = await getProfileByEmail(input.email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${input.email}`)
+  }
+
+  const { error } = await supabase.from("course_progress").upsert(
+    {
+      user_id: profile.authUser.id,
+      course_id: input.courseId,
+      last_lesson_id: input.lastLessonId ?? null,
+      completed_lessons: input.completedLessons ?? 0,
+      is_completed: input.isCompleted ?? false,
+      last_accessed_at: input.lastAccessedAt ?? fixedNow,
+    },
+    { onConflict: "user_id,course_id" }
+  )
+
+  if (error) throw error
+}
+
+export async function upsertLessonCompletionForEmail(input: {
+  email: string
+  lessonId: string
+  completed: boolean
+  position?: number
+}) {
+  const profile = await getProfileByEmail(input.email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${input.email}`)
+  }
+
+  const { error } = await supabase.from("lesson_progress").upsert(
+    {
+      user_id: profile.authUser.id,
+      lesson_id: input.lessonId,
+      completed: input.completed,
+      completed_at: input.completed ? fixedNow : null,
+      video_position: input.position ?? 0,
+    },
+    { onConflict: "user_id,lesson_id" }
+  )
+
+  if (error) throw error
 }
 
 export async function upsertLessonVideoPositionForEmail(input: {

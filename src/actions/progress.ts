@@ -1,6 +1,7 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { resolveEffectiveCourseProgress } from "@/lib/course-progress"
 import { createServerClient } from "@/lib/supabase/server"
 import {
   persistCourseLastAccess,
@@ -98,11 +99,16 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
     lessonProgressIds.length > 0
       ? await supabase
           .from("lesson_progress")
-          .select("lesson_id, video_position")
+          .select("lesson_id, completed, video_position")
           .eq("user_id", user.id)
-          .gt("video_position", 0)
           .in("lesson_id", lessonProgressIds)
-      : { data: [] as Array<{ lesson_id: string; video_position: number | null }> }
+      : {
+          data: [] as Array<{
+            lesson_id: string
+            completed: boolean | null
+            video_position: number | null
+          }>,
+        }
 
   // Build lesson count map
   const lessonCountMap = new Map<string, number>()
@@ -110,11 +116,24 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
     lessonCountMap.set(lesson.course_id, (lessonCountMap.get(lesson.course_id) ?? 0) + 1)
   }
 
+  const courseLessonIdsMap = new Map<string, Set<string>>()
+  for (const lesson of lessonsData ?? []) {
+    const existingIds = courseLessonIdsMap.get(lesson.course_id) ?? new Set<string>()
+    existingIds.add(lesson.id)
+    courseLessonIdsMap.set(lesson.course_id, existingIds)
+  }
+
   const courseIdsWithVideoProgress = new Set<string>()
+  const completedLessonCountMap = new Map<string, number>()
   for (const lessonProgress of lessonProgressData ?? []) {
     const courseId = lessonIdToCourseId.get(lessonProgress.lesson_id)
     if (courseId) {
-      courseIdsWithVideoProgress.add(courseId)
+      if ((lessonProgress.video_position ?? 0) > 0) {
+        courseIdsWithVideoProgress.add(courseId)
+      }
+      if (lessonProgress.completed) {
+        completedLessonCountMap.set(courseId, (completedLessonCountMap.get(courseId) ?? 0) + 1)
+      }
     }
   }
 
@@ -139,7 +158,21 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
 
       const totalLessons = lessonCountMap.get(course.id) ?? 0
       const progress = progressMap.get(course.id)
-      const completedLessons = progress?.completed_lessons ?? 0
+      const effectiveProgress = resolveEffectiveCourseProgress({
+        totalLessons,
+        actualCompletedLessons: completedLessonCountMap.get(course.id) ?? 0,
+        persistedProgress: progress
+          ? {
+              completed_lessons: progress.completed_lessons,
+              is_completed: progress.is_completed,
+            }
+          : null,
+      })
+      const validLessonIds = courseLessonIdsMap.get(course.id) ?? new Set<string>()
+      const lastLessonId =
+        progress?.last_lesson_id && validLessonIds.has(progress.last_lesson_id)
+          ? progress.last_lesson_id
+          : null
 
       return {
         course: {
@@ -153,11 +186,11 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
           totalLessons,
         },
         progress: {
-          completedLessons,
+          completedLessons: effectiveProgress.completedLessons,
           totalLessons,
-          percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
-          isCompleted: progress?.is_completed ?? false,
-          lastLessonId: progress?.last_lesson_id ?? null,
+          percentage: effectiveProgress.percentage,
+          isCompleted: effectiveProgress.isCompleted,
+          lastLessonId,
           hasVideoProgress: courseIdsWithVideoProgress.has(course.id),
           lastAccessedAt: progress?.last_accessed_at ?? e.enrolled_at,
         },

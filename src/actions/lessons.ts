@@ -1,9 +1,8 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
-
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { resolveLessonAssetState } from "@/lib/bunny"
+import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { generateSignedUrl } from "@/lib/bunny"
@@ -149,24 +148,19 @@ export async function markComplete(
   if (!user) return { error: "AUTH_REQUIRED" }
 
   const supabase = await createServerClient()
+  const lessonAccess = await resolveEnrolledLessonAccess({
+    supabase,
+    userId: user.id,
+    lessonId,
+  })
 
-  // Verify enrollment
-  const { data: lesson } = await supabase
-    .from("lessons")
-    .select("id, course_id, courses(slug)")
-    .eq("id", lessonId)
-    .single()
+  if (!lessonAccess.ok) {
+    if (lessonAccess.reason === "lesson_not_found") {
+      return { error: "Leccion no encontrada." }
+    }
 
-  if (!lesson) return { error: "Leccion no encontrada." }
-
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", lesson.course_id)
-    .maybeSingle()
-
-  if (!enrollment) return { error: "No estas inscrito." }
+    return { error: "No estas inscrito." }
+  }
 
   const adminClient = createServiceRoleClient()
   const now = new Date().toISOString()
@@ -182,51 +176,15 @@ export async function markComplete(
     { onConflict: "user_id,lesson_id" }
   )
 
-  // Recalculate course progress
-  const { count: completedCount } = await adminClient
-    .from("lesson_progress")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("completed", true)
-    .in(
-      "lesson_id",
-      (
-        await adminClient
-          .from("lessons")
-          .select("id")
-          .eq("course_id", lesson.course_id)
-      ).data?.map((l) => l.id) ?? []
-    )
-
-  const { count: totalLessons } = await adminClient
-    .from("lessons")
-    .select("id", { count: "exact", head: true })
-    .eq("course_id", lesson.course_id)
-
-  const isCompleted =
-    (completedCount ?? 0) > 0 &&
-    totalLessons != null &&
-    (completedCount ?? 0) >= totalLessons
-
-  await adminClient.from("course_progress").upsert(
-    {
-      user_id: user.id,
-      course_id: lesson.course_id,
-      last_lesson_id: lessonId,
-      completed_lessons: completedCount ?? 0,
-      is_completed: isCompleted,
-      last_accessed_at: now,
-    },
-    { onConflict: "user_id,course_id" }
-  )
-
-  const courseSlug = Array.isArray(lesson.courses)
-    ? lesson.courses[0]?.slug
-    : (lesson.courses as { slug: string })?.slug
-
-  if (courseSlug) {
-    revalidatePath(`/dashboard/cursos/${courseSlug}`)
-  }
+  await syncCourseProgressSnapshot({
+    supabase: adminClient,
+    userId: user.id,
+    courseId: lessonAccess.courseId,
+    courseSlug: lessonAccess.courseSlug,
+    lastLessonId: lessonId,
+    lastAccessedAt: now,
+  })
+  revalidateVideoProgressPaths(lessonAccess.courseSlug)
 
   return {}
 }
@@ -242,23 +200,19 @@ export async function markIncomplete(
   if (!user) return { error: "AUTH_REQUIRED" }
 
   const supabase = await createServerClient()
+  const lessonAccess = await resolveEnrolledLessonAccess({
+    supabase,
+    userId: user.id,
+    lessonId,
+  })
 
-  const { data: lesson } = await supabase
-    .from("lessons")
-    .select("id, course_id, courses(slug)")
-    .eq("id", lessonId)
-    .single()
+  if (!lessonAccess.ok) {
+    if (lessonAccess.reason === "lesson_not_found") {
+      return { error: "Leccion no encontrada." }
+    }
 
-  if (!lesson) return { error: "Leccion no encontrada." }
-
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", lesson.course_id)
-    .maybeSingle()
-
-  if (!enrollment) return { error: "No estas inscrito." }
+    return { error: "No estas inscrito." }
+  }
 
   const adminClient = createServiceRoleClient()
 
@@ -269,40 +223,15 @@ export async function markIncomplete(
     .eq("user_id", user.id)
     .eq("lesson_id", lessonId)
 
-  // Recalculate course progress
-  const { count: completedCount } = await adminClient
-    .from("lesson_progress")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("completed", true)
-    .in(
-      "lesson_id",
-      (
-        await adminClient
-          .from("lessons")
-          .select("id")
-          .eq("course_id", lesson.course_id)
-      ).data?.map((l) => l.id) ?? []
-    )
-
-  await adminClient.from("course_progress").upsert(
-    {
-      user_id: user.id,
-      course_id: lesson.course_id,
-      completed_lessons: completedCount ?? 0,
-      is_completed: false,
-      last_accessed_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,course_id" }
-  )
-
-  const courseSlug = Array.isArray(lesson.courses)
-    ? lesson.courses[0]?.slug
-    : (lesson.courses as { slug: string })?.slug
-
-  if (courseSlug) {
-    revalidatePath(`/dashboard/cursos/${courseSlug}`)
-  }
+  await syncCourseProgressSnapshot({
+    supabase: adminClient,
+    userId: user.id,
+    courseId: lessonAccess.courseId,
+    courseSlug: lessonAccess.courseSlug,
+    lastLessonId: lessonId,
+    touchLastAccess: true,
+  })
+  revalidateVideoProgressPaths(lessonAccess.courseSlug)
 
   return {}
 }

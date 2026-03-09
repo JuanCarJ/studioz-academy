@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createBunnyVideo, deleteBunnyVideo } from "@/lib/bunny"
+import { syncCourseProgressForEnrolledUsers } from "@/lib/course-progress"
 import { env } from "@/lib/env"
 
 import type { Lesson } from "@/types"
@@ -70,8 +71,6 @@ export async function createLesson(
   const title = (formData.get("title") as string)?.trim()
   const description = (formData.get("description") as string)?.trim() || null
   const isFree = formData.get("isFree") === "on"
-  const durationRaw = formData.get("durationSeconds") as string
-  const durationSeconds = durationRaw ? Math.round(Number(durationRaw)) : 0
 
   if (!title) {
     return { error: "El titulo de la leccion es obligatorio." }
@@ -112,7 +111,7 @@ export async function createLesson(
     bunny_status: "processing",
     pending_bunny_status: "none",
     video_upload_error: null,
-    duration_seconds: durationSeconds,
+    duration_seconds: 0,
     sort_order: nextSortOrder,
   })
 
@@ -125,7 +124,14 @@ export async function createLesson(
   revalidatePath(`/admin/cursos/${courseId}/editar`)
   revalidatePath(`/cursos`)
 
-  await recalculateCourseProgress(adminSupabase, courseId)
+  const { courseSlug } = await syncCourseProgressForEnrolledUsers({
+    supabase: adminSupabase,
+    courseId,
+  })
+  revalidatePath("/dashboard")
+  if (courseSlug) {
+    revalidatePath(`/dashboard/cursos/${courseSlug}`)
+  }
 
   const { data: lesson } = await adminSupabase
     .from("lessons")
@@ -153,8 +159,6 @@ export async function updateLesson(
   const title = (formData.get("title") as string)?.trim()
   const description = (formData.get("description") as string)?.trim() || null
   const isFree = formData.get("isFree") === "on"
-  const durationRaw = formData.get("durationSeconds") as string
-  const durationSeconds = durationRaw ? Math.round(Number(durationRaw)) : undefined
 
   if (!title) {
     return { error: "El titulo de la leccion es obligatorio." }
@@ -175,10 +179,6 @@ export async function updateLesson(
     title,
     description,
     is_free: isFree,
-  }
-
-  if (durationSeconds !== undefined && !isNaN(durationSeconds)) {
-    updateData.duration_seconds = durationSeconds
   }
 
   const { error } = await adminSupabase
@@ -336,8 +336,8 @@ export async function discardPreparedVideo(videoId: string): Promise<void> {
  *
  * Cascade order:
  *   1. Delete lesson_progress rows for this lesson
- *   2. Recalculate course_progress for all enrolled students
- *   3. Delete the lesson row (triggers DB cascades if configured)
+ *   2. Delete the lesson row (triggers DB cascades if configured)
+ *   3. Recalculate course_progress for all enrolled students
  *   4. Delete Bunny video (best-effort)
  *   5. Revalidate
  */
@@ -378,7 +378,10 @@ export async function deleteLesson(
   }
 
   // Step 3: Recalculate course_progress for all enrolled students in this course
-  await recalculateCourseProgress(adminSupabase, courseId)
+  const { courseSlug } = await syncCourseProgressForEnrolledUsers({
+    supabase: adminSupabase,
+    courseId,
+  })
 
   // Step 4: Delete Bunny video (best-effort — do not fail the action if this errors)
   if (bunnyVideoId) {
@@ -391,6 +394,10 @@ export async function deleteLesson(
 
   revalidatePath(`/admin/cursos/${courseId}/editar`)
   revalidatePath(`/cursos`)
+  revalidatePath("/dashboard")
+  if (courseSlug) {
+    revalidatePath(`/dashboard/cursos/${courseSlug}`)
+  }
 
   return { success: true }
 }
@@ -427,72 +434,4 @@ export async function reorderLessons(
   revalidatePath(`/cursos`)
 
   return { success: true }
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Recalculate course_progress.completed_lessons for all students enrolled
- * in a given course after a lesson deletion.
- */
-async function recalculateCourseProgress(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  courseId: string
-): Promise<void> {
-  // Get remaining lesson IDs for this course
-  const { data: remainingLessons } = await supabase
-    .from("lessons")
-    .select("id")
-    .eq("course_id", courseId)
-
-  const remainingIds: string[] =
-    (remainingLessons ?? []).map((l: { id: string }) => l.id)
-
-  const totalRemaining = remainingIds.length
-
-  // Get all course_progress rows for this course
-  const { data: progressRows } = await supabase
-    .from("course_progress")
-    .select("id, user_id, last_lesson_id")
-    .eq("course_id", courseId)
-
-  if (!progressRows || progressRows.length === 0) return
-
-  for (const progress of progressRows as {
-    id: string
-    user_id: string
-    last_lesson_id: string | null
-  }[]) {
-    // Count completed lessons that still exist
-    let completedCount = 0
-    if (remainingIds.length > 0) {
-      const { count } = await supabase
-        .from("lesson_progress")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", progress.user_id)
-        .eq("completed", true)
-        .in("lesson_id", remainingIds)
-
-      completedCount = count ?? 0
-    }
-
-    const isCompleted =
-      totalRemaining > 0 && completedCount === totalRemaining
-
-    // If last_lesson_id was the deleted lesson, clear it
-    const lastLessonId =
-      progress.last_lesson_id && remainingIds.includes(progress.last_lesson_id)
-        ? progress.last_lesson_id
-        : null
-
-    await supabase
-      .from("course_progress")
-      .update({
-        completed_lessons: completedCount,
-        is_completed: isCompleted,
-        last_lesson_id: lastLessonId,
-      })
-      .eq("id", progress.id)
-  }
 }
