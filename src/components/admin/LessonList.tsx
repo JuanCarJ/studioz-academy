@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 
 import { deleteLesson, reorderLessons } from "@/actions/admin/lessons"
+import { refreshCourseMediaStatus } from "@/actions/admin/media"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,6 +43,33 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
   const [deletingLesson, setDeletingLesson] = useState<Lesson | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDeleting, startDeleteTransition] = useTransition()
+
+  useEffect(() => {
+    setLessons(initialLessons)
+  }, [initialLessons])
+
+  const shouldPoll = lessons.some(
+    (lesson) =>
+      lesson.bunny_status === "processing" ||
+      lesson.pending_bunny_status === "processing"
+  )
+
+  useEffect(() => {
+    if (!shouldPoll) return
+
+    const intervalId = window.setInterval(() => {
+      startTransition(async () => {
+        const result = await refreshCourseMediaStatus(courseId)
+        if (result.lessons) {
+          setLessons(result.lessons)
+        }
+      })
+    }, 10_000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [courseId, shouldPoll, startTransition])
 
   // ── Reorder ────────────────────────────────────────────────────────────────
 
@@ -105,6 +133,7 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
         {lessons.map((lesson, index) => (
           <li
             key={lesson.id}
+            data-testid={`lesson-row-${lesson.id}`}
             className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
           >
             {/* Sort order indicator */}
@@ -115,9 +144,16 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
             {/* Lesson info */}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{lesson.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {formatDuration(lesson.duration_seconds)}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {formatDuration(lesson.duration_seconds)}
+                </p>
+                {lesson.video_upload_error && (
+                  <p className="text-xs text-destructive">
+                    {lesson.video_upload_error}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* is_free badge */}
@@ -126,6 +162,13 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
                 Gratis
               </Badge>
             )}
+
+            <Badge
+              data-testid="lesson-status"
+              className={`shrink-0 text-xs ${getLessonStatusBadge(lesson)}`}
+            >
+              {getLessonStatusLabel(lesson)}
+            </Badge>
 
             {/* Reorder buttons */}
             <div className="flex shrink-0 gap-1">
@@ -186,8 +229,9 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
           <DialogHeader>
             <DialogTitle>Editar leccion</DialogTitle>
             <DialogDescription>
-              Actualiza los datos de la leccion. El video no puede ser
-              reemplazado desde aqui.
+              Actualiza los datos de la leccion. Si reemplazas el video, el
+              actual seguira disponible hasta que Bunny termine de procesar el
+              nuevo.
             </DialogDescription>
           </DialogHeader>
 
@@ -196,10 +240,11 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
               courseId={courseId}
               lesson={editingLesson}
               onSuccess={() => {
-                // Refresh the edited lesson in local state
                 startTransition(async () => {
-                  // Re-fetch is handled via revalidatePath on the server.
-                  // Close dialog; the page will refresh on next navigation.
+                  const result = await refreshCourseMediaStatus(courseId)
+                  if (result.lessons) {
+                    setLessons(result.lessons)
+                  }
                   setEditingLesson(null)
                 })
               }}
@@ -268,4 +313,44 @@ function formatDuration(seconds: number): string {
   const s = seconds % 60
   if (m === 0) return `${s}s`
   return s === 0 ? `${m} min` : `${m}:${String(s).padStart(2, "0")} min`
+}
+
+function getLessonStatusLabel(lesson: Lesson): string {
+  if (
+    lesson.pending_bunny_video_id &&
+    lesson.pending_bunny_status === "processing"
+  ) {
+    return "Reemplazando"
+  }
+
+  if (
+    lesson.pending_bunny_video_id &&
+    lesson.pending_bunny_status === "error"
+  ) {
+    return "Error"
+  }
+
+  if (lesson.bunny_status === "processing") {
+    return "Procesando"
+  }
+
+  if (lesson.bunny_status === "error") {
+    return "Error"
+  }
+
+  return "Listo"
+}
+
+function getLessonStatusBadge(lesson: Lesson): string {
+  const label = getLessonStatusLabel(lesson)
+
+  if (label === "Listo") {
+    return "bg-green-600 text-white hover:bg-green-600"
+  }
+
+  if (label === "Procesando" || label === "Reemplazando") {
+    return "bg-amber-500 text-white hover:bg-amber-500"
+  }
+
+  return "bg-destructive text-white hover:bg-destructive"
 }

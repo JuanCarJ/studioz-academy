@@ -5,6 +5,7 @@ import Image from "next/image"
 
 import { createCourse, updateCourse } from "@/actions/admin/courses"
 import type { CourseActionState } from "@/actions/admin/courses"
+import { CoursePreviewManager } from "@/components/admin/CoursePreviewManager"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -171,16 +172,15 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="previewVideoUrl">URL video preview (opcional)</Label>
-        <Input
-          id="previewVideoUrl"
-          name="previewVideoUrl"
-          type="url"
-          placeholder="https://..."
-          defaultValue={course?.preview_video_url ?? ""}
-        />
-      </div>
+      {isEditing ? (
+        <CoursePreviewManager course={course} />
+      ) : (
+        <div className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+          Crea el curso primero y luego agrega la vista previa desde editar
+          curso. La portada se configura aqui, pero el preview en video ahora
+          se administra desde Bunny.
+        </div>
+      )}
 
       {isEditing && (
         <div className="flex items-center gap-2 rounded-lg border p-4">

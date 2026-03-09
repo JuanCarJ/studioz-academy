@@ -37,6 +37,7 @@ interface PlayerViewProps {
   lessons: LessonInfo[]
   activeLessonId: string
   initialSignedUrl: string
+  initialPlaybackMessage?: string
   initialPosition?: number
 }
 
@@ -67,10 +68,12 @@ export function PlayerView({
   lessons,
   activeLessonId,
   initialSignedUrl,
+  initialPlaybackMessage = "",
   initialPosition = 0,
 }: PlayerViewProps) {
   const [activeId, setActiveId] = useState(activeLessonId)
   const [signedUrl, setSignedUrl] = useState(initialSignedUrl)
+  const [playerMessage, setPlayerMessage] = useState(initialPlaybackMessage)
   const [videoPosition, setVideoPosition] = useState(initialPosition)
   const [isPending, startTransition] = useTransition()
   const [completedIds, setCompletedIds] = useState<Set<string>>(
@@ -167,6 +170,10 @@ export function PlayerView({
 
       if (urlResult.url) {
         setSignedUrl(urlResult.url)
+        setPlayerMessage("")
+      } else {
+        setSignedUrl("")
+        setPlayerMessage(urlResult.error ?? "El video no esta disponible.")
       }
       setVideoPosition(posResult.position)
       currentTimeRef.current = posResult.position
@@ -281,12 +288,20 @@ export function PlayerView({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Video column */}
         <div className="lg:col-span-2 space-y-3">
-          <VideoPlayer
-            signedUrl={signedUrl}
-            initialPosition={videoPosition}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleVideoEnded}
-          />
+          {signedUrl ? (
+            <VideoPlayer
+              signedUrl={signedUrl}
+              initialPosition={videoPosition}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleVideoEnded}
+            />
+          ) : (
+            <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
+              <p className="max-w-md text-sm text-muted-foreground">
+                {playerMessage || "Selecciona una leccion para comenzar."}
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold truncate">

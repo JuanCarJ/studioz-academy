@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
-import { generateSignedUrl } from "@/lib/bunny"
+import { generateSignedUrl, resolveLessonAssetState } from "@/lib/bunny"
 import { PlayerView } from "@/components/courses/PlayerView"
 
 import type { Lesson } from "@/types"
@@ -92,8 +92,15 @@ export default async function CoursePlayerPage({
 
   // Generate signed URL for active lesson
   let initialSignedUrl = ""
+  let initialPlaybackMessage = ""
   if (activeLesson?.bunny_video_id) {
-    initialSignedUrl = generateSignedUrl(activeLesson.bunny_video_id)
+    const playbackState = resolveLessonAssetState(activeLesson)
+    if (playbackState.isPlayable) {
+      initialSignedUrl = generateSignedUrl(activeLesson.bunny_video_id)
+    } else {
+      initialPlaybackMessage =
+        playbackState.message ?? "El video todavia no esta listo."
+    }
   }
 
   // Restore saved video position for the active lesson (0 if none saved)
@@ -123,6 +130,7 @@ export default async function CoursePlayerPage({
         }))}
         activeLessonId={activeLesson?.id ?? ""}
         initialSignedUrl={initialSignedUrl}
+        initialPlaybackMessage={initialPlaybackMessage}
         initialPosition={initialPosition}
       />
 

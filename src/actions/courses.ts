@@ -1,10 +1,12 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { resolveCoursePreview } from "@/lib/bunny"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
 import type { Course, Instructor, Lesson } from "@/types"
+import type { ResolvedCoursePreview } from "@/lib/bunny"
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -155,6 +157,7 @@ export interface CourseDetail extends Course {
   enrollmentCount: number
   isEnrolled: boolean
   isInCart: boolean
+  resolvedPreview: ResolvedCoursePreview
 }
 
 export async function getCourseBySlug(
@@ -225,6 +228,7 @@ export async function getCourseBySlug(
     enrollmentCount: enrollmentCount ?? 0,
     isEnrolled,
     isInCart,
+    resolvedPreview: resolveCoursePreview(course as Course),
   } as CourseDetail
 }
 

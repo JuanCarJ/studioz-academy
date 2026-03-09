@@ -6,9 +6,11 @@ import {
   commitLessonVideoReplacement,
   createLesson,
   discardPreparedVideo,
+  markLessonUploadFailed,
   prepareLessonVideoReplacement,
   updateLesson,
 } from "@/actions/admin/lessons"
+import { uploadToBunnyProxy } from "@/components/admin/bunny-upload"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,11 +33,11 @@ type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error"
  * Create flow:
  *   1. Submit form → Server Action creates Bunny entry, returns uploadUrl
  *   2. Component uploads file bytes directly to Bunny PUT endpoint
- *   3. Calls onSuccess when done
+ *   3. Persists the lesson as "processing" until Bunny finishes
  *
  * Edit flow:
  *   1. Submit form → Server Action updates metadata
- *   2. If "reemplazar video", prepara nuevo video, sube bytes y confirma swap
+ *   2. If "reemplazar video", prepara nuevo video, sube bytes y lo deja pendiente
  *   3. Calls onSuccess when done
  */
 export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
@@ -81,10 +83,13 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           setPhase("uploading")
 
           try {
-            await uploadToBunnyDirect(createResult.uploadUrl, file, (progress) => {
+            await uploadToBunnyProxy(createResult.uploadUrl, file, (progress) => {
               setUploadProgress(progress)
             })
           } catch {
+            if (createResult.lessonId) {
+              await markLessonUploadFailed(createResult.lessonId)
+            }
             setErrorMsg(
               "La leccion fue creada pero el video no pudo ser cargado. Intenta subir el video de nuevo."
             )
@@ -129,7 +134,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
 
         setPhase("uploading")
         try {
-          await uploadToBunnyDirect(prepareResult.uploadUrl, file, (progress) => {
+          await uploadToBunnyProxy(prepareResult.uploadUrl, file, (progress) => {
             setUploadProgress(progress)
           })
         } catch {
@@ -170,8 +175,8 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
       {phase === "done" && (
         <div className="rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-700">
           {isEditing
-            ? "Leccion actualizada exitosamente."
-            : "Leccion creada exitosamente."}
+            ? "Cambios guardados. Bunny esta procesando el video si cargaste uno nuevo."
+            : "Leccion creada. Bunny esta procesando el video."}
         </div>
       )}
 
@@ -280,7 +285,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
                 Reemplazar video
               </Label>
               <p className="text-xs text-muted-foreground">
-                El video anterior sera eliminado y reemplazado por uno nuevo.
+                El video actual seguira activo mientras Bunny procesa el nuevo.
               </p>
             </div>
           </div>
@@ -310,7 +315,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
       {phase === "uploading" && (
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">
-            Cargando video... {uploadProgress}%
+            Subiendo archivo... {uploadProgress}%
           </p>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
@@ -331,7 +336,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
         <Button type="submit" disabled={isLoading}>
           {isLoading
             ? phase === "uploading"
-              ? "Subiendo video..."
+              ? "Subiendo archivo..."
               : phase === "creating"
                 ? "Preparando..."
                 : "Guardando..."
@@ -342,53 +347,4 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
       </div>
     </form>
   )
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Upload a file directly to Bunny Stream via XHR so we can track progress.
- * Bunny expects a PUT request with the raw file bytes and the AccessKey header.
- *
- * NOTE: The AccessKey sent here is the BUNNY_API_KEY. This is a server-side
- * secret. The uploadUrl is returned by the Server Action and the actual key
- * is NOT exposed here. The client just does a PUT to the URL without extra
- * auth headers — Bunny authenticates via the signed URL structure from the
- * Server Action. If Bunny requires the AccessKey on the PUT, this should be
- * proxied through a Server Action instead.
- *
- * For now, we PUT directly to the Bunny URL returned by the server. If Bunny
- * rejects unauthenticated PUTs we will route through a Next.js API Route.
- */
-async function uploadToBunnyDirect(
-  uploadUrl: string,
-  file: File,
-  onProgress: (percent: number) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-
-    xhr.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100)
-        onProgress(percent)
-      }
-    })
-
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100)
-        resolve()
-      } else {
-        reject(new Error(`Bunny upload failed with status ${xhr.status}`))
-      }
-    })
-
-    xhr.addEventListener("error", () => {
-      reject(new Error("Bunny upload network error"))
-    })
-
-    xhr.open("PUT", uploadUrl)
-    xhr.send(file)
-  })
 }

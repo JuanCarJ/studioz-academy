@@ -8,6 +8,10 @@
     {
       "path": "/api/jobs/email/outbox",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/bunny/reconcile",
+      "schedule": "*/1 * * * *"
     }
   ]
 }
