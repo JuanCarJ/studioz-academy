@@ -18,12 +18,11 @@ import {
   Menu,
 } from "lucide-react"
 
-import { logout } from "@/actions/auth"
 import { cn } from "@/lib/utils"
+import { LogoutForm } from "@/components/layout/LogoutForm"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
-import { useCsrfToken } from "@/hooks/use-csrf-token"
 import {
   Sheet,
   SheetContent,
@@ -51,11 +50,10 @@ interface AdminUserInfo {
 }
 
 interface SidebarContentProps {
-  csrfToken: string
   userInfo: AdminUserInfo | null
 }
 
-function SidebarContent({ csrfToken, userInfo }: SidebarContentProps) {
+function SidebarContent({ userInfo }: SidebarContentProps) {
   const pathname = usePathname()
 
   return (
@@ -125,17 +123,15 @@ function SidebarContent({ csrfToken, userInfo }: SidebarContentProps) {
           <ExternalLink className="h-4 w-4" />
           Ver sitio
         </Link>
-        <form action={logout}>
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          <button
-            type="submit"
-            disabled={!csrfToken}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          >
+        <LogoutForm
+          buttonClassName="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          buttonTestId="admin-logout-button"
+        >
+          <>
             <LogOut className="h-4 w-4" />
             Cerrar sesion
-          </button>
-        </form>
+          </>
+        </LogoutForm>
       </div>
     </div>
   )
@@ -146,13 +142,11 @@ interface AdminSidebarProps {
 }
 
 export function AdminSidebar({ user }: AdminSidebarProps) {
-  const { csrfToken } = useCsrfToken()
-
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden w-64 border-r bg-card md:block">
-        <SidebarContent csrfToken={csrfToken} userInfo={user} />
+        <SidebarContent userInfo={user} />
       </aside>
 
       {/* Mobile sheet trigger */}
@@ -168,7 +162,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             <SheetTitle className="sr-only">
               Menu de administracion
             </SheetTitle>
-            <SidebarContent csrfToken={csrfToken} userInfo={user} />
+            <SidebarContent userInfo={user} />
           </SheetContent>
         </Sheet>
       </div>

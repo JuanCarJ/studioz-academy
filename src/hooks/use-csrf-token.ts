@@ -8,6 +8,13 @@ interface CsrfPayload {
 
 const CSRF_INIT_ERROR =
   "No se pudo inicializar la seguridad del formulario. Recarga la pagina e intenta de nuevo."
+const CSRF_STORAGE_KEY = "studioz:csrf-token"
+
+function getStoredCsrfToken() {
+  if (typeof window === "undefined") return ""
+
+  return window.sessionStorage.getItem(CSRF_STORAGE_KEY) ?? ""
+}
 
 export function useCsrfToken() {
   const [csrfToken, setCsrfToken] = useState("")
@@ -16,6 +23,12 @@ export function useCsrfToken() {
 
   useEffect(() => {
     let cancelled = false
+    const storedToken = getStoredCsrfToken()
+
+    if (storedToken) {
+      setCsrfToken(storedToken)
+      setIsLoading(false)
+    }
 
     async function initCsrfToken() {
       try {
@@ -35,11 +48,16 @@ export function useCsrfToken() {
         }
 
         if (!cancelled) {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(CSRF_STORAGE_KEY, payload.csrfToken)
+          }
           setCsrfToken(payload.csrfToken)
         }
       } catch {
         if (!cancelled) {
-          setError(CSRF_INIT_ERROR)
+          if (!storedToken) {
+            setError(CSRF_INIT_ERROR)
+          }
         }
       } finally {
         if (!cancelled) {

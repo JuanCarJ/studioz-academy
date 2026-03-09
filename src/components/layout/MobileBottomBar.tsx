@@ -9,8 +9,12 @@ import {
   UserPlus,
   ShoppingCart,
   Menu,
+  ShoppingBag,
+  User,
+  LogOut,
 } from "lucide-react"
 
+import { LogoutForm } from "@/components/layout/LogoutForm"
 import { cn } from "@/lib/utils"
 import {
   Sheet,
@@ -73,6 +77,8 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
           <SheetTrigger asChild>
             <button
               className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground"
+              aria-label="Abrir menu movil"
+              data-testid="mobile-bottom-menu-trigger"
             >
               <Menu className="h-5 w-5" />
               Menu
@@ -84,6 +90,36 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
             </SheetTitle>
             <Separator className="my-4" />
             <nav className="flex flex-col gap-1">
+              {isAuthenticated && (
+                <>
+                  <Link
+                    href="/dashboard/compras"
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                  >
+                    <ShoppingBag className="h-4 w-4" />
+                    Mis Compras
+                  </Link>
+                  <Link
+                    href="/dashboard/perfil"
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                  >
+                    <User className="h-4 w-4" />
+                    Mi Perfil
+                  </Link>
+                  <LogoutForm
+                    className="w-full"
+                    buttonClassName="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+                    buttonTestId="mobile-logout-button"
+                  >
+                    <>
+                      <LogOut className="h-4 w-4" />
+                      Cerrar sesion
+                    </>
+                  </LogoutForm>
+                  <Separator className="my-2" />
+                </>
+              )}
+
               {sheetLinks.map((link) => {
                 const isActive =
                   link.href === "/"

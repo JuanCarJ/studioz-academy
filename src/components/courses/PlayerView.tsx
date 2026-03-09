@@ -14,6 +14,12 @@ import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { useCsrfToken } from "@/hooks/use-csrf-token"
+import {
+  postVideoProgressFlush,
+  registerActiveVideoProgressFlushHandler,
+  sendVideoProgressFlushBeacon,
+} from "@/lib/video-progress-client"
 import {
   Sheet,
   SheetContent,
@@ -76,6 +82,7 @@ export function PlayerView({
   const [playerMessage, setPlayerMessage] = useState(initialPlaybackMessage)
   const [videoPosition, setVideoPosition] = useState(initialPosition)
   const [isPending, startTransition] = useTransition()
+  const { csrfToken } = useCsrfToken()
   const [completedIds, setCompletedIds] = useState<Set<string>>(
     new Set(lessons.filter((l) => l.isCompleted).map((l) => l.id))
   )
@@ -102,6 +109,65 @@ export function PlayerView({
     },
     []
   )
+
+  const flushExitProgress = useCallback(
+    async (reason: "pause" | "logout" | "pagehide", transport: "fetch" | "beacon" = "fetch") => {
+      if (!signedUrl || !csrfToken || !pendingPositionSave.current) return
+
+      const position = Math.floor(currentTimeRef.current)
+      if (position <= 0) {
+        pendingPositionSave.current = false
+        return
+      }
+
+      pendingPositionSave.current = false
+
+      const payload = {
+        courseId,
+        lessonId: activeId,
+        position,
+        reason,
+        csrfToken,
+      }
+
+      try {
+        if (transport === "beacon") {
+          const beaconSent = sendVideoProgressFlushBeacon(payload)
+          if (beaconSent) {
+            return
+          }
+        }
+
+        await postVideoProgressFlush(payload, {
+          keepalive: transport === "beacon",
+        })
+      } catch {
+        pendingPositionSave.current = true
+      }
+    },
+    [activeId, courseId, csrfToken, signedUrl]
+  )
+
+  const flushPauseProgress = useCallback(async () => {
+    if (!signedUrl || !pendingPositionSave.current) return
+
+    const position = Math.floor(currentTimeRef.current)
+    if (position <= 0) {
+      pendingPositionSave.current = false
+      return
+    }
+
+    pendingPositionSave.current = false
+
+    const [positionResult, lessonResult] = await Promise.all([
+      saveVideoPosition(activeId, position),
+      updateLastLesson(courseId, activeId),
+    ])
+
+    if (positionResult.error || lessonResult.error) {
+      pendingPositionSave.current = true
+    }
+  }, [activeId, courseId, signedUrl])
 
   // Start the 30-second periodic save for the active lesson
   const startPeriodicSave = useCallback(
@@ -132,12 +198,31 @@ export function PlayerView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    return registerActiveVideoProgressFlushHandler(() => flushExitProgress("logout"))
+  }, [flushExitProgress])
+
+  useEffect(() => {
+    function handlePageHide() {
+      void flushExitProgress("pagehide", "beacon")
+    }
+
+    window.addEventListener("pagehide", handlePageHide)
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide)
+    }
+  }, [flushExitProgress])
+
   // ── VideoPlayer callbacks ────────────────────────────────────────────────
 
   const handleTimeUpdate = useCallback((time: number) => {
     currentTimeRef.current = time
     pendingPositionSave.current = true
   }, [])
+
+  const handleVideoPause = useCallback(() => {
+    void flushPauseProgress()
+  }, [flushPauseProgress])
 
   const handleVideoEnded = useCallback(() => {
     // Save final position and mark as completed automatically
@@ -293,7 +378,9 @@ export function PlayerView({
               signedUrl={signedUrl}
               initialPosition={videoPosition}
               onTimeUpdate={handleTimeUpdate}
+              onPause={handleVideoPause}
               onEnded={handleVideoEnded}
+              progressFlushReady={Boolean(csrfToken)}
             />
           ) : (
             <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
