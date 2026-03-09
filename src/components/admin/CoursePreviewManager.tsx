@@ -8,7 +8,10 @@ import {
   prepareCoursePreviewUpload,
 } from "@/actions/admin/courses"
 import { refreshCourseMediaStatus } from "@/actions/admin/media"
-import { uploadToBunnyProxy } from "@/components/admin/bunny-upload"
+import {
+  getBunnyProxyUploadError,
+  uploadToBunnyProxy,
+} from "@/components/admin/bunny-upload"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -68,6 +71,12 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
     const file = fileRef.current?.files?.[0]
     if (!file) {
       setErrorMsg("Debes seleccionar un archivo para la vista previa.")
+      return
+    }
+
+    const uploadError = getBunnyProxyUploadError(file)
+    if (uploadError) {
+      setErrorMsg(uploadError)
       return
     }
 
@@ -215,7 +224,8 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
         />
         <p className="text-xs text-muted-foreground">
           Sube un archivo real a Bunny. Si ya existe una vista previa, seguira
-          visible hasta que la nueva termine de procesarse.
+          visible hasta que la nueva termine de procesarse. Limite actual por
+          archivo: 200 MB.
         </p>
       </div>
 

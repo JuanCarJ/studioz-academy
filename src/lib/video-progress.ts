@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
 import type { Database } from "@/types/database"
@@ -110,17 +111,13 @@ export async function persistCourseLastAccess(input: {
 }) {
   const adminClient = createServiceRoleClient()
 
-  await assertMutationSucceeded(
-    adminClient.from("course_progress").upsert(
-      {
-        user_id: input.userId,
-        course_id: input.courseId,
-        last_lesson_id: input.lessonId,
-        last_accessed_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,course_id" }
-    )
-  )
+  await syncCourseProgressSnapshot({
+    supabase: adminClient,
+    userId: input.userId,
+    courseId: input.courseId,
+    lastLessonId: input.lessonId,
+    touchLastAccess: true,
+  })
 }
 
 export async function persistExitVideoProgress(input: {
@@ -131,7 +128,6 @@ export async function persistExitVideoProgress(input: {
 }) {
   const adminClient = createServiceRoleClient()
   const videoPosition = Math.floor(input.position)
-  const accessedAt = new Date().toISOString()
 
   await assertMutationSucceeded(
     adminClient.from("lesson_progress").upsert(
@@ -144,17 +140,13 @@ export async function persistExitVideoProgress(input: {
     )
   )
 
-  await assertMutationSucceeded(
-    adminClient.from("course_progress").upsert(
-      {
-        user_id: input.userId,
-        course_id: input.courseId,
-        last_lesson_id: input.lessonId,
-        last_accessed_at: accessedAt,
-      },
-      { onConflict: "user_id,course_id" }
-    )
-  )
+  await syncCourseProgressSnapshot({
+    supabase: adminClient,
+    userId: input.userId,
+    courseId: input.courseId,
+    lastLessonId: input.lessonId,
+    touchLastAccess: true,
+  })
 }
 
 export function revalidateVideoProgressPaths(courseSlug: string | null) {
@@ -162,5 +154,20 @@ export function revalidateVideoProgressPaths(courseSlug: string | null) {
 
   if (courseSlug) {
     revalidatePath(`/dashboard/cursos/${courseSlug}`)
+  }
+}
+
+export function tryRevalidateVideoProgressPaths(courseSlug: string | null) {
+  try {
+    revalidateVideoProgressPaths(courseSlug)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("static generation store missing")
+    ) {
+      return
+    }
+
+    console.warn("[video-progress] Failed to revalidate progress paths:", error)
   }
 }

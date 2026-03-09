@@ -10,7 +10,10 @@ import {
   prepareLessonVideoReplacement,
   updateLesson,
 } from "@/actions/admin/lessons"
-import { uploadToBunnyProxy } from "@/components/admin/bunny-upload"
+import {
+  getBunnyProxyUploadError,
+  uploadToBunnyProxy,
+} from "@/components/admin/bunny-upload"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -60,6 +63,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
 
     const form = event.currentTarget
     const formData = new FormData(form)
+    formData.delete("video")
 
     startTransition(async () => {
       if (!isEditing) {
@@ -77,6 +81,13 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           if (!file) {
             setPhase("done")
             onSuccess?.()
+            return
+          }
+
+          const uploadError = getBunnyProxyUploadError(file)
+          if (uploadError) {
+            setErrorMsg(uploadError)
+            setPhase("error")
             return
           }
 
@@ -114,6 +125,13 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
         const file = fileRef.current?.files?.[0]
         if (!file) {
           setErrorMsg("Debes seleccionar un archivo para reemplazar el video.")
+          setPhase("error")
+          return
+        }
+
+        const uploadError = getBunnyProxyUploadError(file)
+        if (uploadError) {
+          setErrorMsg(uploadError)
           setPhase("error")
           return
         }
@@ -206,25 +224,6 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
         />
       </div>
 
-      {/* Duration (seconds) */}
-      <div className="space-y-2">
-        <Label htmlFor="lesson-duration">Duracion (segundos)</Label>
-        <Input
-          id="lesson-duration"
-          name="durationSeconds"
-          type="number"
-          min={0}
-          step={1}
-          defaultValue={lesson?.duration_seconds ?? ""}
-          placeholder="Ej: 360 (para 6 minutos)"
-          disabled={isLoading}
-        />
-        <p className="text-xs text-muted-foreground">
-          Opcional. Si no se ingresa, Bunny actualizara la duracion al terminar
-          de procesar el video.
-        </p>
-      </div>
-
       {/* is_free toggle */}
       <div className="flex items-center gap-3">
         <Switch
@@ -257,7 +256,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           />
           <p className="text-xs text-muted-foreground">
             El video se sube directamente a Bunny Stream. Formatos: MP4, MOV,
-            AVI, MKV. Maximo recomendado: 4 GB.
+            AVI, MKV. Limite actual por archivo: 200 MB.
           </p>
         </div>
       )}
@@ -304,7 +303,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
               />
               <p className="text-xs text-muted-foreground">
                 El video se sube directamente a Bunny Stream. Formatos: MP4, MOV,
-                AVI, MKV. Maximo recomendado: 4 GB.
+                AVI, MKV. Limite actual por archivo: 200 MB.
               </p>
             </div>
           )}

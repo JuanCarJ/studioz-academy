@@ -1,13 +1,50 @@
 import { createHash } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 
+import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { env } from "@/lib/env"
+import { tryRevalidateVideoProgressPaths } from "@/lib/video-progress"
 import { verifyWebhookSignature, type WompiWebhookEvent } from "@/lib/wompi"
 import { mapWompiStatus, isValidTransition } from "@/lib/payments"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Json } from "@/types/database"
+
+async function ensureApprovedEnrollmentProgress(input: {
+  supabase: ReturnType<typeof createServiceRoleClient>
+  userId: string
+  orderId: string
+}) {
+  const { data: orderItems, error: orderItemsError } = await input.supabase
+    .from("order_items")
+    .select("course_id, courses(slug)")
+    .eq("order_id", input.orderId)
+
+  if (orderItemsError) {
+    throw orderItemsError
+  }
+
+  const courseEntries = new Map<string, string | null>()
+  for (const item of orderItems ?? []) {
+    if (!item.course_id) continue
+
+    const course = Array.isArray(item.courses) ? item.courses[0] : item.courses
+    courseEntries.set(item.course_id, course?.slug ?? null)
+  }
+
+  for (const [courseId, courseSlug] of courseEntries) {
+    await syncCourseProgressSnapshot({
+      supabase: input.supabase,
+      userId: input.userId,
+      courseId,
+      courseSlug,
+      touchLastAccess: true,
+    })
+  }
+
+  return Array.from(courseEntries.values())
+}
 
 export async function POST(request: NextRequest) {
   // 1. Parse body
@@ -238,6 +275,23 @@ export async function POST(request: NextRequest) {
       if (enrollmentError) {
         return NextResponse.json(
           { error: "Failed to create enrollments" },
+          { status: 500 }
+        )
+      }
+
+      try {
+        const revalidationSlugs = await ensureApprovedEnrollmentProgress({
+          supabase,
+          userId: order.user_id,
+          orderId: order.id,
+        })
+
+        for (const courseSlug of revalidationSlugs) {
+          tryRevalidateVideoProgressPaths(courseSlug)
+        }
+      } catch {
+        return NextResponse.json(
+          { error: "Failed to initialize course progress" },
           { status: 500 }
         )
       }

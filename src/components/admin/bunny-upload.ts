@@ -1,3 +1,13 @@
+export const BUNNY_PROXY_MAX_FILE_BYTES = 200 * 1024 * 1024
+
+export function getBunnyProxyUploadError(file: File) {
+  if (file.size > BUNNY_PROXY_MAX_FILE_BYTES) {
+    return "El limite actual de carga es 200 MB por archivo."
+  }
+
+  return null
+}
+
 export async function uploadToBunnyProxy(
   uploadUrl: string,
   file: File,

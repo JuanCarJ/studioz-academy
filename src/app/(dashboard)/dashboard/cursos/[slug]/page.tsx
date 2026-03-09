@@ -89,10 +89,15 @@ export default async function CoursePlayerPage({
   const resumeLessonFromVideoProgress = [...lessons]
     .reverse()
     .find((lesson) => (videoPositionMap.get(lesson.id) ?? 0) > 0)
+  const lastLessonExists =
+    progress?.last_lesson_id != null &&
+    lessons.some((lesson) => lesson.id === progress.last_lesson_id)
 
   // Determine active lesson (resume from last accessed, or first lesson)
   const activeLessonId =
-    progress?.last_lesson_id ?? resumeLessonFromVideoProgress?.id ?? lessons[0]?.id
+    (lastLessonExists ? progress?.last_lesson_id : null) ??
+    resumeLessonFromVideoProgress?.id ??
+    lessons[0]?.id
   const activeLesson = lessons.find((l) => l.id === activeLessonId) ?? lessons[0]
 
   // Generate signed URL for active lesson

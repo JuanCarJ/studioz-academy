@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
@@ -40,11 +41,22 @@ export async function enrollFree(
     .eq("course_id", courseId)
     .maybeSingle()
 
-  if (existing) return { success: true }
-
-  // Use service role for insert (RLS doesn't have INSERT for users on enrollments)
   const adminClient = createServiceRoleClient()
 
+  if (existing) {
+    await syncCourseProgressSnapshot({
+      supabase: adminClient,
+      userId: user.id,
+      courseId,
+      courseSlug: course.slug,
+    })
+    revalidatePath(`/cursos/${course.slug}`)
+    revalidatePath("/dashboard")
+    revalidatePath(`/dashboard/cursos/${course.slug}`)
+    return { success: true }
+  }
+
+  // Use service role for insert (RLS doesn't have INSERT for users on enrollments)
   const { error: enrollError } = await adminClient.from("enrollments").insert({
     user_id: user.id,
     course_id: courseId,
@@ -55,20 +67,17 @@ export async function enrollFree(
     return { error: "No se pudo completar la inscripcion." }
   }
 
-  // Initialize course_progress
-  await adminClient.from("course_progress").upsert(
-    {
-      user_id: user.id,
-      course_id: courseId,
-      completed_lessons: 0,
-      is_completed: false,
-      last_accessed_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,course_id" }
-  )
+  await syncCourseProgressSnapshot({
+    supabase: adminClient,
+    userId: user.id,
+    courseId,
+    courseSlug: course.slug,
+    touchLastAccess: true,
+  })
 
   revalidatePath(`/cursos/${course.slug}`)
   revalidatePath("/dashboard")
+  revalidatePath(`/dashboard/cursos/${course.slug}`)
   return { success: true }
 }
 
