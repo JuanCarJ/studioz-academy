@@ -39,6 +39,7 @@ export const env = {
   BUNNY_LIBRARY_ID: () => requireEnv("BUNNY_LIBRARY_ID"),
   BUNNY_CDN_HOSTNAME: () => requireEnv("BUNNY_CDN_HOSTNAME"),
   BUNNY_TOKEN_AUTH_KEY: () => requireEnv("BUNNY_TOKEN_AUTH_KEY"),
+  BUNNY_WEBHOOK_SECRET: () => requireEnv("BUNNY_WEBHOOK_SECRET"),
 
   // Email
   RESEND_API_KEY: () => requireEnv("RESEND_API_KEY"),

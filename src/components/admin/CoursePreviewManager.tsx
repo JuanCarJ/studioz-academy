@@ -9,8 +9,8 @@ import {
 } from "@/actions/admin/courses"
 import { refreshCourseMediaStatus } from "@/actions/admin/media"
 import {
-  getBunnyProxyUploadError,
-  uploadToBunnyProxy,
+  getBunnyUploadError,
+  uploadToBunnyDirect,
 } from "@/components/admin/bunny-upload"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -74,7 +74,7 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
       return
     }
 
-    const uploadError = getBunnyProxyUploadError(file)
+    const uploadError = getBunnyUploadError(file)
     if (uploadError) {
       setErrorMsg(uploadError)
       return
@@ -90,7 +90,7 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
       const prepareResult = await prepareCoursePreviewUpload(currentCourse.id)
       if (
         prepareResult.error ||
-        !prepareResult.uploadUrl ||
+        !prepareResult.uploadSession ||
         !prepareResult.videoId
       ) {
         setErrorMsg(
@@ -103,7 +103,7 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
       setPhase("uploading")
 
       try {
-        await uploadToBunnyProxy(prepareResult.uploadUrl, file, setProgress)
+        await uploadToBunnyDirect(prepareResult.uploadSession, file, setProgress)
       } catch {
         await discardCoursePreviewUpload(currentCourse.id, prepareResult.videoId)
         setErrorMsg(
@@ -224,8 +224,8 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
         />
         <p className="text-xs text-muted-foreground">
           Sube un archivo real a Bunny. Si ya existe una vista previa, seguira
-          visible hasta que la nueva termine de procesarse. Limite actual por
-          archivo: 200 MB.
+          visible hasta que la nueva termine de procesarse. Limite recomendado
+          por archivo: 4 GB.
         </p>
       </div>
 

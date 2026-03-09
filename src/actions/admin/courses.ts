@@ -6,11 +6,15 @@ import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { createBunnyVideo, deleteBunnyVideo } from "@/lib/bunny"
+import {
+  createBunnyTusUploadSession,
+  createBunnyVideo,
+  deleteBunnyVideo,
+} from "@/lib/bunny"
 import { env } from "@/lib/env"
 import { slugify } from "@/lib/utils"
 
-import type { Course, Instructor } from "@/types"
+import type { BunnyUploadSession, Course, Instructor } from "@/types"
 
 export interface CourseActionState {
   error?: string
@@ -20,7 +24,7 @@ export interface CourseActionState {
 export interface CoursePreviewActionState {
   error?: string
   success?: boolean
-  uploadUrl?: string
+  uploadSession?: BunnyUploadSession
   videoId?: string
 }
 
@@ -281,11 +285,11 @@ export async function prepareCoursePreviewUpload(
   }
 
   try {
-    const result = await createBunnyVideo(`${course.title} Preview`)
+    const videoId = await createBunnyVideo(`${course.title} Preview`)
     return {
       success: true,
-      uploadUrl: result.uploadUrl,
-      videoId: result.videoId,
+      uploadSession: createBunnyTusUploadSession(videoId),
+      videoId,
     }
   } catch {
     return { error: "No se pudo preparar la vista previa en Bunny." }
