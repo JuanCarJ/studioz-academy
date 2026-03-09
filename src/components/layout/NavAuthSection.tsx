@@ -4,7 +4,7 @@ import Link from "next/link"
 import { User, LogOut, LayoutDashboard, Shield, ShoppingBag, BookOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LogoutForm } from "@/components/layout/LogoutForm"
 import {
   DropdownMenu,
@@ -70,6 +70,7 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
             aria-label="Abrir menu de usuario"
           >
             <Avatar className="h-8 w-8">
+              <AvatarImage src={user.avatar_url ?? undefined} alt={user.full_name} />
               <AvatarFallback className="bg-primary text-xs text-primary-foreground">
                 {initials}
               </AvatarFallback>

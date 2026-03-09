@@ -36,6 +36,10 @@ const newsTitle = `QA E2E Temp News ${runId}`
 const newsTitleUpdated = `QA E2E Temp News ${runId} Updated`
 const instructorName = `QA E2E Instructor ${runId}`
 const courseTitle = `QA E2E Curso Admin ${runId}`
+const avatarPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0p7x8AAAAASUVORK5CYII=",
+  "base64"
+)
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -265,6 +269,11 @@ test.describe.serial("Business E2E", () => {
     await page.getByLabel(/nombre completo/i).fill(updatedName)
     await page.getByLabel(/telefono/i).fill(updatedPhone)
     await page.locator("#emailNotifications").click()
+    await page.locator("#avatar").setInputFiles({
+      name: `avatar-${runId}.png`,
+      mimeType: "image/png",
+      buffer: avatarPng,
+    })
     await page.getByRole("button", { name: /guardar cambios/i }).click()
 
     await expect(page.getByText(/perfil actualizado exitosamente/i)).toBeVisible()
@@ -275,9 +284,13 @@ test.describe.serial("Business E2E", () => {
           profile?.profile.full_name ?? "",
           profile?.profile.phone ?? "",
           profile?.profile.email_notifications ? "on" : "off",
+          profile?.profile.avatar_url?.includes("/storage/v1/object/public/avatars/") ? "avatar" : "",
         ].join("|")
       })
-      .toBe(`${updatedName}|${updatedPhone}|off`)
+      .toBe(`${updatedName}|${updatedPhone}|off|avatar`)
+
+    await page.reload()
+    await expect(page.locator('img[alt="Avatar actual"]')).toBeVisible()
 
     await page.goto("/dashboard/compras")
     await expect(page.getByText(qaFixtures.orderReference)).toBeVisible()

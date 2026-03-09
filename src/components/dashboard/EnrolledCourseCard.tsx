@@ -4,7 +4,6 @@ import { BookOpen, Palette, Clock } from "lucide-react"
 
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import type { EnrolledCourseWithProgress } from "@/actions/progress"
@@ -69,6 +68,7 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
   const CategoryIcon = course.category === "baile" ? BookOpen : Palette
 
   return (
+    <Link href={courseUrl} prefetch={false} className="block">
     <Card
       className="overflow-hidden py-0 gap-0 transition-shadow hover:shadow-md"
       data-testid={`enrolled-course-card-${course.slug}`}
@@ -188,16 +188,19 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
               : `Inscrito ${formatRelativeDate(enrolledAt)}`}
           </span>
         </div>
-        <Button asChild size="sm" variant={isCompleted ? "outline" : "default"} className="flex-shrink-0">
-          <Link
-            href={courseUrl}
-            prefetch={false}
-            data-testid={`enrolled-course-link-${course.slug}`}
-          >
-            {buttonLabel}
-          </Link>
-        </Button>
+        <span
+          className={cn(
+            "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium flex-shrink-0",
+            isCompleted
+              ? "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              : "bg-primary text-primary-foreground hover:bg-primary/90"
+          )}
+          data-testid={`enrolled-course-link-${course.slug}`}
+        >
+          {buttonLabel}
+        </span>
       </CardFooter>
     </Card>
+    </Link>
   )
 }

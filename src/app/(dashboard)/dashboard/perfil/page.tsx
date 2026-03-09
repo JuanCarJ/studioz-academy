@@ -24,6 +24,7 @@ export default async function ProfilePage() {
           email: user.email,
           phone: user.phone ?? "",
           emailNotifications: user.email_notifications,
+          avatarUrl: user.avatar_url,
         }}
       />
     </section>
