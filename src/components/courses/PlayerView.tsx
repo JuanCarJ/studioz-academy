@@ -83,6 +83,7 @@ export function PlayerView({
   const [videoPosition, setVideoPosition] = useState(initialPosition)
   const [isPending, startTransition] = useTransition()
   const { csrfToken } = useCsrfToken()
+  const [completionContextLessonId, setCompletionContextLessonId] = useState<string | null>(null)
   const [completedIds, setCompletedIds] = useState<Set<string>>(
     new Set(lessons.filter((l) => l.isCompleted).map((l) => l.id))
   )
@@ -98,6 +99,14 @@ export function PlayerView({
   // Derived: overall course progress percentage
   const progressPercent =
     lessons.length > 0 ? Math.round((completedIds.size / lessons.length) * 100) : 0
+  const activeLessonIndex = lessons.findIndex((lesson) => lesson.id === activeId)
+  const nextLesson =
+    activeLessonIndex >= 0 && activeLessonIndex < lessons.length - 1
+      ? lessons[activeLessonIndex + 1]
+      : null
+  const isSingleLessonCourse = lessons.length === 1
+  const shouldShowCompletionContext =
+    completionContextLessonId === activeId && completedIds.has(activeId)
 
   // ── Position persistence helpers ─────────────────────────────────────────
 
@@ -252,18 +261,18 @@ export function PlayerView({
       const result = await markComplete(activeId)
       if (!result.error) {
         setCompletedIds((prev) => new Set([...prev, activeId]))
+        setCompletionContextLessonId(activeId)
       }
     })
   }, [activeId, flushPositionSave])
 
   // ── Lesson navigation ────────────────────────────────────────────────────
 
-  function handleSelectLesson(lessonId: string) {
-    if (lessonId === activeId || isPending) return
-
+  function loadLesson(lessonId: string) {
     // 1. Flush position for the lesson we are leaving
     flushPositionSave(activeId)
     stopPeriodicSave()
+    setCompletionContextLessonId(null)
 
     setActiveId(lessonId)
 
@@ -293,6 +302,11 @@ export function PlayerView({
     })
   }
 
+  function handleSelectLesson(lessonId: string) {
+    if (lessonId === activeId || isPending) return
+    loadLesson(lessonId)
+  }
+
   // ── Complete / Incomplete toggle ─────────────────────────────────────────
 
   function handleMarkComplete() {
@@ -300,6 +314,7 @@ export function PlayerView({
       const result = await markComplete(activeId)
       if (!result.error) {
         setCompletedIds((prev) => new Set([...prev, activeId]))
+        setCompletionContextLessonId(activeId)
       }
     })
   }
@@ -313,6 +328,7 @@ export function PlayerView({
           next.delete(activeId)
           return next
         })
+        setCompletionContextLessonId(null)
       }
     })
   }
@@ -468,6 +484,41 @@ export function PlayerView({
               )}
             </div>
           </div>
+
+          {shouldShowCompletionContext && (
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {nextLesson
+                      ? "Leccion completada."
+                      : isSingleLessonCourse
+                        ? "Curso completado."
+                        : "Terminaste la ultima leccion del curso."}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {nextLesson
+                      ? `Continua con "${nextLesson.title}".`
+                      : "Ya no quedan mas lecciones por completar."}
+                  </p>
+                </div>
+
+                {nextLesson ? (
+                  <Button
+                    onClick={() => loadLesson(nextLesson.id)}
+                    disabled={isPending}
+                    className="min-h-[44px] w-full sm:w-auto"
+                  >
+                    Continuar siguiente leccion
+                  </Button>
+                ) : (
+                  <Badge className="w-fit bg-emerald-600 text-white hover:bg-emerald-600">
+                    Curso completado
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Lesson list — desktop sidebar (hidden on mobile, handled by Sheet) */}
