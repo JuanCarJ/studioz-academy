@@ -76,6 +76,14 @@ export interface Lesson {
   updated_at: string
 }
 
+export interface BunnyUploadSession {
+  videoId: string
+  libraryId: string
+  expirationTime: number
+  signature: string
+  tusEndpoint: string
+}
+
 // ── Cart ─────────────────────────────────────────────────
 export interface CartItem {
   id: string

@@ -11,8 +11,8 @@ import {
   updateLesson,
 } from "@/actions/admin/lessons"
 import {
-  getBunnyProxyUploadError,
-  uploadToBunnyProxy,
+  getBunnyUploadError,
+  uploadToBunnyDirect,
 } from "@/components/admin/bunny-upload"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,8 +34,8 @@ type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error"
  * Form for creating or editing a lesson.
  *
  * Create flow:
- *   1. Submit form → Server Action creates Bunny entry, returns uploadUrl
- *   2. Component uploads file bytes directly to Bunny PUT endpoint
+ *   1. Submit form → Server Action creates Bunny entry, returns TUS session
+ *   2. Component uploads file bytes directly to Bunny
  *   3. Persists the lesson as "processing" until Bunny finishes
  *
  * Edit flow:
@@ -76,16 +76,22 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           return
         }
 
-        if (createResult.uploadUrl) {
+        if (createResult.uploadSession) {
           const file = fileRef.current?.files?.[0]
           if (!file) {
-            setPhase("done")
-            onSuccess?.()
+            if (createResult.lessonId) {
+              await markLessonUploadFailed(createResult.lessonId)
+            }
+            setErrorMsg("Debes seleccionar un archivo de video para la leccion.")
+            setPhase("error")
             return
           }
 
-          const uploadError = getBunnyProxyUploadError(file)
+          const uploadError = getBunnyUploadError(file)
           if (uploadError) {
+            if (createResult.lessonId) {
+              await markLessonUploadFailed(createResult.lessonId)
+            }
             setErrorMsg(uploadError)
             setPhase("error")
             return
@@ -94,7 +100,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           setPhase("uploading")
 
           try {
-            await uploadToBunnyProxy(createResult.uploadUrl, file, (progress) => {
+            await uploadToBunnyDirect(createResult.uploadSession, file, (progress) => {
               setUploadProgress(progress)
             })
           } catch {
@@ -129,7 +135,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           return
         }
 
-        const uploadError = getBunnyProxyUploadError(file)
+        const uploadError = getBunnyUploadError(file)
         if (uploadError) {
           setErrorMsg(uploadError)
           setPhase("error")
@@ -142,7 +148,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
 
         if (
           prepareResult.error ||
-          !prepareResult.uploadUrl ||
+          !prepareResult.uploadSession ||
           !prepareResult.videoId
         ) {
           setErrorMsg(prepareResult.error ?? "No se pudo preparar el reemplazo de video.")
@@ -152,7 +158,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
 
         setPhase("uploading")
         try {
-          await uploadToBunnyProxy(prepareResult.uploadUrl, file, (progress) => {
+          await uploadToBunnyDirect(prepareResult.uploadSession, file, (progress) => {
             setUploadProgress(progress)
           })
         } catch {
@@ -252,11 +258,12 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
             name="video"
             type="file"
             accept="video/*"
+            required
             disabled={isLoading}
           />
           <p className="text-xs text-muted-foreground">
             El video se sube directamente a Bunny Stream. Formatos: MP4, MOV,
-            AVI, MKV. Limite actual por archivo: 200 MB.
+            AVI, MKV. Limite recomendado por archivo: 4 GB.
           </p>
         </div>
       )}
@@ -303,7 +310,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
               />
               <p className="text-xs text-muted-foreground">
                 El video se sube directamente a Bunny Stream. Formatos: MP4, MOV,
-                AVI, MKV. Limite actual por archivo: 200 MB.
+                AVI, MKV. Limite recomendado por archivo: 4 GB.
               </p>
             </div>
           )}

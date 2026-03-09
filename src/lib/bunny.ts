@@ -3,7 +3,15 @@ import { createHash } from "crypto"
 import { env } from "@/lib/env"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
-import type { Course, Lesson } from "@/types"
+import type { BunnyUploadSession, Course, Lesson } from "@/types"
+
+const BUNNY_API_BASE_URL = "https://video.bunnycdn.com"
+const BUNNY_TUS_ENDPOINT = `${BUNNY_API_BASE_URL}/tusupload`
+const DEFAULT_TUS_SESSION_TTL_SECONDS = 60 * 60
+
+interface BunnyVideoCreateResponse {
+  guid: string
+}
 
 export type BunnyProcessingState = "processing" | "ready" | "error" | "missing"
 
@@ -57,6 +65,16 @@ interface LessonMediaRow {
   courses: { id: string; slug: string } | { id: string; slug: string }[]
 }
 
+function buildBunnyApiUrl(pathname: string): string {
+  return `${BUNNY_API_BASE_URL}/library/${env.BUNNY_LIBRARY_ID()}${pathname}`
+}
+
+function buildBunnyHeaders(headers?: HeadersInit): Headers {
+  const finalHeaders = new Headers(headers)
+  finalHeaders.set("AccessKey", env.BUNNY_API_KEY())
+  return finalHeaders
+}
+
 /**
  * Generate a signed iframe embed URL for Bunny Stream video playback.
  *
@@ -84,84 +102,50 @@ export function generateSignedUrl(
 }
 
 /**
- * Upload a video to Bunny Stream library.
+ * Create a video entry in Bunny Stream and return its GUID.
  */
-export async function uploadVideo(
-  file: File,
-  title: string
-): Promise<string> {
-  const libraryId = env.BUNNY_LIBRARY_ID()
-  const apiKey = env.BUNNY_API_KEY()
-
-  // Step 1: Create video entry
-  const createRes = await fetch(
-    `https://video.bunnycdn.com/library/${libraryId}/videos`,
-    {
-      method: "POST",
-      headers: {
-        AccessKey: apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ title }),
-    }
-  )
-
-  if (!createRes.ok) {
-    throw new Error(`Bunny: Failed to create video entry (${createRes.status})`)
-  }
-
-  const { guid } = (await createRes.json()) as { guid: string }
-
-  // Step 2: Upload file
-  const uploadRes = await fetch(
-    `https://video.bunnycdn.com/library/${libraryId}/videos/${guid}`,
-    {
-      method: "PUT",
-      headers: { AccessKey: apiKey },
-      body: file,
-    }
-  )
-
-  if (!uploadRes.ok) {
-    throw new Error(`Bunny: Failed to upload video (${uploadRes.status})`)
-  }
-
-  return guid
-}
-
-/**
- * Create a video entry in Bunny Stream and return the video ID plus the
- * authenticated upload URL so the admin client can stream file bytes through
- * our server-side proxy without exposing the Bunny AccessKey in the browser.
- */
-export async function createBunnyVideo(
-  title: string
-): Promise<{ videoId: string; uploadUrl: string }> {
-  const libraryId = env.BUNNY_LIBRARY_ID()
-  const apiKey = env.BUNNY_API_KEY()
-
-  const res = await fetch(
-    `https://video.bunnycdn.com/library/${libraryId}/videos`,
-    {
-      method: "POST",
-      headers: {
-        AccessKey: apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ title }),
-    }
-  )
+export async function createBunnyVideo(title: string): Promise<string> {
+  const res = await fetch(buildBunnyApiUrl("/videos"), {
+    method: "POST",
+    headers: buildBunnyHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({ title }),
+  })
 
   if (!res.ok) {
     throw new Error(`Bunny: Failed to create video entry (${res.status})`)
   }
 
-  const { guid } = (await res.json()) as { guid: string }
+  const { guid } = (await res.json()) as BunnyVideoCreateResponse
 
-  // Route handlers attach the Bunny AccessKey server-side.
-  const uploadUrl = `/api/admin/bunny/upload/${guid}`
+  return guid
+}
 
-  return { videoId: guid, uploadUrl }
+/**
+ * Create a short-lived TUS upload session for a previously created Bunny video.
+ * The browser uploads bytes directly to Bunny using these credentials.
+ */
+export function createBunnyTusUploadSession(
+  videoId: string,
+  expiresInSeconds = DEFAULT_TUS_SESSION_TTL_SECONDS
+): BunnyUploadSession {
+  const libraryId = env.BUNNY_LIBRARY_ID()
+  const apiKey = env.BUNNY_API_KEY()
+  const expirationTime =
+    Math.floor(Date.now() / 1000) + Math.max(60, expiresInSeconds)
+
+  const signature = createHash("sha256")
+    .update(`${libraryId}${apiKey}${expirationTime}${videoId}`)
+    .digest("hex")
+
+  return {
+    videoId,
+    libraryId,
+    expirationTime,
+    signature,
+    tusEndpoint: BUNNY_TUS_ENDPOINT,
+  }
 }
 
 /**
@@ -169,16 +153,10 @@ export async function createBunnyVideo(
  * Silently succeeds if the video does not exist (404 is ignored).
  */
 export async function deleteBunnyVideo(videoId: string): Promise<void> {
-  const libraryId = env.BUNNY_LIBRARY_ID()
-  const apiKey = env.BUNNY_API_KEY()
-
-  const res = await fetch(
-    `https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`,
-    {
-      method: "DELETE",
-      headers: { AccessKey: apiKey },
-    }
-  )
+  const res = await fetch(buildBunnyApiUrl(`/videos/${videoId}`), {
+    method: "DELETE",
+    headers: buildBunnyHeaders(),
+  })
 
   if (!res.ok && res.status !== 404) {
     throw new Error(`Bunny: Failed to delete video ${videoId} (${res.status})`)
@@ -207,16 +185,10 @@ export async function getVideoStatus(
 export async function getVideoStatusOrNull(
   videoId: string
 ): Promise<{ status: number; length: number; encodeProgress: number } | null> {
-  const libraryId = env.BUNNY_LIBRARY_ID()
-  const apiKey = env.BUNNY_API_KEY()
-
-  const res = await fetch(
-    `https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`,
-    {
-      method: "GET",
-      headers: { AccessKey: apiKey },
-    }
-  )
+  const res = await fetch(buildBunnyApiUrl(`/videos/${videoId}`), {
+    method: "GET",
+    headers: buildBunnyHeaders(),
+  })
 
   if (res.status === 404) {
     return null
@@ -695,6 +667,79 @@ export async function reconcilePendingBunnyAssets(options?: {
 
   return {
     reconciled: previewUpdates + lessonUpdates,
+    previewUpdates,
+    lessonUpdates,
+    errors,
+    touchedCourses: [...touchedCourses.values()],
+  }
+}
+
+export async function reconcileBunnyVideoWebhook(
+  videoId: string
+): Promise<BunnyReconcileResult> {
+  const supabase = createServiceRoleClient()
+  const affectedCourseIds = new Set<string>()
+
+  const [{ data: previewCourses }, { data: lessonCourses }] = await Promise.all([
+    supabase
+      .from("courses")
+      .select("id")
+      .or(
+        `preview_bunny_video_id.eq.${videoId},pending_preview_bunny_video_id.eq.${videoId}`
+      ),
+    supabase
+      .from("lessons")
+      .select("course_id")
+      .or(`bunny_video_id.eq.${videoId},pending_bunny_video_id.eq.${videoId}`),
+  ])
+
+  for (const course of previewCourses ?? []) {
+    if (course.id) {
+      affectedCourseIds.add(course.id)
+    }
+  }
+
+  for (const lesson of lessonCourses ?? []) {
+    if (lesson.course_id) {
+      affectedCourseIds.add(lesson.course_id)
+    }
+  }
+
+  if (affectedCourseIds.size === 0) {
+    return {
+      reconciled: 0,
+      previewUpdates: 0,
+      lessonUpdates: 0,
+      errors: 0,
+      touchedCourses: [],
+    }
+  }
+
+  const results = await Promise.all(
+    [...affectedCourseIds].map((courseId) =>
+      reconcilePendingBunnyAssets({ courseId })
+    )
+  )
+
+  const touchedCourses = new Map<string, { id: string; slug: string }>()
+  let reconciled = 0
+  let previewUpdates = 0
+  let lessonUpdates = 0
+  let errors = 0
+
+  for (const result of results) {
+    reconciled += result.reconciled
+    previewUpdates += result.previewUpdates
+    lessonUpdates += result.lessonUpdates
+    errors += result.errors
+
+    for (const course of result.touchedCourses) {
+      touchedCourses.set(course.id, course)
+    }
+  }
+
+  return {
+    reconciled,
     previewUpdates,
     lessonUpdates,
     errors,

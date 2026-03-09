@@ -5,17 +5,21 @@ import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { createBunnyVideo, deleteBunnyVideo } from "@/lib/bunny"
+import {
+  createBunnyTusUploadSession,
+  createBunnyVideo,
+  deleteBunnyVideo,
+} from "@/lib/bunny"
 import { syncCourseProgressForEnrolledUsers } from "@/lib/course-progress"
 import { env } from "@/lib/env"
 
-import type { Lesson } from "@/types"
+import type { BunnyUploadSession, Lesson } from "@/types"
 
 export interface LessonActionState {
   error?: string
   success?: boolean
-  /** Returned to client for direct upload to Bunny. */
-  uploadUrl?: string
+  /** Returned to client for direct resumable upload to Bunny. */
+  uploadSession?: BunnyUploadSession
   videoId?: string
   lessonId?: string
 }
@@ -52,14 +56,14 @@ export async function getLessonsForCourse(courseId: string): Promise<Lesson[]> {
 /**
  * Create a lesson for a course.
  *
- * Returns uploadUrl + videoId so the client can stream the file directly
- * to Bunny CDN without routing through Vercel.
+ * Returns an upload session + videoId so the client can upload file bytes
+ * directly to Bunny Stream via TUS without routing through Vercel.
  *
  * Flow:
  *   1. Validate fields
- *   2. Create video entry in Bunny (get videoId + uploadUrl)
+ *   2. Create video entry in Bunny and sign a TUS upload session
  *   3. Insert lesson row in Supabase (bunny_video_id is set immediately)
- *   4. Return uploadUrl to client — client uploads the actual file bytes
+ *   4. Return uploadSession to client — browser uploads the actual file bytes
  */
 export async function createLesson(
   courseId: string,
@@ -76,13 +80,11 @@ export async function createLesson(
     return { error: "El titulo de la leccion es obligatorio." }
   }
 
-  // Create video entry in Bunny to get videoId + uploadUrl
   let videoId: string
-  let uploadUrl: string
+  let uploadSession: BunnyUploadSession
   try {
-    const result = await createBunnyVideo(title)
-    videoId = result.videoId
-    uploadUrl = result.uploadUrl
+    videoId = await createBunnyVideo(title)
+    uploadSession = createBunnyTusUploadSession(videoId)
   } catch {
     return { error: "No se pudo crear el registro de video en Bunny. Intenta de nuevo." }
   }
@@ -140,7 +142,7 @@ export async function createLesson(
     .eq("bunny_video_id", videoId)
     .maybeSingle()
 
-  return { success: true, uploadUrl, videoId, lessonId: lesson?.id }
+  return { success: true, uploadSession, videoId, lessonId: lesson?.id }
 }
 
 /**
@@ -198,7 +200,7 @@ export async function updateLesson(
 
 /**
  * Step 1 of video replacement:
- * Create a new Bunny video entry and return upload URL.
+ * Create a new Bunny video entry and return a TUS upload session.
  * This does not mutate the lesson row yet.
  */
 export async function prepareLessonVideoReplacement(
@@ -220,11 +222,11 @@ export async function prepareLessonVideoReplacement(
   const effectiveTitle = titleHint?.trim() || lesson.title || "Leccion"
 
   try {
-    const result = await createBunnyVideo(effectiveTitle)
+    const videoId = await createBunnyVideo(effectiveTitle)
     return {
       success: true,
-      uploadUrl: result.uploadUrl,
-      videoId: result.videoId,
+      uploadSession: createBunnyTusUploadSession(videoId),
+      videoId,
     }
   } catch {
     return { error: "No se pudo preparar el nuevo video en Bunny. Intenta de nuevo." }
