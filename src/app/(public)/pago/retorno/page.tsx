@@ -1,14 +1,17 @@
 import { getOrderStatusWithFallback } from "@/actions/payments"
 import { PaymentReturnView } from "@/components/payment/PaymentReturnView"
+import { queryWompiTransactionById } from "@/lib/wompi"
 
 export const metadata = { title: "Estado de tu pago — Studio Z Academy" }
 
 interface PageProps {
-  searchParams: Promise<{ reference?: string }>
+  searchParams: Promise<{ id?: string; reference?: string }>
 }
 
 export default async function PaymentReturnPage({ searchParams }: PageProps) {
-  const { reference } = await searchParams
+  const { id, reference: rawReference } = await searchParams
+  const wompiTransaction = !rawReference && id ? await queryWompiTransactionById(id) : null
+  const reference = rawReference ?? wompiTransaction?.reference
 
   if (!reference) {
     return (
@@ -22,12 +25,13 @@ export default async function PaymentReturnPage({ searchParams }: PageProps) {
   }
 
   const { order, orderItems, isFirstPurchase } =
-    await getOrderStatusWithFallback(reference)
+    await getOrderStatusWithFallback(reference, id)
 
   return (
     <section className="container mx-auto px-4 py-16">
       <PaymentReturnView
         reference={reference}
+        transactionId={id}
         initialOrder={order}
         orderItems={orderItems}
         isFirstPurchase={isFirstPurchase}

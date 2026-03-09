@@ -198,7 +198,7 @@ export async function getOrderDetail(
   const { data: paymentEvents } = await supabase
     .from("payment_events")
     .select(
-      "id, order_id, source, wompi_transaction_id, external_status, mapped_status, is_applied, reason, payload_hash, processed_at"
+      "id, order_id, source, wompi_transaction_id, external_status, mapped_status, is_applied, reason, payload_hash, payload_json, processed_at"
     )
     .eq("order_id", orderId)
     .order("processed_at", { ascending: true })
@@ -213,10 +213,7 @@ export async function getOrderDetail(
         ? (order.discount_rules[0]?.name ?? null)
         : ((order.discount_rules as { name?: string } | null)?.name ?? null),
       items: (items ?? []) as OrderItem[],
-      payment_events: (paymentEvents ?? []).map((pe) => ({
-        ...pe,
-        payload_json: {},
-      })) as PaymentEvent[],
+      payment_events: (paymentEvents ?? []) as PaymentEvent[],
     },
   }
 }

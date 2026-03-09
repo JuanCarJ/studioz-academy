@@ -55,6 +55,21 @@ function formatDate(iso: string): string {
   })
 }
 
+function getPayerEmailFromEvents(events: OrderDetailResult["order"]["payment_events"]) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const payload = events[index]?.payload_json as
+      | {
+          data?: { transaction?: { customer_email?: string } }
+        }
+      | undefined
+
+    const payerEmail = payload?.data?.transaction?.customer_email
+    if (payerEmail) return payerEmail
+  }
+
+  return null
+}
+
 interface OrderDetailModalProps {
   order: OrderListItem
   open: boolean
@@ -142,6 +157,7 @@ export function OrderDetailModal({
   }
 
   const d = detail?.order
+  const payerEmail = d ? getPayerEmailFromEvents(d.payment_events) : null
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -197,9 +213,17 @@ export function OrderDetailModal({
                   {d.customer_name_snapshot}
                 </p>
                 <p>
-                  <span className="text-muted-foreground">Email:</span>{" "}
+                  <span className="text-muted-foreground">Email cuenta:</span>{" "}
                   {d.customer_email_snapshot}
                 </p>
+                {payerEmail && (
+                  <p>
+                    <span className="text-muted-foreground">
+                      Email pagador Wompi:
+                    </span>{" "}
+                    {payerEmail}
+                  </p>
+                )}
                 <p>
                   <span className="text-muted-foreground">Telefono:</span>{" "}
                   {d.customer_phone_snapshot ?? "—"}

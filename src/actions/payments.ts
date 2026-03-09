@@ -1,19 +1,97 @@
 "use server"
 
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { queryWompiByReference } from "@/lib/wompi"
+import {
+  queryWompiByReference,
+  queryWompiTransactionById,
+  type WompiTransactionLookup,
+} from "@/lib/wompi"
 import { mapWompiStatus, isValidTransition } from "@/lib/payments"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Order } from "@/types"
+
+const PAYMENT_RETURN_RECHECK_DELAY_MS = 30_000
+const RECONCILE_PENDING_MIN_AGE_MS = 2 * 60 * 1000
+const RECONCILE_PENDING_BATCH_SIZE = 100
 
 export interface OrderItem {
   courseTitle: string
   courseSlug: string
 }
 
-export async function getOrderStatusWithFallback(
+async function resolveWompiTransaction(params: {
   reference: string
+  transactionId?: string
+}): Promise<WompiTransactionLookup | null> {
+  if (params.transactionId) {
+    const byId = await queryWompiTransactionById(params.transactionId)
+    if (byId?.reference === params.reference) {
+      return byId
+    }
+  }
+
+  return queryWompiByReference(params.reference)
+}
+
+async function attachKnownWompiTransaction(
+  order: Order,
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  transactionId?: string
+): Promise<{
+  order: Order
+  transaction: WompiTransactionLookup | null
+}> {
+  if (!transactionId) {
+    return { order, transaction: null }
+  }
+
+  try {
+    const transaction = await queryWompiTransactionById(transactionId)
+    if (!transaction || transaction.reference !== order.reference) {
+      return { order, transaction: null }
+    }
+
+    const amountMatches = transaction.amountInCents === order.total
+    const currencyMatches =
+      transaction.currency.toUpperCase() === order.currency.toUpperCase()
+
+    if (!amountMatches || !currencyMatches) {
+      return { order, transaction: null }
+    }
+
+    if (
+      order.wompi_transaction_id !== transactionId ||
+      (!order.payment_method && transaction.paymentMethodType)
+    ) {
+      await supabase
+        .from("orders")
+        .update({
+          wompi_transaction_id: transactionId,
+          payment_method: order.payment_method ?? transaction.paymentMethodType,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+
+      return {
+        order: {
+          ...order,
+          wompi_transaction_id: transactionId,
+          payment_method: order.payment_method ?? transaction.paymentMethodType,
+        },
+        transaction,
+      }
+    }
+
+    return { order, transaction }
+  } catch {
+    return { order, transaction: null }
+  }
+}
+
+export async function getOrderStatusWithFallback(
+  reference: string,
+  transactionId?: string
 ): Promise<{
   order: Order | null
   liveStatus?: string
@@ -29,29 +107,49 @@ export async function getOrderStatusWithFallback(
     .maybeSingle()
 
   if (error || !order) return { order: null }
+  const {
+    order: hydratedOrder,
+    transaction: hintedTransaction,
+  } = await attachKnownWompiTransaction(order as Order, supabase, transactionId)
 
-  // If still pending and created > 2 min ago, check Wompi as fallback
-  if (order.status === "pending") {
-    const createdAt = new Date(order.created_at).getTime()
-    const twoMinutesAgo = Date.now() - 2 * 60 * 1000
+  // If still pending and created > 30s ago, check Wompi as fallback.
+  // This keeps the return page responsive for slow methods like PSE/Nequi
+  // without depending exclusively on webhook arrival.
+  if (hydratedOrder.status === "pending") {
+    const createdAt = new Date(hydratedOrder.created_at).getTime()
+    const recheckAfter = Date.now() - PAYMENT_RETURN_RECHECK_DELAY_MS
 
-    if (createdAt < twoMinutesAgo) {
+    if (createdAt < recheckAfter) {
       // H-03: try/catch around Wompi fetch — fallback to returning order as-is
       try {
-        const wompiResult = await queryWompiByReference(reference)
+        const wompiResult =
+          hintedTransaction ??
+          (await resolveWompiTransaction({ reference, transactionId }))
         if (wompiResult) {
           const mappedStatus = mapWompiStatus(wompiResult.status)
-          if (mappedStatus && mappedStatus !== "pending") {
+          const amountMatches = wompiResult.amountInCents === hydratedOrder.total
+          const currencyMatches =
+            wompiResult.currency.toUpperCase() === hydratedOrder.currency.toUpperCase()
+
+          if (mappedStatus && mappedStatus !== "pending" && amountMatches && currencyMatches) {
             await applyReconciliation(
-              order.id,
-              order.status as Parameters<typeof isValidTransition>[0],
+              hydratedOrder.id,
+              hydratedOrder.status as Parameters<typeof isValidTransition>[0],
               mappedStatus,
+              wompiResult.status,
               wompiResult.transactionId,
-              order.user_id
+              wompiResult.paymentMethodType,
+              wompiResult.customerEmail,
+              hydratedOrder.user_id
             )
 
             const enriched = await enrichOrderResponse(
-              { ...order, status: mappedStatus } as Order,
+              {
+                ...hydratedOrder,
+                status: mappedStatus,
+                wompi_transaction_id: wompiResult.transactionId,
+                payment_method: wompiResult.paymentMethodType,
+              } as Order,
               supabase
             )
 
@@ -67,7 +165,7 @@ export async function getOrderStatusWithFallback(
     }
   }
 
-  const enriched = await enrichOrderResponse(order as Order, supabase)
+  const enriched = await enrichOrderResponse(hydratedOrder, supabase)
   return enriched
 }
 
@@ -119,7 +217,10 @@ async function applyReconciliation(
   orderId: string,
   currentStatus: Parameters<typeof isValidTransition>[0],
   newStatus: ReturnType<typeof mapWompiStatus> & string,
+  externalStatus: string,
   transactionId: string,
+  paymentMethodType: string | null,
+  customerEmail: string | null,
   userId: string | null
 ) {
   if (!isValidTransition(currentStatus, newStatus)) return
@@ -131,6 +232,7 @@ async function applyReconciliation(
   const updateData: Record<string, unknown> = {
     status: newStatus,
     wompi_transaction_id: transactionId,
+    payment_method: paymentMethodType,
     updated_at: now,
   }
   if (newStatus === "approved") {
@@ -180,12 +282,18 @@ async function applyReconciliation(
   await supabase.from("payment_events").insert({
     order_id: orderId,
     source: "polling",
-    external_status: newStatus.toUpperCase(),
+    external_status: externalStatus,
     mapped_status: newStatus,
     wompi_transaction_id: transactionId,
     is_applied: true,
     payload_hash: `polling-${orderId}-${now}`,
-    payload_json: { source: "fallback_check", transactionId },
+    payload_json: {
+      source: "fallback_check",
+      transactionId,
+      externalStatus,
+      paymentMethodType,
+      customerEmail,
+    },
   })
 
   // Enqueue purchase confirmation email after successful reconciliation (non-blocking)
@@ -203,14 +311,14 @@ export async function reconcilePendingOrders(): Promise<{
 }> {
   const supabase = createServiceRoleClient()
 
-  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+  const pendingMinAge = new Date(Date.now() - RECONCILE_PENDING_MIN_AGE_MS).toISOString()
 
   const { data: pendingOrders } = await supabase
     .from("orders")
-    .select("id, reference, status, user_id")
+    .select("id, reference, status, user_id, total, currency")
     .eq("status", "pending")
-    .lt("created_at", fifteenMinutesAgo)
-    .limit(50)
+    .lt("created_at", pendingMinAge)
+    .limit(RECONCILE_PENDING_BATCH_SIZE)
 
   if (!pendingOrders?.length) return { reconciled: 0 }
 
@@ -233,11 +341,21 @@ export async function reconcilePendingOrders(): Promise<{
       const mappedStatus = mapWompiStatus(wompiResult.status)
       if (!mappedStatus || mappedStatus === "pending") continue
 
+      if (
+        wompiResult.amountInCents !== order.total ||
+        wompiResult.currency.toUpperCase() !== order.currency.toUpperCase()
+      ) {
+        continue
+      }
+
       await applyReconciliation(
         order.id,
         order.status as Parameters<typeof isValidTransition>[0],
         mappedStatus,
+        wompiResult.status,
         wompiResult.transactionId,
+        wompiResult.paymentMethodType,
+        wompiResult.customerEmail,
         order.user_id
       )
 

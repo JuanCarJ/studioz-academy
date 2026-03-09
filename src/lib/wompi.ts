@@ -29,6 +29,16 @@ export interface WompiWebhookEvent {
   sent_at: string
 }
 
+export interface WompiTransactionLookup {
+  transactionId: string
+  reference: string
+  status: string
+  amountInCents: number
+  currency: string
+  paymentMethodType: string | null
+  customerEmail: string | null
+}
+
 /**
  * Resolve a dot-path like "transaction.id" from the event.data object.
  */
@@ -104,6 +114,10 @@ export function createCheckoutUrl(params: {
   amountInCents: number
   currency?: string
   redirectUrl: string
+  customerEmail?: string | null
+  customerFullName?: string | null
+  customerPhoneNumber?: string | null
+  customerPhoneNumberPrefix?: string | null
 }): string {
   const currency = params.currency ?? "COP"
   const integrityString = `${params.reference}${params.amountInCents}${currency}${env.WOMPI_INTEGRITY_KEY()}`
@@ -117,7 +131,91 @@ export function createCheckoutUrl(params: {
   url.searchParams.set("redirect-url", params.redirectUrl)
   url.searchParams.set("signature:integrity", signature)
 
+  if (params.customerEmail) {
+    url.searchParams.set("customer-data:email", params.customerEmail)
+  }
+
+  if (params.customerFullName) {
+    url.searchParams.set("customer-data:full-name", params.customerFullName)
+  }
+
+  if (params.customerPhoneNumber && params.customerPhoneNumberPrefix) {
+    url.searchParams.set("customer-data:phone-number", params.customerPhoneNumber)
+    url.searchParams.set(
+      "customer-data:phone-number-prefix",
+      params.customerPhoneNumberPrefix
+    )
+  }
+
   return url.toString()
+}
+
+function parseTransaction(
+  tx: Record<string, unknown> | null | undefined
+): WompiTransactionLookup | null {
+  if (!tx) return null
+
+  const transactionId =
+    typeof tx.id === "string" && tx.id.trim().length > 0 ? tx.id : null
+  const reference =
+    typeof tx.reference === "string" && tx.reference.trim().length > 0
+      ? tx.reference
+      : null
+  const status =
+    typeof tx.status === "string" && tx.status.trim().length > 0 ? tx.status : null
+  const amountInCents =
+    typeof tx.amount_in_cents === "number" ? tx.amount_in_cents : null
+  const currency =
+    typeof tx.currency === "string" && tx.currency.trim().length > 0
+      ? tx.currency
+      : null
+
+  if (
+    !transactionId ||
+    !reference ||
+    !status ||
+    amountInCents === null ||
+    !currency
+  ) {
+    return null
+  }
+
+  return {
+    transactionId,
+    reference,
+    status,
+    amountInCents,
+    currency,
+    paymentMethodType:
+      typeof tx.payment_method_type === "string" ? tx.payment_method_type : null,
+    customerEmail: typeof tx.customer_email === "string" ? tx.customer_email : null,
+  }
+}
+
+async function readTransactionFromWompi(
+  url: string,
+  authToken: string
+): Promise<Record<string, unknown> | null> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${authToken}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!res.ok) return null
+
+  const json = await res.json()
+  const data = json.data
+
+  if (Array.isArray(data)) {
+    return (data[0] as Record<string, unknown> | undefined) ?? null
+  }
+
+  if (data && typeof data === "object") {
+    return data as Record<string, unknown>
+  }
+
+  return null
 }
 
 /**
@@ -129,27 +227,31 @@ export function createCheckoutUrl(params: {
  */
 export async function queryWompiByReference(
   reference: string
-): Promise<{ status: string; transactionId: string } | null> {
+): Promise<WompiTransactionLookup | null> {
   try {
-    const res = await fetch(
+    const tx = await readTransactionFromWompi(
       `${env.WOMPI_API_BASE_URL()}/transactions?reference=${encodeURIComponent(reference)}`,
-      {
-        headers: { Authorization: `Bearer ${env.WOMPI_PRIVATE_KEY()}` },
-        cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
-      }
+      env.WOMPI_PRIVATE_KEY()
     )
+    return parseTransaction(tx)
+  } catch {
+    return null
+  }
+}
 
-    if (!res.ok) return null
-
-    const json = await res.json()
-    const tx = json.data?.[0]
-    if (!tx) return null
-
-    return {
-      status: tx.status as string,
-      transactionId: tx.id as string,
-    }
+/**
+ * Query Wompi API for a transaction by transaction id.
+ * This is the documented polling endpoint and uses the public key.
+ */
+export async function queryWompiTransactionById(
+  transactionId: string
+): Promise<WompiTransactionLookup | null> {
+  try {
+    const tx = await readTransactionFromWompi(
+      `${env.WOMPI_API_BASE_URL()}/transactions/${encodeURIComponent(transactionId)}`,
+      env.WOMPI_PUBLIC_KEY()
+    )
+    return parseTransaction(tx)
   } catch {
     return null
   }
