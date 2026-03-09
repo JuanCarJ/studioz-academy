@@ -10,6 +10,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
+    "test:bunny": "PLAYWRIGHT_BUNNY_ENABLED=1 playwright test e2e/bunny-integration.spec.ts --project=desktop-chromium",
     "test:wompi": "PLAYWRIGHT_USE_EXISTING_SERVER=0 playwright test e2e/wompi-checkout-web.spec.ts e2e/wompi-sandbox.spec.ts e2e/wompi-capabilities.spec.ts --project=desktop-chromium",
     "test:wompi:checkout": "PLAYWRIGHT_USE_EXISTING_SERVER=0 playwright test e2e/wompi-checkout-web.spec.ts --project=desktop-chromium",
     "test:wompi:sandbox": "PLAYWRIGHT_USE_EXISTING_SERVER=1 playwright test e2e/wompi-sandbox.spec.ts --project=desktop-chromium",

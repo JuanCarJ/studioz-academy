@@ -16,6 +16,7 @@ export interface LessonActionState {
   /** Returned to client for direct upload to Bunny. */
   uploadUrl?: string
   videoId?: string
+  lessonId?: string
 }
 
 async function verifyAdmin() {
@@ -108,6 +109,9 @@ export async function createLesson(
     is_free: isFree,
     bunny_video_id: videoId,
     bunny_library_id: libraryId,
+    bunny_status: "processing",
+    pending_bunny_status: "none",
+    video_upload_error: null,
     duration_seconds: durationSeconds,
     sort_order: nextSortOrder,
   })
@@ -123,7 +127,14 @@ export async function createLesson(
 
   await recalculateCourseProgress(adminSupabase, courseId)
 
-  return { success: true, uploadUrl, videoId }
+  const { data: lesson } = await adminSupabase
+    .from("lessons")
+    .select("id")
+    .eq("course_id", courseId)
+    .eq("bunny_video_id", videoId)
+    .maybeSingle()
+
+  return { success: true, uploadUrl, videoId, lessonId: lesson?.id }
 }
 
 /**
@@ -238,30 +249,69 @@ export async function commitLessonVideoReplacement(
   const adminSupabase = createServiceRoleClient()
   const { data: lesson } = await adminSupabase
     .from("lessons")
-    .select("course_id, bunny_video_id")
+    .select("course_id, bunny_video_id, bunny_status")
     .eq("id", lessonId)
     .single()
 
   if (!lesson) return { error: "Leccion no encontrada." }
 
-  const oldVideoId = lesson.bunny_video_id
   const libraryId = env.BUNNY_LIBRARY_ID()
+
+  const updateData =
+    lesson.bunny_video_id && lesson.bunny_status === "ready"
+      ? {
+          pending_bunny_video_id: newVideoId,
+          pending_bunny_library_id: libraryId,
+          pending_bunny_status: "processing",
+          video_upload_error: null,
+        }
+      : {
+          bunny_video_id: newVideoId,
+          bunny_library_id: libraryId,
+          bunny_status: "processing",
+          pending_bunny_video_id: null,
+          pending_bunny_library_id: null,
+          pending_bunny_status: "none",
+          video_upload_error: null,
+        }
 
   const { error } = await adminSupabase
     .from("lessons")
-    .update({
-      bunny_video_id: newVideoId,
-      bunny_library_id: libraryId,
-    })
+    .update(updateData)
     .eq("id", lessonId)
 
   if (error) {
     return { error: "No se pudo confirmar el reemplazo de video." }
   }
 
-  if (oldVideoId && oldVideoId !== newVideoId) {
-    await deleteBunnyVideo(oldVideoId).catch(() => undefined)
-  }
+  revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
+  revalidatePath(`/cursos`)
+
+  return { success: true }
+}
+
+export async function markLessonUploadFailed(
+  lessonId: string
+): Promise<LessonActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  const adminSupabase = createServiceRoleClient()
+  const { data: lesson } = await adminSupabase
+    .from("lessons")
+    .select("course_id")
+    .eq("id", lessonId)
+    .single()
+
+  if (!lesson) return { error: "Leccion no encontrada." }
+
+  await adminSupabase
+    .from("lessons")
+    .update({
+      bunny_status: "error",
+      video_upload_error: "No se pudo completar la subida del archivo.",
+    })
+    .eq("id", lessonId)
 
   revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
   revalidatePath(`/cursos`)
@@ -302,13 +352,17 @@ export async function deleteLesson(
   // Fetch lesson details before deleting
   const { data: lesson } = await adminSupabase
     .from("lessons")
-    .select("course_id, bunny_video_id")
+    .select("course_id, bunny_video_id, pending_bunny_video_id")
     .eq("id", lessonId)
     .single()
 
   if (!lesson) return { error: "Leccion no encontrada." }
 
-  const { course_id: courseId, bunny_video_id: bunnyVideoId } = lesson
+  const {
+    course_id: courseId,
+    bunny_video_id: bunnyVideoId,
+    pending_bunny_video_id: pendingVideoId,
+  } = lesson
 
   // Step 1: Delete lesson_progress rows for this lesson
   await adminSupabase.from("lesson_progress").delete().eq("lesson_id", lessonId)
@@ -329,6 +383,10 @@ export async function deleteLesson(
   // Step 4: Delete Bunny video (best-effort — do not fail the action if this errors)
   if (bunnyVideoId) {
     await deleteBunnyVideo(bunnyVideoId).catch(() => undefined)
+  }
+
+  if (pendingVideoId && pendingVideoId !== bunnyVideoId) {
+    await deleteBunnyVideo(pendingVideoId).catch(() => undefined)
   }
 
   revalidatePath(`/admin/cursos/${courseId}/editar`)

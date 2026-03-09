@@ -37,6 +37,13 @@ export interface Course {
   is_free: boolean
   thumbnail_url: string | null
   preview_video_url: string | null
+  preview_bunny_video_id: string | null
+  preview_bunny_library_id: string | null
+  preview_status: "none" | "legacy" | "processing" | "ready" | "error"
+  pending_preview_bunny_video_id: string | null
+  pending_preview_bunny_library_id: string | null
+  pending_preview_status: "none" | "processing" | "ready" | "error"
+  preview_upload_error: string | null
   instructor_id: string
   instructor?: Instructor
   legacy_instructor_name: string | null
@@ -57,6 +64,11 @@ export interface Lesson {
   description: string | null
   bunny_video_id: string
   bunny_library_id: string
+  bunny_status: "processing" | "ready" | "error"
+  pending_bunny_video_id: string | null
+  pending_bunny_library_id: string | null
+  pending_bunny_status: "none" | "processing" | "ready" | "error"
+  video_upload_error: string | null
   duration_seconds: number
   sort_order: number
   is_free: boolean

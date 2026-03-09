@@ -42,8 +42,9 @@ export function AddLessonDialog({ courseId }: AddLessonDialogProps) {
         <DialogHeader>
           <DialogTitle>Agregar leccion</DialogTitle>
           <DialogDescription>
-            Completa los datos de la nueva leccion. El video se cargara
-            directamente a Bunny Stream.
+            Completa los datos de la nueva leccion. El archivo se subira a
+            Bunny Stream y la leccion quedara en procesamiento hasta que el
+            video este listo.
           </DialogDescription>
         </DialogHeader>
         <LessonForm courseId={courseId} onSuccess={handleSuccess} />

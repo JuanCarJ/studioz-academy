@@ -228,6 +228,13 @@ export type Database = {
           is_free: boolean
           is_published: boolean
           legacy_instructor_name: string | null
+          pending_preview_bunny_library_id: string | null
+          pending_preview_bunny_video_id: string | null
+          pending_preview_status: string
+          preview_bunny_library_id: string | null
+          preview_bunny_video_id: string | null
+          preview_status: string
+          preview_upload_error: string | null
           preview_video_url: string | null
           price: number
           published_at: string | null
@@ -248,6 +255,13 @@ export type Database = {
           is_free?: boolean
           is_published?: boolean
           legacy_instructor_name?: string | null
+          pending_preview_bunny_library_id?: string | null
+          pending_preview_bunny_video_id?: string | null
+          pending_preview_status?: string
+          preview_bunny_library_id?: string | null
+          preview_bunny_video_id?: string | null
+          preview_status?: string
+          preview_upload_error?: string | null
           preview_video_url?: string | null
           price?: number
           published_at?: string | null
@@ -268,6 +282,13 @@ export type Database = {
           is_free?: boolean
           is_published?: boolean
           legacy_instructor_name?: string | null
+          pending_preview_bunny_library_id?: string | null
+          pending_preview_bunny_video_id?: string | null
+          pending_preview_status?: string
+          preview_bunny_library_id?: string | null
+          preview_bunny_video_id?: string | null
+          preview_status?: string
+          preview_upload_error?: string | null
           preview_video_url?: string | null
           price?: number
           published_at?: string | null
@@ -523,6 +544,7 @@ export type Database = {
       }
       lessons: {
         Row: {
+          bunny_status: string
           bunny_library_id: string
           bunny_video_id: string
           course_id: string
@@ -531,11 +553,16 @@ export type Database = {
           duration_seconds: number
           id: string
           is_free: boolean
+          pending_bunny_library_id: string | null
+          pending_bunny_status: string
+          pending_bunny_video_id: string | null
           sort_order: number
           title: string
           updated_at: string
+          video_upload_error: string | null
         }
         Insert: {
+          bunny_status?: string
           bunny_library_id: string
           bunny_video_id: string
           course_id: string
@@ -544,11 +571,16 @@ export type Database = {
           duration_seconds?: number
           id?: string
           is_free?: boolean
+          pending_bunny_library_id?: string | null
+          pending_bunny_status?: string
+          pending_bunny_video_id?: string | null
           sort_order: number
           title: string
           updated_at?: string
+          video_upload_error?: string | null
         }
         Update: {
+          bunny_status?: string
           bunny_library_id?: string
           bunny_video_id?: string
           course_id?: string
@@ -557,9 +589,13 @@ export type Database = {
           duration_seconds?: number
           id?: string
           is_free?: boolean
+          pending_bunny_library_id?: string | null
+          pending_bunny_status?: string
+          pending_bunny_video_id?: string | null
           sort_order?: number
           title?: string
           updated_at?: string
+          video_upload_error?: string | null
         }
         Relationships: [
           {

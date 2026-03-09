@@ -3,19 +3,22 @@
 import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { resolveLessonAssetState } from "@/lib/bunny"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { generateSignedUrl } from "@/lib/bunny"
 
 export async function getSignedVideoUrl(
   lessonId: string
-): Promise<{ url: string; error?: string }> {
+): Promise<{ url: string; error?: string; state?: string }> {
   const supabase = await createServerClient()
 
   // Fetch lesson with course
   const { data: lesson } = await supabase
     .from("lessons")
-    .select("id, bunny_video_id, is_free, course_id, courses(id, is_published, slug)")
+    .select(
+      "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, slug)"
+    )
     .eq("id", lessonId)
     .single()
 
@@ -29,10 +32,19 @@ export async function getSignedVideoUrl(
     return { url: "", error: "Curso no disponible." }
   }
 
+  const playbackState = resolveLessonAssetState(lesson)
+  if (!playbackState.isPlayable) {
+    return {
+      url: "",
+      error: playbackState.message ?? "El video todavia no esta listo.",
+      state: playbackState.state,
+    }
+  }
+
   // Free lessons: no auth required
   if (lesson.is_free) {
     const signedUrl = generateSignedUrl(lesson.bunny_video_id)
-    return { url: signedUrl }
+    return { url: signedUrl, state: playbackState.state }
   }
 
   // Paid lessons: require auth + enrollment
@@ -51,7 +63,7 @@ export async function getSignedVideoUrl(
   }
 
   const signedUrl = generateSignedUrl(lesson.bunny_video_id)
-  return { url: signedUrl }
+  return { url: signedUrl, state: playbackState.state }
 }
 
 /**
