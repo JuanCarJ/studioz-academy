@@ -16,6 +16,13 @@ interface PlayerJsInstance {
   setCurrentTime?: (time: number) => void
 }
 
+interface PlayerJsInternalInstance extends PlayerJsInstance {
+  elem?: HTMLIFrameElement
+  isReady?: boolean
+  loaded?: boolean
+  queue?: unknown[]
+}
+
 type PlayerJsConstructor = new (element: HTMLIFrameElement) => PlayerJsInstance
 
 declare global {
@@ -248,11 +255,34 @@ export function VideoPlayer({
         wrapper.dataset.playerApiReady = "false"
       }
 
-      const player = playerRef.current
+      const player = playerRef.current as PlayerJsInternalInstance | null
+      if (player) {
+        // Bunny's player.js does not expose a destroy method and will try to
+        // postMessage during off(). Neutralize the transport before cleanup so
+        // internal route changes do not throw against a detached iframe.
+        player.loaded = false
+        player.isReady = false
+        player.queue = []
+        player.elem = {
+          src: "__disposed__",
+          contentWindow: {
+            postMessage() {},
+          },
+        } as unknown as HTMLIFrameElement
+      }
+
       if (player?.off) {
         for (const listener of listeners) {
-          player.off(listener.event, listener.handler)
+          try {
+            player.off(listener.event, listener.handler)
+          } catch {
+            // Ignore teardown errors from the third-party player wrapper.
+          }
         }
+      }
+
+      if (player) {
+        player.queue = []
       }
 
       playerRef.current = null
