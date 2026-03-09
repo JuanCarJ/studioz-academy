@@ -115,6 +115,7 @@ export function PaymentReturnView({
                 <li key={item.courseSlug}>
                   <Link
                     href={`/dashboard/cursos/${item.courseSlug}`}
+                    prefetch={false}
                     className="block rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
                   >
                     {item.courseTitle}
@@ -126,7 +127,9 @@ export function PaymentReturnView({
 
           <div className="mt-6 flex flex-col gap-3">
             <Button size="lg" asChild>
-              <Link href={primaryCtaHref}>{primaryCtaLabel}</Link>
+              <Link href={primaryCtaHref} prefetch={primaryCtaHref.startsWith("/dashboard") ? false : undefined}>
+                {primaryCtaLabel}
+              </Link>
             </Button>
             <Button variant="outline" size="lg" asChild>
               <Link href="/cursos">Seguir explorando cursos</Link>

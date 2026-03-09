@@ -70,7 +70,7 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href="/dashboard" prefetch={false} className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               Mi Aprendizaje
             </Link>

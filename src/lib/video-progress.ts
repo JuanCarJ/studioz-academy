@@ -1,3 +1,5 @@
+import { revalidatePath } from "next/cache"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -16,6 +18,17 @@ interface ResolveLessonAccessInput {
 interface ResolveLessonAccessResult {
   ok: true
   courseId: string
+  courseSlug: string | null
+}
+
+function getRelatedCourseSlug(
+  value: { slug: string } | { slug: string }[] | null | undefined
+) {
+  if (!value) return null
+  if (Array.isArray(value)) {
+    return value[0]?.slug ?? null
+  }
+  return value.slug
 }
 
 async function assertMutationSucceeded<T extends { error: Error | null }>(
@@ -39,7 +52,7 @@ export async function resolveEnrolledLessonAccess({
 > {
   const { data: lesson } = await supabase
     .from("lessons")
-    .select("id, course_id")
+    .select("id, course_id, courses(slug)")
     .eq("id", lessonId)
     .single()
 
@@ -62,7 +75,13 @@ export async function resolveEnrolledLessonAccess({
     return { ok: false, reason: "not_enrolled" }
   }
 
-  return { ok: true, courseId: lesson.course_id }
+  return {
+    ok: true,
+    courseId: lesson.course_id,
+    courseSlug: getRelatedCourseSlug(
+      lesson.courses as { slug: string } | { slug: string }[] | null | undefined
+    ),
+  }
 }
 
 export async function persistLessonVideoPosition(input: {
@@ -136,4 +155,12 @@ export async function persistExitVideoProgress(input: {
       { onConflict: "user_id,course_id" }
     )
   )
+}
+
+export function revalidateVideoProgressPaths(courseSlug: string | null) {
+  revalidatePath("/dashboard")
+
+  if (courseSlug) {
+    revalidatePath(`/dashboard/cursos/${courseSlug}`)
+  }
 }

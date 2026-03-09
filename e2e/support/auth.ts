@@ -34,3 +34,20 @@ export async function logoutCurrentUser(page: Page) {
 
   await expect(page).toHaveURL(/\/$/)
 }
+
+export async function goToLearningDashboard(page: Page) {
+  const desktopTrigger = page.getByRole("button", { name: /abrir menu de usuario/i })
+  if (await desktopTrigger.isVisible().catch(() => false)) {
+    await desktopTrigger.click()
+    const dashboardMenuItem = page.getByRole("menuitem").filter({ hasText: /mi aprendizaje/i })
+    if (await dashboardMenuItem.isVisible().catch(() => false)) {
+      await dashboardMenuItem.click()
+    } else {
+      await page.getByText(/mi aprendizaje/i).click()
+    }
+  } else {
+    await page.getByRole("link", { name: /^aprendizaje$/i }).click()
+  }
+
+  await expect(page).toHaveURL(/\/dashboard$/)
+}

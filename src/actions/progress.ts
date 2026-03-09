@@ -2,6 +2,11 @@
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
+import {
+  persistCourseLastAccess,
+  revalidateVideoProgressPaths,
+  resolveEnrolledLessonAccess,
+} from "@/lib/video-progress"
 
 import type { CourseProgress } from "@/types"
 
@@ -22,6 +27,7 @@ export interface EnrolledCourseWithProgress {
     percentage: number
     isCompleted: boolean
     lastLessonId: string | null
+    hasVideoProgress: boolean
     lastAccessedAt: string
   }
   enrolledAt: string
@@ -82,10 +88,34 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
       .in("course_id", courseIds),
   ])
 
+  const lessonIdToCourseId = new Map<string, string>()
+  for (const lesson of lessonsData ?? []) {
+    lessonIdToCourseId.set(lesson.id, lesson.course_id)
+  }
+
+  const lessonProgressIds = Array.from(lessonIdToCourseId.keys())
+  const { data: lessonProgressData } =
+    lessonProgressIds.length > 0
+      ? await supabase
+          .from("lesson_progress")
+          .select("lesson_id, video_position")
+          .eq("user_id", user.id)
+          .gt("video_position", 0)
+          .in("lesson_id", lessonProgressIds)
+      : { data: [] as Array<{ lesson_id: string; video_position: number | null }> }
+
   // Build lesson count map
   const lessonCountMap = new Map<string, number>()
   for (const lesson of lessonsData ?? []) {
     lessonCountMap.set(lesson.course_id, (lessonCountMap.get(lesson.course_id) ?? 0) + 1)
+  }
+
+  const courseIdsWithVideoProgress = new Set<string>()
+  for (const lessonProgress of lessonProgressData ?? []) {
+    const courseId = lessonIdToCourseId.get(lessonProgress.lesson_id)
+    if (courseId) {
+      courseIdsWithVideoProgress.add(courseId)
+    }
   }
 
   // Build progress map
@@ -128,6 +158,7 @@ export async function getEnrolledCoursesWithProgress(): Promise<{
           percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
           isCompleted: progress?.is_completed ?? false,
           lastLessonId: progress?.last_lesson_id ?? null,
+          hasVideoProgress: courseIdsWithVideoProgress.has(course.id),
           lastAccessedAt: progress?.last_accessed_at ?? e.enrolled_at,
         },
         enrolledAt: e.enrolled_at,
@@ -149,23 +180,33 @@ export async function updateLastLesson(
   if (!user) return { error: "AUTH_REQUIRED" }
 
   const supabase = await createServerClient()
+  const lessonAccess = await resolveEnrolledLessonAccess({
+    supabase,
+    userId: user.id,
+    lessonId,
+    expectedCourseId: courseId,
+  })
 
-  const { error } = await supabase
-    .from("course_progress")
-    .upsert(
-      {
-        user_id: user.id,
-        course_id: courseId,
-        last_lesson_id: lessonId,
-        last_accessed_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,course_id" }
-    )
+  if (!lessonAccess.ok) {
+    if (lessonAccess.reason === "lesson_not_found" || lessonAccess.reason === "course_mismatch") {
+      return { error: "Leccion no encontrada." }
+    }
 
-  if (error) {
+    return { error: "No estas inscrito en este curso." }
+  }
+
+  try {
+    await persistCourseLastAccess({
+      userId: user.id,
+      courseId: lessonAccess.courseId,
+      lessonId,
+    })
+  } catch (error) {
     console.error("[progress] Failed to update last lesson:", error)
     return { error: "Error al actualizar progreso." }
   }
+
+  revalidateVideoProgressPaths(lessonAccess.courseSlug)
 
   return {}
 }

@@ -9,6 +9,8 @@ import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { generateSignedUrl } from "@/lib/bunny"
 import {
   persistLessonVideoPosition,
+  persistCourseLastAccess,
+  revalidateVideoProgressPaths,
   resolveEnrolledLessonAccess,
 } from "@/lib/video-progress"
 
@@ -96,11 +98,25 @@ export async function saveVideoPosition(
     return { error: "No estas inscrito en este curso." }
   }
 
-  await persistLessonVideoPosition({
-    userId: user.id,
-    lessonId,
-    position,
-  })
+  try {
+    await Promise.all([
+      persistLessonVideoPosition({
+        userId: user.id,
+        lessonId,
+        position,
+      }),
+      persistCourseLastAccess({
+        userId: user.id,
+        courseId: lessonAccess.courseId,
+        lessonId,
+      }),
+    ])
+  } catch (error) {
+    console.error("[lessons] Failed to save video position:", error)
+    return { error: "Error al guardar el progreso del video." }
+  }
+
+  revalidateVideoProgressPaths(lessonAccess.courseSlug)
 
   return {}
 }

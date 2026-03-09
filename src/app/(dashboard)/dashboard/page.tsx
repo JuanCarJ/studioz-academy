@@ -63,7 +63,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const totalCourses = courses.length
   const completedCourses = courses.filter((c) => c.progress.isCompleted).length
   const inProgressCourses = courses.filter(
-    (c) => c.progress.percentage > 0 && !c.progress.isCompleted
+    (c) =>
+      !c.progress.isCompleted &&
+      (c.progress.percentage > 0 ||
+        c.progress.hasVideoProgress ||
+        Boolean(c.progress.lastLessonId))
   ).length
 
   return (
