@@ -36,7 +36,7 @@ function isAuthRoute(path: string): boolean {
   )
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // Create Supabase client and refresh auth session for ALL routes.

@@ -92,7 +92,16 @@ export function OrdersTable({ orders }: OrdersTableProps) {
                 </div>
               </TableCell>
               <TableCell className="font-medium">
-                {formatCOP(order.total)}
+                <div>
+                  <p>{formatCOP(order.total)}</p>
+                  {order.discount_amount > 0 && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-500">
+                      {order.discount_rule_name
+                        ? order.discount_rule_name
+                        : "Combo aplicado"}
+                    </p>
+                  )}
+                </div>
               </TableCell>
               <TableCell>
                 <Badge variant={STATUS_VARIANTS[order.status] ?? "secondary"}>

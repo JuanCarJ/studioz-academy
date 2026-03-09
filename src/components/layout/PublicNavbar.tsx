@@ -15,8 +15,12 @@ export async function PublicNavbar() {
     const supabase = await createServerClient()
     const { count } = await supabase
       .from("cart_items")
-      .select("id", { count: "exact", head: true })
+      .select("id, courses!inner(is_published)", {
+        count: "exact",
+        head: true,
+      })
       .eq("user_id", user.id)
+      .eq("courses.is_published", true)
     cartCount = count ?? 0
   }
 

@@ -2,10 +2,13 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { createServerClient } from "@/lib/supabase/server"
+import { getBestDiscount } from "@/lib/discounts"
 import { getCart } from "@/actions/cart"
 import { CartItem } from "@/components/cart/CartItem"
 import { CartSummary } from "@/components/cart/CartSummary"
 import { Button } from "@/components/ui/button"
+import type { DiscountRule } from "@/types"
 
 export const metadata = { title: "Carrito — Studio Z Academy" }
 
@@ -33,9 +36,23 @@ export default async function CartPage() {
   }
 
   const subtotal = items.reduce((acc, item) => acc + item.course.price, 0)
-  // Discount logic placeholder — ready for Inc 4 combo rules
-  const discountAmount = 0
-  const discountName: string | null = null
+  const supabase = await createServerClient()
+  const { data: rules } = await supabase
+    .from("discount_rules")
+    .select("*")
+    .eq("is_active", true)
+
+  const discount = getBestDiscount(
+    items.map((item) => ({
+      category: item.course.category,
+      price: item.course.price,
+      isFree: item.course.is_free,
+    })),
+    (rules ?? []) as DiscountRule[]
+  )
+
+  const discountAmount = discount.amount
+  const discountName = discount.rule?.name ?? null
   const total = subtotal - discountAmount
 
   return (

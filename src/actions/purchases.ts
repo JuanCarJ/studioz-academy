@@ -14,6 +14,7 @@ export interface OrderSummary {
   status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
   subtotal: number
   discount_amount: number
+  discount_rule_name: string | null
   total: number
   payment_method: string | null
   created_at: string
@@ -43,6 +44,7 @@ export async function getUserOrders(): Promise<{
       status,
       subtotal,
       discount_amount,
+      discount_rules(name),
       total,
       payment_method,
       created_at,
@@ -67,6 +69,9 @@ export async function getUserOrders(): Promise<{
     status: row.status as OrderSummary["status"],
     subtotal: row.subtotal,
     discount_amount: row.discount_amount,
+    discount_rule_name: Array.isArray(row.discount_rules)
+      ? (row.discount_rules[0]?.name ?? null)
+      : ((row.discount_rules as { name?: string } | null)?.name ?? null),
     total: row.total,
     payment_method: row.payment_method,
     created_at: row.created_at,

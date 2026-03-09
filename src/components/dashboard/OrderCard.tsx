@@ -174,7 +174,10 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
             </div>
             {order.discount_amount > 0 && (
               <div className="flex justify-between text-emerald-600 dark:text-emerald-500">
-                <span>Descuento</span>
+                <span>
+                  Descuento
+                  {order.discount_rule_name ? ` (${order.discount_rule_name})` : ""}
+                </span>
                 <span>-{formatCOP(order.discount_amount)}</span>
               </div>
             )}

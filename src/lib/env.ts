@@ -10,6 +10,11 @@ function requireEnv(key: string): string {
   return value
 }
 
+function optionalEnv(key: string): string | null {
+  const value = process.env[key]
+  return value && value.trim().length > 0 ? value : null
+}
+
 export const env = {
   // Supabase
   SUPABASE_URL: () => requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -21,6 +26,13 @@ export const env = {
   WOMPI_PRIVATE_KEY: () => requireEnv("WOMPI_PRIVATE_KEY"),
   WOMPI_EVENTS_SECRET: () => requireEnv("WOMPI_EVENTS_SECRET"),
   WOMPI_INTEGRITY_KEY: () => requireEnv("WOMPI_INTEGRITY_KEY"),
+  WOMPI_API_BASE_URL: () =>
+    optionalEnv("WOMPI_API_BASE_URL") ?? "https://sandbox.wompi.co/v1",
+  WOMPI_CHECKOUT_URL: () =>
+    optionalEnv("WOMPI_CHECKOUT_URL") ?? "https://checkout.wompi.co/p/",
+  VERCEL_PROTECTION_BYPASS_SECRET: () =>
+    optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET") ??
+    optionalEnv("VERCEL_PROTECTION_BYPASS_SECRET"),
 
   // Bunny Stream
   BUNNY_API_KEY: () => requireEnv("BUNNY_API_KEY"),

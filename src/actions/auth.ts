@@ -17,6 +17,14 @@ export interface AuthActionState {
 const INVALID_CSRF_MESSAGE =
   "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
 
+function getSafeRedirectPath(redirectTo: string | null): string | null {
+  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
+    return null
+  }
+
+  return redirectTo
+}
+
 function parseAddToCartId(
   formData: FormData,
   redirectTo: string | null
@@ -33,6 +41,24 @@ function parseAddToCartId(
   const redirectUrl = new URL(redirectTo, "http://localhost")
   const addToCartFromRedirect = redirectUrl.searchParams.get("addToCart")
   return addToCartFromRedirect?.trim() || null
+}
+
+function buildOAuthNextPath(formData: FormData): string {
+  const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
+  const addToCartId =
+    typeof formData.get("addToCart") === "string"
+      ? (formData.get("addToCart") as string).trim()
+      : ""
+
+  const nextPath = redirectTo ?? "/dashboard"
+  if (!addToCartId) {
+    return nextPath
+  }
+
+  const nextUrl = new URL(nextPath, "http://localhost")
+  nextUrl.searchParams.set("addToCart", addToCartId)
+
+  return `${nextUrl.pathname}${nextUrl.search}`
 }
 
 /**
@@ -61,7 +87,7 @@ export async function register(
   const fullName = formData.get("fullName") as string
   const phone = (formData.get("phone") as string) || undefined
   const acceptsPrivacy = formData.get("acceptsPrivacy")
-  const redirectTo = formData.get("redirect") as string | null
+  const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
 
   if (!email || !password || !fullName) {
     return { error: "Todos los campos obligatorios deben ser completados." }
@@ -105,11 +131,7 @@ export async function register(
     redirect("/carrito")
   }
 
-  if (
-    redirectTo &&
-    redirectTo.startsWith("/") &&
-    !redirectTo.startsWith("//")
-  ) {
+  if (redirectTo) {
     redirect(redirectTo)
   }
 
@@ -126,7 +148,7 @@ export async function login(
 
   const email = formData.get("email") as string
   const password = formData.get("password") as string
-  const redirectTo = formData.get("redirect") as string | null
+  const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
 
   if (!email || !password) {
     return { error: "Email y contrasena son obligatorios." }
@@ -164,11 +186,7 @@ export async function login(
       redirect("/carrito")
     }
 
-    if (
-      redirectTo &&
-      redirectTo.startsWith("/") &&
-      !redirectTo.startsWith("//")
-    ) {
+    if (redirectTo) {
       redirect(redirectTo)
     }
 
@@ -185,11 +203,14 @@ export async function loginWithGoogle(formData: FormData) {
   }
 
   const supabase = await createServerClient()
+  const nextPath = buildOAuthNextPath(formData)
+  const redirectUrl = new URL("/auth/callback", process.env.NEXT_PUBLIC_APP_URL)
+  redirectUrl.searchParams.set("next", nextPath)
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+      redirectTo: redirectUrl.toString(),
     },
   })
 

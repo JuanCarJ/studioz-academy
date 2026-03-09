@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
 import type { Review } from "@/types"
@@ -21,7 +22,7 @@ export interface ReviewActionResult {
 export async function getCourseReviews(
   courseId: string
 ): Promise<ReviewWithUser[]> {
-  const supabase = await createServerClient()
+  const supabase = createServiceRoleClient()
 
   const { data, error } = await supabase
     .from("reviews")
