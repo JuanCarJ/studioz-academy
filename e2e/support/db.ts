@@ -593,6 +593,99 @@ export async function getCourseBySlug(slug: string) {
   return data
 }
 
+export async function getCourseById(id: string) {
+  const { data, error } = await supabase
+    .from("courses")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function getLessonByTitle(courseId: string, title: string) {
+  const { data, error } = await supabase
+    .from("lessons")
+    .select("*")
+    .eq("course_id", courseId)
+    .eq("title", title)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function cleanupCourseTree(courseId: string) {
+  const { data: lessons, error: lessonsError } = await supabase
+    .from("lessons")
+    .select("id")
+    .eq("course_id", courseId)
+
+  if (lessonsError) throw lessonsError
+
+  const lessonIds = (lessons ?? []).map((lesson) => lesson.id)
+
+  if (lessonIds.length > 0) {
+    const { error: lessonProgressError } = await supabase
+      .from("lesson_progress")
+      .delete()
+      .in("lesson_id", lessonIds)
+
+    if (lessonProgressError) throw lessonProgressError
+  }
+
+  const { error: courseProgressError } = await supabase
+    .from("course_progress")
+    .delete()
+    .eq("course_id", courseId)
+
+  if (courseProgressError) throw courseProgressError
+
+  const { error: enrollmentsError } = await supabase
+    .from("enrollments")
+    .delete()
+    .eq("course_id", courseId)
+
+  if (enrollmentsError) throw enrollmentsError
+
+  const { error: cartItemsError } = await supabase
+    .from("cart_items")
+    .delete()
+    .eq("course_id", courseId)
+
+  if (cartItemsError) throw cartItemsError
+
+  if (lessonIds.length > 0) {
+    const { error: lessonsDeleteError } = await supabase
+      .from("lessons")
+      .delete()
+      .in("id", lessonIds)
+
+    if (lessonsDeleteError) throw lessonsDeleteError
+  }
+
+  const { error: courseDeleteError } = await supabase
+    .from("courses")
+    .delete()
+    .eq("id", courseId)
+
+  if (courseDeleteError) throw courseDeleteError
+}
+
+export async function cleanupCoursesBySlugPrefix(slugPrefix: string) {
+  const { data: courses, error } = await supabase
+    .from("courses")
+    .select("id")
+    .ilike("slug", `${slugPrefix}%`)
+
+  if (error) throw error
+
+  for (const course of courses ?? []) {
+    await cleanupCourseTree(course.id)
+  }
+}
+
 export async function getInstructorBySlug(slug: string) {
   const { data, error } = await supabase
     .from("instructors")

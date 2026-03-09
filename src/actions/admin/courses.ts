@@ -6,7 +6,8 @@ import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { deleteBunnyVideo } from "@/lib/bunny"
+import { createBunnyVideo, deleteBunnyVideo } from "@/lib/bunny"
+import { env } from "@/lib/env"
 import { slugify } from "@/lib/utils"
 
 import type { Course, Instructor } from "@/types"
@@ -14,6 +15,13 @@ import type { Course, Instructor } from "@/types"
 export interface CourseActionState {
   error?: string
   success?: boolean
+}
+
+export interface CoursePreviewActionState {
+  error?: string
+  success?: boolean
+  uploadUrl?: string
+  videoId?: string
 }
 
 const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024 // 2MB
@@ -70,7 +78,6 @@ export async function createCourse(
   const instructorId = formData.get("instructorId") as string
   const priceRaw = formData.get("price") as string
   const isFree = formData.get("isFree") === "on"
-  const previewVideoUrl = (formData.get("previewVideoUrl") as string) || null
 
   if (!title?.trim()) {
     return { error: "El titulo es obligatorio." }
@@ -112,7 +119,6 @@ export async function createCourse(
       instructor_id: instructorId,
       price: priceInCents,
       is_free: isFree,
-      preview_video_url: previewVideoUrl,
       is_published: false,
     })
     .select("id")
@@ -154,7 +160,6 @@ export async function updateCourse(
   const priceRaw = formData.get("price") as string
   const isFree = formData.get("isFree") === "on"
   const isPublished = formData.get("isPublished") === "on"
-  const previewVideoUrl = (formData.get("previewVideoUrl") as string) || null
 
   if (!title?.trim()) {
     return { error: "El titulo es obligatorio." }
@@ -197,7 +202,6 @@ export async function updateCourse(
     price: priceInCents,
     is_free: isFree,
     is_published: isPublished,
-    preview_video_url: previewVideoUrl,
   }
 
   if (publishedAt) {
@@ -259,6 +263,139 @@ export async function updateCourse(
   return { success: true }
 }
 
+export async function prepareCoursePreviewUpload(
+  courseId: string
+): Promise<CoursePreviewActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  const supabase = createServiceRoleClient()
+  const { data: course } = await supabase
+    .from("courses")
+    .select("title")
+    .eq("id", courseId)
+    .single()
+
+  if (!course) {
+    return { error: "Curso no encontrado." }
+  }
+
+  try {
+    const result = await createBunnyVideo(`${course.title} Preview`)
+    return {
+      success: true,
+      uploadUrl: result.uploadUrl,
+      videoId: result.videoId,
+    }
+  } catch {
+    return { error: "No se pudo preparar la vista previa en Bunny." }
+  }
+}
+
+export async function commitCoursePreviewUpload(
+  courseId: string,
+  videoId: string
+): Promise<CoursePreviewActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  if (!videoId?.trim()) {
+    return { error: "Vista previa invalida." }
+  }
+
+  const supabase = createServiceRoleClient()
+  const { data: course } = await supabase
+    .from("courses")
+    .select("id, slug, preview_video_url, preview_bunny_video_id, preview_status")
+    .eq("id", courseId)
+    .single()
+
+  if (!course) {
+    return { error: "Curso no encontrado." }
+  }
+
+  const libraryId = env.BUNNY_LIBRARY_ID()
+  const shouldKeepCurrentPreview =
+    !!course.preview_video_url ||
+    (!!course.preview_bunny_video_id && course.preview_status === "ready")
+
+  const updateData = shouldKeepCurrentPreview
+    ? {
+        pending_preview_bunny_video_id: videoId,
+        pending_preview_bunny_library_id: libraryId,
+        pending_preview_status: "processing",
+        preview_upload_error: null,
+      }
+    : {
+        preview_bunny_video_id: videoId,
+        preview_bunny_library_id: libraryId,
+        preview_status: "processing",
+        pending_preview_bunny_video_id: null,
+        pending_preview_bunny_library_id: null,
+        pending_preview_status: "none",
+        preview_upload_error: null,
+      }
+
+  const { error } = await supabase
+    .from("courses")
+    .update(updateData)
+    .eq("id", courseId)
+
+  if (error) {
+    return { error: "No se pudo guardar la vista previa del curso." }
+  }
+
+  revalidatePath(`/admin/cursos/${courseId}/editar`)
+  revalidatePath(`/cursos/${course.slug}`)
+  revalidatePath("/cursos")
+
+  return { success: true }
+}
+
+export async function discardCoursePreviewUpload(
+  courseId: string,
+  videoId: string
+): Promise<CoursePreviewActionState> {
+  const admin = await verifyAdmin()
+  if (!admin) return { error: "No autorizado." }
+
+  const supabase = createServiceRoleClient()
+  const { data: course } = await supabase
+    .from("courses")
+    .select(
+      "slug, preview_video_url, preview_bunny_video_id, pending_preview_bunny_video_id"
+    )
+    .eq("id", courseId)
+    .single()
+
+  if (!course) {
+    return { error: "Curso no encontrado." }
+  }
+
+  const updateData: Record<string, unknown> = {
+    preview_upload_error: "No se pudo completar la subida del archivo.",
+  }
+
+  if (course.pending_preview_bunny_video_id === videoId) {
+    updateData.pending_preview_bunny_video_id = null
+    updateData.pending_preview_bunny_library_id = null
+    updateData.pending_preview_status = "none"
+  } else if (course.preview_bunny_video_id === videoId) {
+    updateData.preview_bunny_video_id = null
+    updateData.preview_bunny_library_id = null
+    updateData.preview_status = course.preview_video_url ? "legacy" : "none"
+  }
+
+  await supabase.from("courses").update(updateData).eq("id", courseId)
+  await deleteBunnyVideo(videoId).catch(() => undefined)
+
+  revalidatePath(`/admin/cursos/${courseId}/editar`)
+  revalidatePath(`/cursos/${course.slug}`)
+  revalidatePath("/cursos")
+
+  return { success: true }
+}
+
 /**
  * Return the enrollment count for a course so the UI can warn the admin.
  */
@@ -281,7 +418,7 @@ export async function getCourseEnrollmentCount(
  * explicit confirmation before calling this action.
  *
  * Cascade order (manual where DB cascades are not configured):
- *   1. Fetch lesson IDs + Bunny video IDs
+ *   1. Fetch lesson IDs + Bunny video IDs + course preview assets
  *   2. Delete lesson_progress for all lessons
  *   3. Delete course_progress for the course
  *   4. Delete lessons
@@ -300,15 +437,30 @@ export async function deleteCourse(
   const adminSupabase = createServiceRoleClient()
 
   // Step 1: Fetch lessons for this course (need IDs + Bunny video IDs)
-  const { data: lessons } = await adminSupabase
-    .from("lessons")
-    .select("id, bunny_video_id")
-    .eq("course_id", courseId)
+  const [{ data: lessons }, { data: course }] = await Promise.all([
+    adminSupabase
+      .from("lessons")
+      .select("id, bunny_video_id, pending_bunny_video_id")
+      .eq("course_id", courseId),
+    adminSupabase
+      .from("courses")
+      .select("preview_bunny_video_id, pending_preview_bunny_video_id")
+      .eq("id", courseId)
+      .single(),
+  ])
 
   const lessonIds = (lessons ?? []).map((l: { id: string }) => l.id)
-  const bunnyVideoIds = (lessons ?? [])
-    .map((l: { bunny_video_id: string }) => l.bunny_video_id)
+  const lessonVideoIds = (lessons ?? [])
+    .flatMap(
+      (l: { bunny_video_id: string | null; pending_bunny_video_id: string | null }) =>
+        [l.bunny_video_id, l.pending_bunny_video_id].filter(Boolean)
+    )
     .filter(Boolean) as string[]
+  const previewVideoIds = [
+    course?.preview_bunny_video_id ?? null,
+    course?.pending_preview_bunny_video_id ?? null,
+  ].filter(Boolean) as string[]
+  const bunnyVideoIds = [...new Set([...lessonVideoIds, ...previewVideoIds])]
 
   // Step 2: Delete lesson_progress for all lessons in this course
   if (lessonIds.length > 0) {

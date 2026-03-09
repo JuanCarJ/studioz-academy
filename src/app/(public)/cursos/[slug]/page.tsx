@@ -67,6 +67,41 @@ async function RelatedCourses({
   )
 }
 
+function PreviewSlot({
+  title,
+  preview,
+}: {
+  title: string
+  preview: NonNullable<Awaited<ReturnType<typeof getCourseBySlug>>>["resolvedPreview"]
+}) {
+  if (!preview || preview.kind === "none") {
+    return null
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card p-4">
+      <div>
+        <h2 className="text-lg font-bold">Vista previa</h2>
+        <p className="text-sm text-muted-foreground">
+          {preview.kind === "ready" || preview.kind === "legacy"
+            ? "Mira una muestra del curso antes de inscribirte."
+            : "La vista previa aparecera aqui cuando Bunny termine de procesarla."}
+        </p>
+      </div>
+
+      {preview.isPlayable && preview.url ? (
+        <PreviewPlayer url={preview.url} />
+      ) : (
+        <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {preview.message ?? `La vista previa de ${title} no esta disponible.`}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default async function CourseDetailPage({ params }: PageProps) {
   const { slug } = await params
 
@@ -96,25 +131,6 @@ export default async function CourseDetailPage({ params }: PageProps) {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Hero / Thumbnail */}
-          <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
-            {course.thumbnail_url ? (
-              <Image
-                src={course.thumbnail_url}
-                alt={course.title}
-                fill
-                priority
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 66vw"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                Sin imagen
-              </div>
-            )}
-          </div>
-
           {/* Title area */}
           <div>
             <div className="mb-2 flex flex-wrap gap-2">
@@ -149,6 +165,35 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Top media block */}
+          <div
+            className={`grid gap-6 ${
+              course.resolvedPreview.kind !== "none"
+                ? "xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]"
+                : ""
+            }`}
+          >
+            <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+              {course.thumbnail_url ? (
+                <Image
+                  src={course.thumbnail_url}
+                  alt={course.title}
+                  fill
+                  priority
+                  className="object-cover"
+                  sizes="(max-width: 1280px) 100vw, 50vw"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-muted-foreground">
+                  Sin imagen
+                </div>
+              )}
+            </div>
+
+            <PreviewSlot title={course.title} preview={course.resolvedPreview} />
           </div>
 
           {/* Description */}
@@ -200,14 +245,6 @@ export default async function CourseDetailPage({ params }: PageProps) {
                   )
                 )}
               </ul>
-            </div>
-          )}
-
-          {/* Preview video */}
-          {course.preview_video_url && (
-            <div>
-              <h2 className="mb-3 text-xl font-bold">Vista previa</h2>
-              <PreviewPlayer url={course.preview_video_url} />
             </div>
           )}
         </div>
