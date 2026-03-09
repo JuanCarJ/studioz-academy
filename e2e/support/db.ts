@@ -755,6 +755,49 @@ export async function getCourseProgress(email: string, courseId: string) {
   return data
 }
 
+export async function resetCourseProgressForEmail(input: {
+  email: string
+  courseId: string
+  lastLessonId: string
+}) {
+  const profile = await getProfileByEmail(input.email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${input.email}`)
+  }
+
+  const { data: lessons, error: lessonsError } = await supabase
+    .from("lessons")
+    .select("id")
+    .eq("course_id", input.courseId)
+
+  if (lessonsError) throw lessonsError
+
+  const lessonIds = (lessons ?? []).map((lesson) => lesson.id)
+  if (lessonIds.length > 0) {
+    const { error: lessonProgressError } = await supabase
+      .from("lesson_progress")
+      .delete()
+      .eq("user_id", profile.authUser.id)
+      .in("lesson_id", lessonIds)
+
+    if (lessonProgressError) throw lessonProgressError
+  }
+
+  const { error: progressError } = await supabase.from("course_progress").upsert(
+    {
+      user_id: profile.authUser.id,
+      course_id: input.courseId,
+      last_lesson_id: input.lastLessonId,
+      completed_lessons: 0,
+      is_completed: false,
+      last_accessed_at: fixedNow,
+    },
+    { onConflict: "user_id,course_id" }
+  )
+
+  if (progressError) throw progressError
+}
+
 export async function getReviewForCourse(email: string, courseId: string) {
   const profile = await getProfileByEmail(email)
   if (!profile) return null

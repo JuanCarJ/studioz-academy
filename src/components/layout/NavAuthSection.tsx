@@ -3,10 +3,9 @@
 import Link from "next/link"
 import { User, LogOut, LayoutDashboard, Shield, ShoppingBag } from "lucide-react"
 
-import { logout } from "@/actions/auth"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { useCsrfToken } from "@/hooks/use-csrf-token"
+import { LogoutForm } from "@/components/layout/LogoutForm"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +26,6 @@ interface NavAuthSectionProps {
 }
 
 export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
-  const { csrfToken } = useCsrfToken()
-
   if (!user) {
     return (
       <div className="flex items-center gap-2">
@@ -54,7 +51,12 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
       <CartIcon itemCount={cartCount} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="rounded-full">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            aria-label="Abrir menu de usuario"
+          >
             <Avatar className="h-8 w-8">
               <AvatarFallback className="bg-primary text-xs text-primary-foreground">
                 {initials}
@@ -95,17 +97,16 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <form action={logout} className="w-full">
-              <input type="hidden" name="csrfToken" value={csrfToken} />
-              <button
-                type="submit"
-                disabled={!csrfToken}
-                className="flex w-full items-center gap-2 text-destructive"
-              >
+            <LogoutForm
+              className="w-full"
+              buttonClassName="flex w-full items-center gap-2 text-destructive"
+              buttonTestId="logout-button"
+            >
+              <>
                 <LogOut className="h-4 w-4" />
                 Cerrar sesion
-              </button>
-            </form>
+              </>
+            </LogoutForm>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

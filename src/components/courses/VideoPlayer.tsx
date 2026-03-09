@@ -16,21 +16,39 @@ interface VideoPlayerProps {
   signedUrl: string
   initialPosition?: number
   onTimeUpdate?: (currentTime: number) => void
+  onPause?: () => void
   onEnded?: () => void
+  progressFlushReady?: boolean
 }
 
 export function VideoPlayer({
   signedUrl,
   initialPosition = 0,
   onTimeUpdate,
+  onPause,
   onEnded,
+  progressFlushReady = false,
 }: VideoPlayerProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hasSeekededRef = useRef(false)
   const isReadyRef = useRef(false)
 
   // Send a postMessage to the Bunny iframe safely
   const sendToPlayer = useCallback((message: Record<string, unknown>) => {
+    const eventName = typeof message.event === "string" ? message.event : ""
+
+    if (wrapperRef.current) {
+      wrapperRef.current.dataset.lastCommand = eventName
+
+      if (eventName === "seek") {
+        const time = (message.data as { time?: number } | undefined)?.time
+        if (typeof time === "number") {
+          wrapperRef.current.dataset.lastSeekTime = String(time)
+        }
+      }
+    }
+
     try {
       iframeRef.current?.contentWindow?.postMessage(JSON.stringify(message), "*")
     } catch {
@@ -53,6 +71,11 @@ export function VideoPlayer({
     // Reset seek state when URL changes
     hasSeekededRef.current = false
     isReadyRef.current = false
+    const wrapper = wrapperRef.current
+
+    if (wrapper) {
+      wrapper.dataset.messageListenerReady = "true"
+    }
 
     function handleMessage(event: MessageEvent) {
       // Accept messages only — no origin check possible with Bunny signed URLs
@@ -91,6 +114,10 @@ export function VideoPlayer({
           onEnded?.()
           break
         }
+        case "pause": {
+          onPause?.()
+          break
+        }
         default:
           break
       }
@@ -98,9 +125,12 @@ export function VideoPlayer({
 
     window.addEventListener("message", handleMessage)
     return () => {
+      if (wrapper) {
+        wrapper.dataset.messageListenerReady = "false"
+      }
       window.removeEventListener("message", handleMessage)
     }
-  }, [signedUrl, seekToInitial, onTimeUpdate, onEnded])
+  }, [signedUrl, seekToInitial, onTimeUpdate, onPause, onEnded])
 
   if (!signedUrl) {
     return (
@@ -111,7 +141,15 @@ export function VideoPlayer({
   }
 
   return (
-    <div className="aspect-video overflow-hidden rounded-lg bg-black">
+    <div
+      ref={wrapperRef}
+      className="aspect-video overflow-hidden rounded-lg bg-black"
+      data-testid="course-video-player"
+      data-last-command=""
+      data-last-seek-time=""
+      data-message-listener-ready="false"
+      data-progress-flush-ready={progressFlushReady ? "true" : "false"}
+    >
       <iframe
         ref={iframeRef}
         src={signedUrl}
