@@ -118,6 +118,7 @@ export async function createReview(
   }
 
   revalidatePath(`/cursos/`)
+  revalidatePath(`/dashboard/cursos/`)
   return { success: true }
 }
 
@@ -162,6 +163,7 @@ export async function updateReview(
   }
 
   revalidatePath(`/cursos/`)
+  revalidatePath(`/dashboard/cursos/`)
   return { success: true }
 }
 
@@ -193,5 +195,6 @@ export async function deleteReview(
   }
 
   revalidatePath(`/cursos/`)
+  revalidatePath(`/dashboard/cursos/`)
   return { success: true }
 }

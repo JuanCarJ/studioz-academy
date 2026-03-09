@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { User, LogOut, LayoutDashboard, Shield, ShoppingBag } from "lucide-react"
+import { User, LogOut, LayoutDashboard, Shield, ShoppingBag, BookOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -48,6 +48,18 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
 
   return (
     <div className="flex items-center gap-2">
+      <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground">
+        <Link href="/dashboard">
+          <BookOpen className="mr-1.5 h-4 w-4" />
+          Mi Aprendizaje
+        </Link>
+      </Button>
+      <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground">
+        <Link href="/dashboard/compras">
+          <ShoppingBag className="mr-1.5 h-4 w-4" />
+          Mis Compras
+        </Link>
+      </Button>
       <CartIcon itemCount={cartCount} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
