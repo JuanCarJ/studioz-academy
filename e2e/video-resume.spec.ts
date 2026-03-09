@@ -30,6 +30,27 @@ async function resetVideoResumeState() {
 }
 
 test.describe("video resume flow", () => {
+  test("muestra Continuar en dashboard cuando existe una leccion guardada aunque el progreso sea 0%", async ({
+    page,
+  }) => {
+    const fixtures = await resetVideoResumeState()
+
+    await loginAsUser(page)
+    await page.goto("/dashboard")
+
+    await expect(
+      page.getByTestId(`enrolled-course-link-${qaFixtures.paidPrimaryCourseSlug}`)
+    ).toHaveText("Continuar")
+
+    const progress = await getCourseProgress(
+      qaCredentials.userEmail,
+      fixtures.paidPrimaryCourseId
+    )
+
+    expect(progress?.completed_lessons ?? 0).toBe(0)
+    expect(progress?.last_lesson_id).toBe(fixtures.paidPreviewLessonId)
+  })
+
   test("persiste progreso al pausar, cerrar sesion y reanuda al volver a entrar", async ({
     page,
   }) => {
@@ -46,7 +67,7 @@ test.describe("video resume flow", () => {
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
-      data: { currentTime: 42 },
+      data: { seconds: 42 },
     })
     await emitBunnyPlayerEvent(page, { event: "pause" })
 
@@ -98,7 +119,7 @@ test.describe("video resume flow", () => {
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
-      data: { currentTime: 73 },
+      data: { seconds: 73 },
     })
 
     await page.goto("/dashboard")
@@ -140,7 +161,7 @@ test.describe("video resume flow", () => {
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
-      data: { currentTime: 58 },
+      data: { seconds: 58 },
     })
     await emitBunnyPlayerEvent(page, { event: "pause" })
 

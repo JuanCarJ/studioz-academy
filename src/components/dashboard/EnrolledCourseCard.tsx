@@ -33,17 +33,34 @@ function formatRelativeDate(isoString: string): string {
   return date.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" })
 }
 
-function getCourseButtonLabel(percentage: number, isCompleted: boolean): string {
+function getCourseButtonLabel(input: {
+  percentage: number
+  isCompleted: boolean
+  hasResumeState: boolean
+}): string {
+  const { percentage, isCompleted, hasResumeState } = input
+
   if (isCompleted) return "Repasar"
-  if (percentage > 0) return "Continuar"
+  if (percentage > 0 || hasResumeState) return "Continuar"
   return "Comenzar"
 }
 
 export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
   const { course, progress, enrolledAt } = item
-  const { percentage, isCompleted, completedLessons, totalLessons, lastAccessedAt } = progress
+  const {
+    percentage,
+    isCompleted,
+    completedLessons,
+    totalLessons,
+    lastAccessedAt,
+    lastLessonId,
+  } = progress
 
-  const buttonLabel = getCourseButtonLabel(percentage, isCompleted)
+  const buttonLabel = getCourseButtonLabel({
+    percentage,
+    isCompleted,
+    hasResumeState: Boolean(lastLessonId),
+  })
   const courseUrl = `/dashboard/cursos/${course.slug}`
   const hasBeenAccessed = lastAccessedAt !== enrolledAt
 
@@ -51,7 +68,10 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
   const CategoryIcon = course.category === "baile" ? BookOpen : Palette
 
   return (
-    <Card className="overflow-hidden py-0 gap-0 transition-shadow hover:shadow-md">
+    <Card
+      className="overflow-hidden py-0 gap-0 transition-shadow hover:shadow-md"
+      data-testid={`enrolled-course-card-${course.slug}`}
+    >
       {/* Thumbnail */}
       <div className="relative aspect-video w-full bg-muted flex-shrink-0">
         {course.thumbnail_url ? (
@@ -168,7 +188,9 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
           </span>
         </div>
         <Button asChild size="sm" variant={isCompleted ? "outline" : "default"} className="flex-shrink-0">
-          <Link href={courseUrl}>{buttonLabel}</Link>
+          <Link href={courseUrl} data-testid={`enrolled-course-link-${course.slug}`}>
+            {buttonLabel}
+          </Link>
         </Button>
       </CardFooter>
     </Card>
