@@ -4,7 +4,10 @@ import { useEffect, useRef, useCallback } from "react"
 
 interface BunnyTimeUpdateMessage {
   event: "timeupdate"
-  data: { currentTime: number }
+  data: {
+    currentTime?: number
+    seconds?: number
+  }
 }
 
 interface BunnyPlayerMessage {
@@ -33,6 +36,19 @@ export function VideoPlayer({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hasSeekededRef = useRef(false)
   const isReadyRef = useRef(false)
+
+  const embedUrl = useCallback(() => {
+    if (!signedUrl) return ""
+
+    const url = new URL(signedUrl)
+    if (initialPosition > 0) {
+      url.searchParams.set("t", String(initialPosition))
+    } else {
+      url.searchParams.delete("t")
+    }
+
+    return url.toString()
+  }, [initialPosition, signedUrl])
 
   // Send a postMessage to the Bunny iframe safely
   const sendToPlayer = useCallback((message: Record<string, unknown>) => {
@@ -95,6 +111,7 @@ export function VideoPlayer({
 
       switch (parsed.event) {
         case "ready":
+        case "play":
         case "playing": {
           if (!isReadyRef.current) {
             isReadyRef.current = true
@@ -104,7 +121,7 @@ export function VideoPlayer({
         }
         case "timeupdate": {
           const msg = parsed as BunnyTimeUpdateMessage
-          const currentTime = msg.data?.currentTime
+          const currentTime = msg.data?.seconds ?? msg.data?.currentTime
           if (typeof currentTime === "number") {
             onTimeUpdate?.(currentTime)
           }
@@ -152,7 +169,7 @@ export function VideoPlayer({
     >
       <iframe
         ref={iframeRef}
-        src={signedUrl}
+        src={embedUrl()}
         className="h-full w-full"
         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
