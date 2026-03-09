@@ -143,6 +143,97 @@ test.describe.serial("course progress integrity", () => {
     await expect(card).toContainText("0%")
   })
 
+  test("muestra CTA para continuar la siguiente leccion y estado final en la ultima", async ({
+    page,
+  }) => {
+    const fixtures = await resetPaidCourseProgressState()
+
+    await loginAsUser(page)
+    await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
+
+    await waitForPlayerReady(page)
+    await page.getByRole("button", { name: /marcar como completada/i }).click()
+
+    await expect(
+      page.getByRole("button", { name: /continuar siguiente leccion/i })
+    ).toBeVisible()
+    await expect(page.getByText(/continua con "qa e2e salsa principal"/i)).toBeVisible()
+
+    await page.getByRole("button", { name: /continuar siguiente leccion/i }).click()
+    await expect(page.getByRole("heading", { level: 2, name: /qa e2e salsa principal/i })).toBeVisible()
+
+    await expect
+      .poll(async () => {
+        const progress = await getCourseProgress(
+          qaCredentials.userEmail,
+          fixtures.paidPrimaryCourseId
+        )
+        return progress?.last_lesson_id ?? null
+      })
+      .toBe(fixtures.paidMainLessonId)
+
+    await page.getByRole("button", { name: /marcar como completada/i }).click()
+    await expect(page.getByText(/terminaste la ultima leccion del curso/i)).toBeVisible()
+    await expect(page.getByText(/ya no quedan mas lecciones por completar/i)).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: /continuar siguiente leccion/i })
+    ).toHaveCount(0)
+  })
+
+  test("oculta el CTA contextual cuando la leccion vuelve a incompleta", async ({
+    page,
+  }) => {
+    await resetPaidCourseProgressState()
+
+    await loginAsUser(page)
+    await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
+
+    await waitForPlayerReady(page)
+    await page.getByRole("button", { name: /marcar como completada/i }).click()
+    await expect(
+      page.getByRole("button", { name: /continuar siguiente leccion/i })
+    ).toBeVisible()
+
+    await page.getByRole("button", { name: /completada/i }).click()
+    await expect(
+      page.getByRole("button", { name: /continuar siguiente leccion/i })
+    ).toHaveCount(0)
+  })
+
+  test("curso de una sola leccion muestra estado final directo al completarse", async ({
+    page,
+  }) => {
+    const fixtures = await ensureBusinessFixtures()
+    const freeLesson = await getLessonByTitle(
+      fixtures.freeCourseId,
+      "QA E2E Tatuaje Gratis Intro"
+    )
+
+    expect(freeLesson?.id).toBeTruthy()
+
+    await resetCourseProgressForEmail({
+      email: qaCredentials.userEmail,
+      courseId: fixtures.freeCourseId,
+      lastLessonId: freeLesson?.id ?? null,
+    })
+
+    await loginAsUser(page)
+    await page.goto(`/cursos/${qaFixtures.freeCourseSlug}`)
+    await page.getByRole("button", { name: /inscribirme gratis/i }).click()
+
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/cursos/${qaFixtures.freeCourseSlug}`)
+    )
+    await waitForPlayerReady(page)
+
+    await page.getByRole("button", { name: /marcar como completada/i }).click()
+    await expect(page.getByText(/^curso completado\.$/i)).toBeVisible()
+    await expect(page.getByText(/ya no quedan mas lecciones por completar/i)).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: /continuar siguiente leccion/i })
+    ).toHaveCount(0)
+  })
+
   test("player ignora last_lesson_id de otro curso y retoma desde video_position valido", async ({
     page,
   }) => {

@@ -6,6 +6,12 @@ interface BunnyEventPayload {
   data?: Record<string, unknown>
 }
 
+interface PlayerTargetOptions {
+  playerIndex?: number | "last"
+  progressFlushReady?: boolean
+  scopeSelector?: string
+}
+
 export async function installBunnyPlayerStub(page: Page) {
   await page.addInitScript(() => {
     class StubPlayer {
@@ -86,10 +92,21 @@ export async function installBunnyPlayerStub(page: Page) {
 
 export async function emitBunnyPlayerEvent(
   page: Page,
-  payload: BunnyEventPayload
+  payload: BunnyEventPayload,
+  options?: PlayerTargetOptions
 ) {
-  await page.evaluate((message) => {
-    const wrapper = document.querySelector<HTMLElement>('[data-testid="course-video-player"]')
+  await page.evaluate(({ message, playerIndex, scopeSelector }) => {
+    const scope =
+      scopeSelector != null
+        ? document.querySelector<HTMLElement>(scopeSelector)
+        : document
+    const wrappers = Array.from(
+      scope?.querySelectorAll<HTMLElement>('[data-testid="course-video-player"]') ?? []
+    )
+    const wrapper =
+      playerIndex === "last"
+        ? wrappers.at(-1)
+        : wrappers[playerIndex ?? 0]
     const iframe = wrapper?.querySelector<HTMLIFrameElement>("iframe")
     const playerId = iframe?.dataset.stubPlayerId
 
@@ -109,13 +126,30 @@ export async function emitBunnyPlayerEvent(
     }
 
     player.emit(message.event, message.data)
-  }, payload)
+  }, {
+    message: payload,
+    playerIndex: options?.playerIndex,
+    scopeSelector: options?.scopeSelector,
+  })
 }
 
-export async function waitForPlayerReady(page: Page) {
-  const player = page.getByTestId("course-video-player")
+export async function waitForPlayerReady(
+  page: Page,
+  options?: PlayerTargetOptions
+) {
+  const container = options?.scopeSelector
+    ? page.locator(options.scopeSelector)
+    : page
+  const players = container.getByTestId("course-video-player")
+  const player =
+    options?.playerIndex === "last"
+      ? players.last()
+      : players.nth(typeof options?.playerIndex === "number" ? options.playerIndex : 0)
   await expect(player).toBeVisible()
   await expect(player).toHaveAttribute("data-player-api-ready", "true")
-  await expect(player).toHaveAttribute("data-progress-flush-ready", "true")
+  await expect(player).toHaveAttribute(
+    "data-progress-flush-ready",
+    options?.progressFlushReady === false ? "false" : "true"
+  )
   return player
 }

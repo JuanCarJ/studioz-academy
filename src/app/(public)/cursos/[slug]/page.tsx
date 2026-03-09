@@ -212,39 +212,20 @@ export default async function CourseDetailPage({ params }: PageProps) {
           {course.lessons.length > 0 && (
             <div>
               <h2 className="mb-3 text-xl font-bold">Temario</h2>
-              <ul className="divide-y rounded-lg border">
-                {course.lessons.map((lesson, idx) =>
-                  lesson.is_free ? (
-                    <li key={lesson.id}>
-                      <FreeLessonPlayer
-                        lessonId={lesson.id}
-                        lessonTitle={lesson.title}
-                        lessonIndex={idx + 1}
-                        durationFormatted={formatDuration(
-                          lesson.duration_seconds
-                        )}
-                      />
-                    </li>
-                  ) : (
-                    <li
-                      key={lesson.id}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                          {idx + 1}
-                        </span>
-                        <span className="text-sm font-medium">
-                          {lesson.title}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDuration(lesson.duration_seconds)}
-                      </span>
-                    </li>
-                  )
-                )}
-              </ul>
+              <FreeLessonPlayer
+                courseId={course.id}
+                slug={course.slug}
+                lessons={course.lessons.map((lesson) => ({
+                  id: lesson.id,
+                  title: lesson.title,
+                  durationFormatted: formatDuration(lesson.duration_seconds),
+                  isFree: lesson.is_free,
+                }))}
+                isAuthenticated={!!user}
+                isEnrolled={course.isEnrolled}
+                isInCart={course.isInCart}
+                isFreeCourse={course.is_free}
+              />
             </div>
           )}
         </div>

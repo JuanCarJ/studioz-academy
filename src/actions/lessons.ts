@@ -16,10 +16,10 @@ import {
 export async function getSignedVideoUrl(
   lessonId: string
 ): Promise<{ url: string; error?: string; state?: string }> {
-  const supabase = await createServerClient()
+  const adminClient = createServiceRoleClient()
 
   // Fetch lesson with course
-  const { data: lesson } = await supabase
+  const { data: lesson } = await adminClient
     .from("lessons")
     .select(
       "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, slug)"
@@ -55,6 +55,8 @@ export async function getSignedVideoUrl(
   // Paid lessons: require auth + enrollment
   const user = await getCurrentUser()
   if (!user) return { url: "", error: "Debes iniciar sesion." }
+
+  const supabase = await createServerClient()
 
   const { data: enrollment } = await supabase
     .from("enrollments")
