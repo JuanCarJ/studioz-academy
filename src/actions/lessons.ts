@@ -7,6 +7,10 @@ import { resolveLessonAssetState } from "@/lib/bunny"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { generateSignedUrl } from "@/lib/bunny"
+import {
+  persistLessonVideoPosition,
+  resolveEnrolledLessonAccess,
+} from "@/lib/video-progress"
 
 export async function getSignedVideoUrl(
   lessonId: string
@@ -78,35 +82,25 @@ export async function saveVideoPosition(
   if (!user) return { error: "AUTH_REQUIRED" }
 
   const supabase = await createServerClient()
+  const lessonAccess = await resolveEnrolledLessonAccess({
+    supabase,
+    userId: user.id,
+    lessonId,
+  })
 
-  // Verify enrollment
-  const { data: lesson } = await supabase
-    .from("lessons")
-    .select("id, course_id")
-    .eq("id", lessonId)
-    .single()
+  if (!lessonAccess.ok) {
+    if (lessonAccess.reason === "lesson_not_found") {
+      return { error: "Leccion no encontrada." }
+    }
 
-  if (!lesson) return { error: "Leccion no encontrada." }
+    return { error: "No estas inscrito en este curso." }
+  }
 
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", lesson.course_id)
-    .maybeSingle()
-
-  if (!enrollment) return { error: "No estas inscrito en este curso." }
-
-  const adminClient = createServiceRoleClient()
-
-  await adminClient.from("lesson_progress").upsert(
-    {
-      user_id: user.id,
-      lesson_id: lessonId,
-      video_position: Math.floor(position),
-    },
-    { onConflict: "user_id,lesson_id" }
-  )
+  await persistLessonVideoPosition({
+    userId: user.id,
+    lessonId,
+    position,
+  })
 
   return {}
 }
