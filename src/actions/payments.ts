@@ -138,6 +138,16 @@ async function applyReconciliation(
   }
 
   await supabase.from("orders").update(updateData).eq("id", orderId)
+  console.info(
+    JSON.stringify({
+      scope: "payments.applyReconciliation",
+      orderId,
+      transactionId,
+      currentStatus,
+      newStatus,
+      userId,
+    })
+  )
 
   // If approved: create enrollments + clear cart
   if (newStatus === "approved" && userId) {
@@ -209,6 +219,14 @@ export async function reconcilePendingOrders(): Promise<{
   for (const order of pendingOrders) {
     // H-03: try/catch per order — continue to next instead of aborting batch
     try {
+      console.info(
+        JSON.stringify({
+          scope: "payments.reconcilePendingOrders",
+          orderId: order.id,
+          reference: order.reference,
+          status: order.status,
+        })
+      )
       const wompiResult = await queryWompiByReference(order.reference)
       if (!wompiResult) continue
 
@@ -224,7 +242,15 @@ export async function reconcilePendingOrders(): Promise<{
       )
 
       reconciled++
-    } catch {
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          scope: "payments.reconcilePendingOrders.error",
+          orderId: order.id,
+          reference: order.reference,
+          error: error instanceof Error ? error.message : "unknown",
+        })
+      )
       continue
     }
   }

@@ -1,6 +1,7 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
 import type { Course, Instructor, Lesson } from "@/types"
@@ -19,55 +20,131 @@ interface CourseFilters {
   sort?: "newest" | "price_asc" | "price_desc"
 }
 
-export async function getCourses(
-  filters?: CourseFilters
-): Promise<(Course & { instructor: Pick<Instructor, "id" | "full_name"> })[]> {
-  const supabase = await createServerClient()
+type CourseWithInstructor = Omit<Course, "instructor"> & {
+  instructor: Pick<Instructor, "id" | "full_name">
+  isNew: boolean
+}
 
-  let query = supabase
-    .from("courses")
-    .select("*, instructors(id, full_name)")
-    .eq("is_published", true)
+function mapCourseRows(
+  rows: (Course & {
+    instructors: Pick<Instructor, "id" | "full_name"> | Pick<Instructor, "id" | "full_name">[]
+  })[]
+): CourseWithInstructor[] {
+  return rows.map((course) => ({
+    ...course,
+    instructor: Array.isArray(course.instructors)
+      ? course.instructors[0]
+      : course.instructors,
+    isNew: computeIsNew(course.published_at),
+  })) as CourseWithInstructor[]
+}
 
-  if (filters?.category) {
-    query = query.eq("category", filters.category)
-  }
+function sortCourses(
+  rows: CourseWithInstructor[],
+  sort: CourseFilters["sort"]
+): CourseWithInstructor[] {
+  const sorted = [...rows]
 
-  if (filters?.instructor) {
-    query = query.eq("instructor_id", filters.instructor)
-  }
-
-  if (filters?.search) {
-    const term = `%${filters.search}%`
-    // H-05: Also search by instructor name via the joined instructors table
-    query = query.or(
-      `title.ilike.${term},short_description.ilike.${term},instructors.full_name.ilike.${term}`
-    )
-  }
-
-  // Sorting
-  switch (filters?.sort) {
+  switch (sort) {
     case "price_asc":
-      query = query.order("price", { ascending: true })
+      sorted.sort((a, b) => a.price - b.price)
       break
     case "price_desc":
-      query = query.order("price", { ascending: false })
+      sorted.sort((a, b) => b.price - a.price)
       break
     case "newest":
     default:
-      query = query.order("published_at", { ascending: false, nullsFirst: false })
+      sorted.sort((a, b) => {
+        const aTime = a.published_at ? new Date(a.published_at).getTime() : 0
+        const bTime = b.published_at ? new Date(b.published_at).getTime() : 0
+        return bTime - aTime
+      })
       break
   }
 
-  const { data, error } = await query
+  return sorted
+}
 
-  if (error) return []
+export async function getCourses(
+  filters?: CourseFilters
+): Promise<CourseWithInstructor[]> {
+  const supabase = createServiceRoleClient()
+  let instructorIdsFromSearch: string[] = []
+  const sort = filters?.sort ?? "newest"
 
-  return (data ?? []).map((c) => ({
-    ...c,
-    instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
-    isNew: computeIsNew(c.published_at),
-  })) as (Course & { instructor: Pick<Instructor, "id" | "full_name">; isNew: boolean })[]
+  if (filters?.search) {
+    const { data: instructorMatches } = await supabase
+      .from("instructors")
+      .select("id")
+      .ilike("full_name", `%${filters.search}%`)
+
+    instructorIdsFromSearch = (instructorMatches ?? []).map((row) => row.id)
+  }
+
+  const buildBaseQuery = () => {
+    let query = supabase
+      .from("courses")
+      .select("*, instructors(id, full_name)")
+      .eq("is_published", true)
+
+    if (filters?.category) {
+      query = query.eq("category", filters.category)
+    }
+
+    if (filters?.instructor) {
+      query = query.eq("instructor_id", filters.instructor)
+    }
+
+    switch (sort) {
+      case "price_asc":
+        query = query.order("price", { ascending: true })
+        break
+      case "price_desc":
+        query = query.order("price", { ascending: false })
+        break
+      case "newest":
+      default:
+        query = query.order("published_at", { ascending: false, nullsFirst: false })
+        break
+    }
+
+    return query
+  }
+
+  if (!filters?.search) {
+    const { data, error } = await buildBaseQuery()
+
+    if (error) return []
+    return mapCourseRows((data ?? []) as (Course & {
+      instructors: Pick<Instructor, "id" | "full_name"> | Pick<Instructor, "id" | "full_name">[]
+    })[])
+  }
+
+  const term = `*${filters.search}*`
+  const [textMatches, instructorMatches] = await Promise.all([
+    buildBaseQuery().or(`title.ilike.${term},short_description.ilike.${term}`),
+    instructorIdsFromSearch.length > 0
+      ? buildBaseQuery().in("instructor_id", instructorIdsFromSearch)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (textMatches.error || instructorMatches.error) return []
+
+  const merged = new Map<string, CourseWithInstructor>()
+  for (const row of mapCourseRows(
+    [
+      ...((textMatches.data ?? []) as (Course & {
+        instructors: Pick<Instructor, "id" | "full_name"> | Pick<Instructor, "id" | "full_name">[]
+      })[]),
+      ...((instructorMatches.data ?? []) as (Course & {
+        instructors: Pick<Instructor, "id" | "full_name"> | Pick<Instructor, "id" | "full_name">[]
+      })[]),
+    ]
+  )) {
+    merged.set(row.id, row)
+  }
+
+  return sortCourses([...merged.values()], sort)
 }
 
 export interface CourseDetail extends Course {
@@ -83,9 +160,9 @@ export interface CourseDetail extends Course {
 export async function getCourseBySlug(
   slug: string
 ): Promise<CourseDetail | null> {
-  const supabase = await createServerClient()
+  const publicClient = createServiceRoleClient()
 
-  const { data: course, error } = await supabase
+  const { data: course, error } = await publicClient
     .from("courses")
     .select("*, instructors(*), lessons(*)")
     .eq("slug", slug)
@@ -109,7 +186,7 @@ export async function getCourseBySlug(
   )
 
   // Enrollment count
-  const { count: enrollmentCount } = await supabase
+  const { count: enrollmentCount } = await publicClient
     .from("enrollments")
     .select("id", { count: "exact", head: true })
     .eq("course_id", course.id)
@@ -120,6 +197,7 @@ export async function getCourseBySlug(
 
   const user = await getCurrentUser()
   if (user) {
+    const supabase = await createServerClient()
     const [enrollmentCheck, cartCheck] = await Promise.all([
       supabase
         .from("enrollments")
@@ -156,13 +234,14 @@ export async function getRelatedCourses(
   instructorId: string,
   limit = 4
 ): Promise<(Course & { instructor: Pick<Instructor, "id" | "full_name">; isNew: boolean })[]> {
-  const supabase = await createServerClient()
+  const publicClient = createServiceRoleClient()
 
   // Determine enrolled course IDs for the current user so we can exclude them
   const user = await getCurrentUser()
   let enrolledCourseIds: string[] = []
 
   if (user) {
+    const supabase = await createServerClient()
     const { data: enrollments } = await supabase
       .from("enrollments")
       .select("course_id")
@@ -172,7 +251,7 @@ export async function getRelatedCourses(
   }
 
   // Fetch a larger pool so we can sort and slice after prioritization
-  let query = supabase
+  let query = publicClient
     .from("courses")
     .select("*, instructors(id, full_name)")
     .eq("is_published", true)
@@ -209,7 +288,7 @@ export async function getRelatedCourses(
 export async function getInstructorsForFilter(): Promise<
   Pick<Instructor, "id" | "full_name">[]
 > {
-  const supabase = await createServerClient()
+  const supabase = createServiceRoleClient()
 
   const { data: courses } = await supabase
     .from("courses")

@@ -1,7 +1,6 @@
 "use server"
 
-import { createServerClient } from "@/lib/supabase/server"
-
+import { createServiceRoleClient } from "@/lib/supabase/admin"
 import type { Course, Instructor } from "@/types"
 
 export interface InstructorWithStats extends Instructor {
@@ -11,7 +10,7 @@ export interface InstructorWithStats extends Instructor {
 export async function getInstructorBySlug(
   slug: string
 ): Promise<InstructorWithStats | null> {
-  const supabase = await createServerClient()
+  const supabase = createServiceRoleClient()
 
   const { data: instructor, error } = await supabase
     .from("instructors")
@@ -37,7 +36,7 @@ export async function getInstructorBySlug(
 export async function getInstructorCourses(
   instructorId: string
 ): Promise<(Course & { instructor: Pick<Instructor, "id" | "full_name"> })[]> {
-  const supabase = await createServerClient()
+  const supabase = createServiceRoleClient()
 
   const { data, error } = await supabase
     .from("courses")

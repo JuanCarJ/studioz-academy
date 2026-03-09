@@ -8,7 +8,8 @@ import { createServerClient } from "@/lib/supabase/server"
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get("code")
-  let next = searchParams.get("next") ?? "/dashboard"
+  const providedNext = searchParams.get("next")
+  let next = providedNext ?? "/dashboard"
 
   // Prevent open redirect: only allow relative paths, block protocol-relative URLs
   if (!next.startsWith("/") || next.startsWith("//")) {
@@ -47,7 +48,35 @@ export async function GET(request: Request) {
       .eq("id", user.id)
       .single()
 
-    if (profile?.role === "admin") {
+    const nextUrl = new URL(next, origin)
+    const addToCartId = nextUrl.searchParams.get("addToCart")
+
+    if (addToCartId) {
+      const { data: enrollment } = await supabase
+        .from("enrollments")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("course_id", addToCartId)
+        .maybeSingle()
+
+      if (!enrollment) {
+        const { data: existingCartItem } = await supabase
+          .from("cart_items")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("course_id", addToCartId)
+          .maybeSingle()
+
+        if (!existingCartItem) {
+          await supabase.from("cart_items").insert({
+            user_id: user.id,
+            course_id: addToCartId,
+          })
+        }
+      }
+
+      next = "/carrito"
+    } else if (profile?.role === "admin" && !providedNext) {
       next = "/admin"
     }
   }

@@ -5,7 +5,22 @@ import { CourseCard } from "@/components/courses/CourseCard"
 import type { Course, Instructor } from "@/types"
 
 interface CourseGridProps {
-  courses: (Course & { instructor?: Pick<Instructor, "id" | "full_name">; isNew?: boolean })[]
+  courses: (Pick<
+    Course,
+    | "id"
+    | "title"
+    | "slug"
+    | "short_description"
+    | "category"
+    | "price"
+    | "is_free"
+    | "thumbnail_url"
+    | "rating_avg"
+    | "reviews_count"
+  > & {
+    instructor?: Pick<Instructor, "id" | "full_name">
+    isNew?: boolean
+  })[]
 }
 
 export function CourseGrid({ courses }: CourseGridProps) {
