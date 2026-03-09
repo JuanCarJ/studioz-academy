@@ -1,18 +1,106 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useCallback, useEffect, useRef } from "react"
 
-interface BunnyTimeUpdateMessage {
-  event: "timeupdate"
-  data: {
-    currentTime?: number
-    seconds?: number
+const PLAYER_JS_SCRIPT_URL =
+  "https://assets.mediadelivery.net/playerjs/playerjs-latest.min.js"
+
+interface BunnyTimeUpdatePayload {
+  currentTime?: number
+  seconds?: number
+}
+
+interface PlayerJsInstance {
+  on(event: string, handler: (data?: unknown) => void): void
+  off?: (event: string, handler: (data?: unknown) => void) => void
+  setCurrentTime?: (time: number) => void
+}
+
+type PlayerJsConstructor = new (element: HTMLIFrameElement) => PlayerJsInstance
+
+declare global {
+  interface Window {
+    playerjs?: {
+      Player: PlayerJsConstructor
+    }
   }
 }
 
-interface BunnyPlayerMessage {
-  event: string
-  data?: unknown
+let playerJsPromise: Promise<PlayerJsConstructor> | null = null
+
+function getCurrentTimeFromEvent(data: unknown) {
+  if (typeof data === "number") {
+    return data
+  }
+
+  if (typeof data !== "object" || data === null) {
+    return null
+  }
+
+  const payload = data as BunnyTimeUpdatePayload
+  const currentTime = payload.seconds ?? payload.currentTime
+  return typeof currentTime === "number" ? currentTime : null
+}
+
+function loadPlayerJs() {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Player.js is only available in the browser"))
+  }
+
+  if (window.playerjs?.Player) {
+    return Promise.resolve(window.playerjs.Player)
+  }
+
+  if (playerJsPromise) {
+    return playerJsPromise
+  }
+
+  playerJsPromise = new Promise<PlayerJsConstructor>((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      `script[src="${PLAYER_JS_SCRIPT_URL}"]`
+    )
+
+    function resolvePlayer() {
+      if (window.playerjs?.Player) {
+        resolve(window.playerjs.Player)
+        return true
+      }
+
+      return false
+    }
+
+    function handleLoad() {
+      if (!resolvePlayer()) {
+        reject(new Error("Bunny player.js loaded without exposing window.playerjs.Player"))
+      }
+    }
+
+    function handleError() {
+      reject(new Error("Failed to load Bunny player.js"))
+    }
+
+    if (existingScript) {
+      if (resolvePlayer()) {
+        return
+      }
+
+      existingScript.addEventListener("load", handleLoad, { once: true })
+      existingScript.addEventListener("error", handleError, { once: true })
+      return
+    }
+
+    const script = document.createElement("script")
+    script.src = PLAYER_JS_SCRIPT_URL
+    script.async = true
+    script.addEventListener("load", handleLoad, { once: true })
+    script.addEventListener("error", handleError, { once: true })
+    document.head.appendChild(script)
+  }).catch((error) => {
+    playerJsPromise = null
+    throw error
+  })
+
+  return playerJsPromise
 }
 
 interface VideoPlayerProps {
@@ -34,13 +122,15 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const hasSeekededRef = useRef(false)
-  const isReadyRef = useRef(false)
+  const hasSeekedRef = useRef(false)
+  const playerRef = useRef<PlayerJsInstance | null>(null)
 
   const embedUrl = useCallback(() => {
     if (!signedUrl) return ""
 
     const url = new URL(signedUrl)
+    url.searchParams.set("rememberPosition", "false")
+
     if (initialPosition > 0) {
       url.searchParams.set("t", String(initialPosition))
     } else {
@@ -50,104 +140,124 @@ export function VideoPlayer({
     return url.toString()
   }, [initialPosition, signedUrl])
 
-  // Send a postMessage to the Bunny iframe safely
-  const sendToPlayer = useCallback((message: Record<string, unknown>) => {
-    const eventName = typeof message.event === "string" ? message.event : ""
+  const seekToInitial = useCallback((player: PlayerJsInstance) => {
+    if (initialPosition <= 0 || hasSeekedRef.current) {
+      return
+    }
+
+    hasSeekedRef.current = true
 
     if (wrapperRef.current) {
-      wrapperRef.current.dataset.lastCommand = eventName
-
-      if (eventName === "seek") {
-        const time = (message.data as { time?: number } | undefined)?.time
-        if (typeof time === "number") {
-          wrapperRef.current.dataset.lastSeekTime = String(time)
-        }
-      }
+      wrapperRef.current.dataset.lastCommand = "setCurrentTime"
+      wrapperRef.current.dataset.lastSeekTime = String(initialPosition)
     }
 
     try {
-      iframeRef.current?.contentWindow?.postMessage(JSON.stringify(message), "*")
+      player.setCurrentTime?.(initialPosition)
     } catch {
-      // Silently ignore: cross-origin or iframe not mounted
+      hasSeekedRef.current = false
     }
-  }, [])
+  }, [initialPosition])
 
-  // Seek to initialPosition once the player is ready
-  const seekToInitial = useCallback(() => {
-    if (initialPosition > 0 && !hasSeekededRef.current) {
-      hasSeekededRef.current = true
-      sendToPlayer({ event: "seek", data: { time: initialPosition } })
-    }
-  }, [initialPosition, sendToPlayer])
-
-  // Listen for postMessage events from the Bunny iframe
   useEffect(() => {
-    if (!signedUrl) return
+    if (!signedUrl || !iframeRef.current) return
 
-    // Reset seek state when URL changes
-    hasSeekededRef.current = false
-    isReadyRef.current = false
+    let cancelled = false
     const wrapper = wrapperRef.current
+    const listeners: Array<{ event: string; handler: (data?: unknown) => void }> = []
+
+    hasSeekedRef.current = false
+    playerRef.current = null
 
     if (wrapper) {
-      wrapper.dataset.messageListenerReady = "true"
+      wrapper.dataset.playerApiReady = "false"
+      wrapper.dataset.lastPlayerEvent = ""
+      wrapper.dataset.currentTime = String(Math.floor(initialPosition))
     }
 
-    function handleMessage(event: MessageEvent) {
-      // Accept messages only — no origin check possible with Bunny signed URLs
-      let parsed: BunnyPlayerMessage | null = null
+    function addListener(
+      player: PlayerJsInstance,
+      event: string,
+      handler: (data?: unknown) => void
+    ) {
+      player.on(event, handler)
+      listeners.push({ event, handler })
+    }
 
-      try {
-        if (typeof event.data === "string") {
-          parsed = JSON.parse(event.data) as BunnyPlayerMessage
-        } else if (typeof event.data === "object" && event.data !== null) {
-          parsed = event.data as BunnyPlayerMessage
+    void loadPlayerJs()
+      .then((Player) => {
+        if (cancelled || !iframeRef.current) return
+
+        const player = new Player(iframeRef.current)
+        playerRef.current = player
+
+        if (wrapper) {
+          wrapper.dataset.playerApiReady = "true"
         }
-      } catch {
-        return
-      }
 
-      if (!parsed) return
-
-      switch (parsed.event) {
-        case "ready":
-        case "play":
-        case "playing": {
-          if (!isReadyRef.current) {
-            isReadyRef.current = true
-            seekToInitial()
+        addListener(player, "ready", () => {
+          if (wrapper) {
+            wrapper.dataset.lastPlayerEvent = "ready"
           }
-          break
-        }
-        case "timeupdate": {
-          const msg = parsed as BunnyTimeUpdateMessage
-          const currentTime = msg.data?.seconds ?? msg.data?.currentTime
-          if (typeof currentTime === "number") {
-            onTimeUpdate?.(currentTime)
+          seekToInitial(player)
+        })
+
+        addListener(player, "play", () => {
+          if (wrapper) {
+            wrapper.dataset.lastPlayerEvent = "play"
           }
-          break
-        }
-        case "ended": {
-          onEnded?.()
-          break
-        }
-        case "pause": {
+          seekToInitial(player)
+        })
+
+        addListener(player, "timeupdate", (data) => {
+          const currentTime = getCurrentTimeFromEvent(data)
+          if (currentTime == null) return
+
+          if (wrapper) {
+            wrapper.dataset.lastPlayerEvent = "timeupdate"
+            wrapper.dataset.currentTime = String(Math.floor(currentTime))
+          }
+
+          onTimeUpdate?.(currentTime)
+        })
+
+        addListener(player, "pause", () => {
+          if (wrapper) {
+            wrapper.dataset.lastPlayerEvent = "pause"
+          }
           onPause?.()
-          break
-        }
-        default:
-          break
-      }
-    }
+        })
 
-    window.addEventListener("message", handleMessage)
+        addListener(player, "ended", () => {
+          if (wrapper) {
+            wrapper.dataset.lastPlayerEvent = "ended"
+          }
+          onEnded?.()
+        })
+      })
+      .catch(() => {
+        if (wrapper) {
+          wrapper.dataset.playerApiReady = "false"
+        }
+      })
+
     return () => {
+      cancelled = true
+
       if (wrapper) {
-        wrapper.dataset.messageListenerReady = "false"
+        wrapper.dataset.playerApiReady = "false"
       }
-      window.removeEventListener("message", handleMessage)
+
+      const player = playerRef.current
+      if (player?.off) {
+        for (const listener of listeners) {
+          player.off(listener.event, listener.handler)
+        }
+      }
+
+      playerRef.current = null
     }
-  }, [signedUrl, seekToInitial, onTimeUpdate, onPause, onEnded])
+  }, [initialPosition, onEnded, onPause, onTimeUpdate, seekToInitial, signedUrl])
 
   if (!signedUrl) {
     return (
@@ -162,9 +272,11 @@ export function VideoPlayer({
       ref={wrapperRef}
       className="aspect-video overflow-hidden rounded-lg bg-black"
       data-testid="course-video-player"
+      data-current-time={String(Math.floor(initialPosition))}
       data-last-command=""
+      data-last-player-event=""
       data-last-seek-time=""
-      data-message-listener-ready="false"
+      data-player-api-ready="false"
       data-progress-flush-ready={progressFlushReady ? "true" : "false"}
     >
       <iframe
@@ -173,6 +285,7 @@ export function VideoPlayer({
         className="h-full w-full"
         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
+        title="Reproductor del curso"
       />
     </div>
   )

@@ -91,6 +91,9 @@ export function PlayerView({
   const currentTimeRef = useRef<number>(initialPosition)
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pendingPositionSave = useRef<boolean>(false)
+  const flushExitProgressRef = useRef<
+    (reason: "pause" | "logout" | "pagehide", transport?: "fetch" | "beacon") => Promise<void>
+  >(async () => {})
 
   // Derived: overall course progress percentage
   const progressPercent =
@@ -100,11 +103,19 @@ export function PlayerView({
 
   const flushPositionSave = useCallback(
     (lessonId: string) => {
-      const pos = currentTimeRef.current
+      const pos = Math.floor(currentTimeRef.current)
       if (pos > 0 && pendingPositionSave.current) {
         pendingPositionSave.current = false
-        // Fire-and-forget — do not block UI
+        // Fire-and-forget — do not block UI, but preserve the pending flag on failure.
         void saveVideoPosition(lessonId, pos)
+          .then((result) => {
+            if (result.error) {
+              pendingPositionSave.current = true
+            }
+          })
+          .catch(() => {
+            pendingPositionSave.current = true
+          })
       }
     },
     []
@@ -148,6 +159,10 @@ export function PlayerView({
     [activeId, courseId, csrfToken, signedUrl]
   )
 
+  useEffect(() => {
+    flushExitProgressRef.current = flushExitProgress
+  }, [flushExitProgress])
+
   const flushPauseProgress = useCallback(async () => {
     if (!signedUrl || !pendingPositionSave.current) return
 
@@ -159,15 +174,15 @@ export function PlayerView({
 
     pendingPositionSave.current = false
 
-    const [positionResult, lessonResult] = await Promise.all([
-      saveVideoPosition(activeId, position),
-      updateLastLesson(courseId, activeId),
-    ])
-
-    if (positionResult.error || lessonResult.error) {
+    try {
+      const result = await saveVideoPosition(activeId, position)
+      if (result.error) {
+        pendingPositionSave.current = true
+      }
+    } catch {
       pendingPositionSave.current = true
     }
-  }, [activeId, courseId, signedUrl])
+  }, [activeId, signedUrl])
 
   // Start the 30-second periodic save for the active lesson
   const startPeriodicSave = useCallback(
@@ -212,6 +227,12 @@ export function PlayerView({
       window.removeEventListener("pagehide", handlePageHide)
     }
   }, [flushExitProgress])
+
+  useEffect(() => {
+    return () => {
+      void flushExitProgressRef.current("pagehide")
+    }
+  }, [])
 
   // ── VideoPlayer callbacks ────────────────────────────────────────────────
 

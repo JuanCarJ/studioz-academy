@@ -77,7 +77,9 @@ export function CourseActions({
   if (isEnrolled) {
     return (
       <Button size="lg" className="w-full" asChild>
-        <Link href={`/dashboard/cursos/${slug}`}>Ir al curso</Link>
+        <Link href={`/dashboard/cursos/${slug}`} prefetch={false}>
+          Ir al curso
+        </Link>
       </Button>
     )
   }

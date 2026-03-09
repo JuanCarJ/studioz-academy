@@ -52,6 +52,7 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
     isCompleted,
     completedLessons,
     totalLessons,
+    hasVideoProgress,
     lastAccessedAt,
     lastLessonId,
   } = progress
@@ -59,7 +60,7 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
   const buttonLabel = getCourseButtonLabel({
     percentage,
     isCompleted,
-    hasResumeState: Boolean(lastLessonId),
+    hasResumeState: Boolean(lastLessonId) || hasVideoProgress,
   })
   const courseUrl = `/dashboard/cursos/${course.slug}`
   const hasBeenAccessed = lastAccessedAt !== enrolledAt
@@ -188,7 +189,11 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
           </span>
         </div>
         <Button asChild size="sm" variant={isCompleted ? "outline" : "default"} className="flex-shrink-0">
-          <Link href={courseUrl} data-testid={`enrolled-course-link-${course.slug}`}>
+          <Link
+            href={courseUrl}
+            prefetch={false}
+            data-testid={`enrolled-course-link-${course.slug}`}
+          >
             {buttonLabel}
           </Link>
         </Button>

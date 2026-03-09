@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import {
+  goToLearningDashboard,
   loginAsUser,
   logoutCurrentUser,
 } from "./support/auth"
@@ -11,10 +12,12 @@ import {
   qaCredentials,
   qaFixtures,
   resetCourseProgressForEmail,
+  upsertLessonVideoPositionForEmail,
 } from "./support/db"
 import {
   emitBunnyPlayerEvent,
-  waitForSyntheticPlayerReady,
+  installBunnyPlayerStub,
+  waitForPlayerReady,
 } from "./support/player"
 
 async function resetVideoResumeState() {
@@ -30,6 +33,10 @@ async function resetVideoResumeState() {
 }
 
 test.describe("video resume flow", () => {
+  test.beforeEach(async ({ page }) => {
+    await installBunnyPlayerStub(page)
+  })
+
   test("muestra Continuar en dashboard cuando existe una leccion guardada aunque el progreso sea 0%", async ({
     page,
   }) => {
@@ -51,6 +58,55 @@ test.describe("video resume flow", () => {
     expect(progress?.last_lesson_id).toBe(fixtures.paidPreviewLessonId)
   })
 
+  test("muestra Continuar cuando solo existe video_position y course_progress aun no tiene last_lesson_id", async ({
+    page,
+  }) => {
+    const fixtures = await ensureBusinessFixtures()
+
+    await resetCourseProgressForEmail({
+      email: qaCredentials.userEmail,
+      courseId: fixtures.paidPrimaryCourseId,
+      lastLessonId: null,
+    })
+    await upsertLessonVideoPositionForEmail({
+      email: qaCredentials.userEmail,
+      lessonId: fixtures.paidPreviewLessonId,
+      position: 27,
+    })
+
+    await loginAsUser(page)
+    await page.goto("/dashboard")
+
+    await expect(
+      page.getByTestId(`enrolled-course-link-${qaFixtures.paidPrimaryCourseSlug}`)
+    ).toHaveText("Continuar")
+  })
+
+  test("elige la leccion con progreso guardado cuando falta last_lesson_id", async ({
+    page,
+  }) => {
+    const fixtures = await ensureBusinessFixtures()
+
+    await resetCourseProgressForEmail({
+      email: qaCredentials.userEmail,
+      courseId: fixtures.paidPrimaryCourseId,
+      lastLessonId: null,
+    })
+    await upsertLessonVideoPositionForEmail({
+      email: qaCredentials.userEmail,
+      lessonId: fixtures.paidMainLessonId,
+      position: 31,
+    })
+
+    await loginAsUser(page)
+    await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
+
+    const player = await waitForPlayerReady(page)
+
+    await expect(player).toHaveAttribute("data-last-command", "setCurrentTime")
+    await expect(player).toHaveAttribute("data-last-seek-time", "31")
+  })
+
   test("persiste progreso al pausar, cerrar sesion y reanuda al volver a entrar", async ({
     page,
   }) => {
@@ -63,7 +119,7 @@ test.describe("video resume flow", () => {
     await loginAsUser(page)
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
 
-    await waitForSyntheticPlayerReady(page)
+    await waitForPlayerReady(page)
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
@@ -98,15 +154,15 @@ test.describe("video resume flow", () => {
     await loginAsUser(page)
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
 
-    const resumedPlayer = await waitForSyntheticPlayerReady(page)
+    const resumedPlayer = await waitForPlayerReady(page)
 
-    await emitBunnyPlayerEvent(page, { event: "ready" })
-
-    await expect(resumedPlayer).toHaveAttribute("data-last-command", "seek")
+    await expect(resumedPlayer).toHaveAttribute("data-last-command", "setCurrentTime")
     await expect(resumedPlayer).toHaveAttribute("data-last-seek-time", "42")
   })
 
-  test("persiste progreso pendiente cuando la pagina se abandona", async ({ page }) => {
+  test("persiste progreso pendiente cuando se navega internamente fuera del player", async ({
+    page,
+  }) => {
     const fixtures = await resetVideoResumeState()
     const previousProgress = await getCourseProgress(
       qaCredentials.userEmail,
@@ -115,15 +171,14 @@ test.describe("video resume flow", () => {
 
     await loginAsUser(page)
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
-    await waitForSyntheticPlayerReady(page)
+    await waitForPlayerReady(page)
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
       data: { seconds: 73 },
     })
 
-    await page.goto("/dashboard")
-    await expect(page).toHaveURL(/\/dashboard$/)
+    await goToLearningDashboard(page)
 
     await expect
       .poll(async () => {
@@ -157,7 +212,7 @@ test.describe("video resume flow", () => {
 
     await loginAsUser(page)
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
-    await waitForSyntheticPlayerReady(page)
+    await waitForPlayerReady(page)
 
     await emitBunnyPlayerEvent(page, {
       event: "timeupdate",
@@ -184,11 +239,9 @@ test.describe("video resume flow", () => {
     await loginAsUser(page)
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
 
-    const resumedPlayer = await waitForSyntheticPlayerReady(page)
+    const resumedPlayer = await waitForPlayerReady(page)
 
-    await emitBunnyPlayerEvent(page, { event: "ready" })
-
-    await expect(resumedPlayer).toHaveAttribute("data-last-command", "seek")
+    await expect(resumedPlayer).toHaveAttribute("data-last-command", "setCurrentTime")
     await expect(resumedPlayer).toHaveAttribute("data-last-seek-time", "58")
   })
 })

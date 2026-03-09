@@ -24,6 +24,13 @@ import {
 } from "@/components/ui/sheet"
 import { Separator } from "@/components/ui/separator"
 
+interface MobileTab {
+  href: string
+  label: string
+  icon: typeof Home
+  prefetch?: boolean
+}
+
 const sheetLinks = [
   { href: "/servicios", label: "Servicios" },
   { href: "/galeria", label: "Galeria" },
@@ -38,11 +45,11 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
   // Hide on admin routes
   if (pathname.startsWith("/admin")) return null
 
-  const tabs = [
+  const tabs: MobileTab[] = [
     { href: "/", label: "Inicio", icon: Home },
     { href: "/cursos", label: "Cursos", icon: GraduationCap },
     isAuthenticated
-      ? { href: "/dashboard", label: "Aprendizaje", icon: BookOpen }
+      ? { href: "/dashboard", label: "Aprendizaje", icon: BookOpen, prefetch: false }
       : { href: "/registro", label: "Registrarse", icon: UserPlus },
     { href: "/carrito", label: "Carrito", icon: ShoppingCart },
   ]
@@ -61,6 +68,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
             <Link
               key={tab.href}
               href={tab.href}
+              prefetch={tab.prefetch}
               className={cn(
                 "flex flex-col items-center gap-0.5 px-2 py-1 text-[10px]",
                 isActive ? "text-primary" : "text-muted-foreground"

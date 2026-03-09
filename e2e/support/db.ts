@@ -758,7 +758,7 @@ export async function getCourseProgress(email: string, courseId: string) {
 export async function resetCourseProgressForEmail(input: {
   email: string
   courseId: string
-  lastLessonId: string
+  lastLessonId?: string | null
 }) {
   const profile = await getProfileByEmail(input.email)
   if (!profile) {
@@ -787,7 +787,7 @@ export async function resetCourseProgressForEmail(input: {
     {
       user_id: profile.authUser.id,
       course_id: input.courseId,
-      last_lesson_id: input.lastLessonId,
+      last_lesson_id: input.lastLessonId ?? null,
       completed_lessons: 0,
       is_completed: false,
       last_accessed_at: fixedNow,
@@ -796,6 +796,28 @@ export async function resetCourseProgressForEmail(input: {
   )
 
   if (progressError) throw progressError
+}
+
+export async function upsertLessonVideoPositionForEmail(input: {
+  email: string
+  lessonId: string
+  position: number
+}) {
+  const profile = await getProfileByEmail(input.email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${input.email}`)
+  }
+
+  const { error } = await supabase.from("lesson_progress").upsert(
+    {
+      user_id: profile.authUser.id,
+      lesson_id: input.lessonId,
+      video_position: input.position,
+    },
+    { onConflict: "user_id,lesson_id" }
+  )
+
+  if (error) throw error
 }
 
 export async function getReviewForCourse(email: string, courseId: string) {

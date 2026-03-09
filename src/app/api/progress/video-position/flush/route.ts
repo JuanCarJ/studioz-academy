@@ -5,6 +5,7 @@ import { isValidCsrfToken } from "@/lib/security/csrf"
 import {
   persistCourseLastAccess,
   persistExitVideoProgress,
+  revalidateVideoProgressPaths,
   resolveEnrolledLessonAccess,
 } from "@/lib/video-progress"
 
@@ -83,6 +84,8 @@ export async function POST(request: Request) {
         lessonId,
       })
     }
+
+    revalidateVideoProgressPaths(lessonAccess.courseSlug)
 
     return new NextResponse(null, { status: 204 })
   } catch {
