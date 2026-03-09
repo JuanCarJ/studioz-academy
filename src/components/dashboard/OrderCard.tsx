@@ -114,20 +114,30 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
       >
         <div className="flex items-center justify-between gap-4 p-4">
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs font-semibold text-muted-foreground">
-                {order.reference}
-              </span>
+            <p className="text-sm font-semibold leading-snug line-clamp-1">
+              {order.items.length === 0
+                ? order.reference
+                : order.items.length === 1
+                  ? order.items[0].course_title_snapshot
+                  : `${order.items[0].course_title_snapshot} y ${order.items.length - 1} más`}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+              <span>{formatDate(order.created_at)}</span>
+              {order.payment_method && (
+                <>
+                  <span>·</span>
+                  <span>{formatPaymentMethod(order.payment_method)}</span>
+                </>
+              )}
+              <span>·</span>
+              <span className="font-mono text-[10px]">{order.reference}</span>
               <Badge
                 variant={STATUS_VARIANT[currentStatus]}
-                className={STATUS_CLASS[currentStatus]}
+                className={`${STATUS_CLASS[currentStatus]} text-[10px] px-1.5 py-0`}
               >
                 {STATUS_LABELS[currentStatus]}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {formatDate(order.created_at)}
-            </p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-3">
             <span className="text-sm font-bold">{formatCOP(order.total)}</span>

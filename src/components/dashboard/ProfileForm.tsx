@@ -1,7 +1,6 @@
 "use client"
 
-import { useActionState, useState, useTransition } from "react"
-import Image from "next/image"
+import { ChangeEvent, useActionState, useEffect, useState, useTransition } from "react"
 
 import { updateProfile, requestAccountDeletion } from "@/actions/profile"
 import type { ProfileActionState } from "@/actions/profile"
@@ -9,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 interface ProfileFormProps {
   defaultValues: {
@@ -29,6 +29,13 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, startDeleteTransition] = useTransition()
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!previewUrl) return
+
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
 
   function handleDeleteAccount() {
     setDeleteError(null)
@@ -40,6 +47,17 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
       }
     })
   }
+
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+
+    setPreviewUrl((currentPreviewUrl) => {
+      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl)
+      return file ? URL.createObjectURL(file) : null
+    })
+  }
+
+  const avatarSrc = previewUrl ?? defaultValues.avatarUrl ?? undefined
 
   return (
     <div className="space-y-10">
@@ -59,25 +77,19 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
         <div className="space-y-2">
           <Label htmlFor="avatar">Foto de perfil</Label>
           <div className="flex items-center gap-4">
-            {defaultValues.avatarUrl ? (
-              <Image
-                src={defaultValues.avatarUrl}
-                alt="Avatar actual"
-                width={64}
-                height={64}
-                className="h-16 w-16 rounded-full border object-cover"
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full border bg-muted text-xl font-bold text-muted-foreground">
+            <Avatar className="h-16 w-16 border">
+              <AvatarImage src={avatarSrc} alt="Avatar actual" className="object-cover" />
+              <AvatarFallback className="bg-muted text-xl font-bold text-muted-foreground">
                 {defaultValues.fullName?.charAt(0)?.toUpperCase() ?? "?"}
-              </div>
-            )}
+              </AvatarFallback>
+            </Avatar>
             <Input
               id="avatar"
               name="avatar"
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="max-w-xs"
+              onChange={handleAvatarChange}
             />
           </div>
           <p className="text-xs text-muted-foreground">
