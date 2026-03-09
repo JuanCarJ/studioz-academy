@@ -1,9 +1,11 @@
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { generateSignedUrl, resolveLessonAssetState } from "@/lib/bunny"
 import { PlayerView } from "@/components/courses/PlayerView"
+import { ReviewSection } from "@/components/courses/ReviewSection"
 
 import type { Lesson } from "@/types"
 
@@ -22,7 +24,7 @@ export default async function CoursePlayerPage({
   // Fetch course + lessons
   const { data: course } = await supabase
     .from("courses")
-    .select("id, title, slug, lessons(*)")
+    .select("id, title, slug, rating_avg, reviews_count, lessons(*)")
     .eq("slug", slug)
     .single()
 
@@ -157,6 +159,14 @@ export default async function CoursePlayerPage({
           </a>
         </p>
       )}
+
+      <Suspense fallback={<div className="h-32 animate-pulse rounded-lg bg-muted" />}>
+        <ReviewSection
+          courseId={course.id}
+          ratingAvg={course.rating_avg ?? null}
+          reviewsCount={course.reviews_count ?? 0}
+        />
+      </Suspense>
     </section>
   )
 }
