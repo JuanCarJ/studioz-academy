@@ -46,6 +46,7 @@ export const env = {
 
   // App
   APP_URL: () => requireEnv("NEXT_PUBLIC_APP_URL"),
+  GOOGLE_MAPS_API_KEY: () => optionalEnv("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"),
   WHATSAPP_NUMBER: () => requireEnv("WHATSAPP_NUMBER"),
 
   // Cron

@@ -1,11 +1,19 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, unstable_noStore as noStore } from "next/cache"
 
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
-import type { ContactMessage, Course, Event, GalleryItem, Instructor, Post } from "@/types"
+import type {
+  ContactMessage,
+  Course,
+  Event,
+  EventImage,
+  GalleryItem,
+  Instructor,
+  Post,
+} from "@/types"
 
 export interface PublishedCoursePreview
   extends Pick<
@@ -33,7 +41,47 @@ function computeIsNew(publishedAt: string | null): boolean {
   return Date.now() - new Date(publishedAt).getTime() < THIRTY_DAYS_MS
 }
 
+async function getEventImagesMap(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  eventIds: string[]
+) {
+  if (eventIds.length === 0) return {} as Record<string, EventImage[]>
+
+  const { data, error } = await supabase
+    .from("event_images")
+    .select("*")
+    .in("event_id", eventIds)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) {
+    console.error("[editorial] Failed to load event images:", error)
+    return {} as Record<string, EventImage[]>
+  }
+
+  return (data ?? []).reduce<Record<string, EventImage[]>>((acc, image) => {
+    acc[image.event_id] ??= []
+    acc[image.event_id].push(image as EventImage)
+    return acc
+  }, {})
+}
+
+function mergeEventsWithImages(
+  events: Event[],
+  imagesMap: Record<string, EventImage[]>
+) {
+  return events.map((event) => {
+    const images = imagesMap[event.id] ?? []
+    return {
+      ...event,
+      image_url: images[0]?.image_url ?? event.image_url,
+      images,
+    }
+  })
+}
+
 export async function getPublishedPosts(): Promise<Post[]> {
+  noStore()
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from("posts")
@@ -50,6 +98,7 @@ export async function getPublishedPosts(): Promise<Post[]> {
 }
 
 export async function getPostBySlug(slug: string): Promise<Post | null> {
+  noStore()
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from("posts")
@@ -63,6 +112,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 }
 
 export async function getPublishedEvents(): Promise<Event[]> {
+  noStore()
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from("events")
@@ -75,7 +125,13 @@ export async function getPublishedEvents(): Promise<Event[]> {
     return []
   }
 
-  return (data ?? []) as Event[]
+  const events = (data ?? []) as Event[]
+  const imagesMap = await getEventImagesMap(
+    supabase,
+    events.map((event) => event.id)
+  )
+
+  return mergeEventsWithImages(events, imagesMap)
 }
 
 export async function getPublishedEventsTimeline(): Promise<{
@@ -99,11 +155,11 @@ export async function getPublishedEventsTimeline(): Promise<{
 }
 
 export async function getGalleryItems(): Promise<GalleryItem[]> {
+  noStore()
   const supabase = createServiceRoleClient()
   const { data, error } = await supabase
     .from("gallery_items")
     .select("*")
-    .order("sort_order")
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -126,6 +182,7 @@ export async function getHomePageData(): Promise<{
     upcomingEvents: number
   }
 }> {
+  noStore()
   const supabase = createServiceRoleClient()
   const nowIso = new Date().toISOString()
 
@@ -160,7 +217,6 @@ export async function getHomePageData(): Promise<{
     supabase
       .from("gallery_items")
       .select("*")
-      .order("sort_order")
       .order("created_at", { ascending: false })
       .limit(6),
     Promise.all([
@@ -192,11 +248,16 @@ export async function getHomePageData(): Promise<{
   })) as PublishedCoursePreview[]
 
   const [coursesCount, postsCount, galleryCount, eventsCount] = countsResult
+  const upcomingEvents = (eventsResult.data ?? []) as Event[]
+  const upcomingImagesMap = await getEventImagesMap(
+    supabase,
+    upcomingEvents.map((event) => event.id)
+  )
 
   return {
     featuredCourses,
     latestPosts: (postsResult.data ?? []) as Post[],
-    upcomingEvents: (eventsResult.data ?? []) as Event[],
+    upcomingEvents: mergeEventsWithImages(upcomingEvents, upcomingImagesMap),
     galleryPreview: (galleryResult.data ?? []) as GalleryItem[],
     stats: {
       publishedCourses: coursesCount.count ?? 0,

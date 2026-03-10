@@ -221,6 +221,8 @@ async function cleanupTransientBusinessState(userId: string, courseIds: string[]
 
   await supabase.from("contact_messages").delete().ilike("subject", "QA E2E contact %")
   await supabase.from("posts").delete().ilike("slug", "qa-e2e-temp-%")
+  await supabase.from("gallery_items").delete().ilike("caption", "QA E2E Temp Gallery %")
+  await supabase.from("events").delete().ilike("title", "QA E2E Temp Event %")
   await supabase.from("discount_rules").delete().ilike("name", "QA E2E Temporal %")
 }
 
@@ -268,7 +270,7 @@ export async function ensureBusinessFixtures() {
     published_at: null,
   })
 
-  await upsertBy("events", { title: qaFixtures.upcomingEventTitle }, {
+  const upcomingEventId = await upsertBy("events", { title: qaFixtures.upcomingEventTitle }, {
     title: qaFixtures.upcomingEventTitle,
     description: "Evento futuro para validar agenda publica.",
     image_url: sampleImage,
@@ -277,7 +279,7 @@ export async function ensureBusinessFixtures() {
     is_published: true,
   })
 
-  await upsertBy("events", { title: qaFixtures.pastEventTitle }, {
+  const pastEventId = await upsertBy("events", { title: qaFixtures.pastEventTitle }, {
     title: qaFixtures.pastEventTitle,
     description: "Evento pasado para validar historico de agenda.",
     image_url: sampleImage,
@@ -285,6 +287,20 @@ export async function ensureBusinessFixtures() {
     location: "Studio Z Archive",
     is_published: true,
   })
+
+  await supabase.from("event_images").delete().in("event_id", [upcomingEventId, pastEventId])
+  await supabase.from("event_images").insert([
+    {
+      event_id: upcomingEventId,
+      image_url: sampleImage,
+      sort_order: 0,
+    },
+    {
+      event_id: pastEventId,
+      image_url: sampleImage,
+      sort_order: 0,
+    },
+  ])
 
   await upsertBy("gallery_items", { caption: qaFixtures.galleryCaption }, {
     caption: qaFixtures.galleryCaption,
@@ -1016,6 +1032,40 @@ export async function getDiscountRuleByName(name: string) {
 
   if (error) throw error
   return data
+}
+
+export async function getGalleryItemByCaption(caption: string) {
+  const { data, error } = await supabase
+    .from("gallery_items")
+    .select("*")
+    .eq("caption", caption)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function getEventByTitle(title: string) {
+  const { data, error } = await supabase
+    .from("events")
+    .select("*")
+    .eq("title", title)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function getEventImages(eventId: string) {
+  const { data, error } = await supabase
+    .from("event_images")
+    .select("*")
+    .eq("event_id", eventId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+  return data ?? []
 }
 
 export async function getActiveDiscountRules() {

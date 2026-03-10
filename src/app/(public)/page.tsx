@@ -291,7 +291,13 @@ export default async function HomePage() {
 
             {data.upcomingEvents.map((event) => (
               <ScrollReveal key={event.id}>
-                <Card className="border-white/10">
+                <Card className="overflow-hidden border-white/10">
+                  {event.image_url && (
+                    <div
+                      className="aspect-[16/9] bg-cover bg-center"
+                      style={{ backgroundImage: `url("${event.image_url}")` }}
+                    />
+                  )}
                   <CardContent className="pt-6">
                     <p className="text-xs uppercase tracking-[0.24em] text-primary">
                       {formatEventDate(event.event_date)}

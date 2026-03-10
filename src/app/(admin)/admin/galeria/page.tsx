@@ -1,9 +1,8 @@
 import {
-  createGalleryImage,
   deleteGalleryImage,
   getAdminGalleryItems,
-  updateGalleryImage,
 } from "@/actions/admin/editorial"
+import { GalleryAdminForm } from "@/components/admin/GalleryAdminForm"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -11,10 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-
-const selectClassName =
-  "border-input dark:bg-input/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
 
 export default async function AdminGalleryPage() {
   const items = await getAdminGalleryItems()
@@ -24,7 +19,7 @@ export default async function AdminGalleryPage() {
       <div>
         <h1 className="text-3xl font-bold">Galeria</h1>
         <p className="mt-2 text-muted-foreground">
-          Gestion de imagenes publicas por categoria y orden visual.
+          Gestion de imagenes publicas por categoria y nombre.
         </p>
       </div>
 
@@ -33,43 +28,7 @@ export default async function AdminGalleryPage() {
           <CardTitle>Nueva imagen</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={createGalleryImage} className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Caption</label>
-                <Input name="caption" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Orden</label>
-                <Input name="sortOrder" type="number" min="0" defaultValue="0" />
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Categoria</label>
-                <select name="category" className={selectClassName} defaultValue="baile">
-                  <option value="baile">Baile</option>
-                  <option value="tatuaje">Tatuaje</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">URL imagen</label>
-                <Input name="imageUrl" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Archivo imagen</label>
-              <Input
-                name="image"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-              />
-            </div>
-
-            <Button type="submit">Crear imagen</Button>
-          </form>
+          <GalleryAdminForm testId="gallery-create-form" />
         </CardContent>
       </Card>
 
@@ -83,17 +42,16 @@ export default async function AdminGalleryPage() {
         )}
 
         {items.map((item) => {
-          const updateAction = updateGalleryImage.bind(null, item.id)
           const deleteAction = deleteGalleryImage.bind(null, item.id)
 
           return (
-            <Card key={item.id}>
+            <Card key={item.id} data-testid={`gallery-card-${item.id}`}>
               <CardHeader className="gap-2">
                 <CardTitle className="text-xl">
-                  {item.caption || "Imagen sin caption"}
+                  {item.caption || "Imagen sin nombre"}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  {item.category} · orden {item.sort_order}
+                  {item.category}
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -102,54 +60,10 @@ export default async function AdminGalleryPage() {
                   style={{ backgroundImage: `url("${item.image_url}")` }}
                 />
 
-                <form action={updateAction} className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Caption</label>
-                      <Input name="caption" defaultValue={item.caption ?? ""} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Orden</label>
-                      <Input
-                        name="sortOrder"
-                        type="number"
-                        min="0"
-                        defaultValue={String(item.sort_order)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Categoria</label>
-                      <select
-                        name="category"
-                        className={selectClassName}
-                        defaultValue={item.category}
-                      >
-                        <option value="baile">Baile</option>
-                        <option value="tatuaje">Tatuaje</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">URL imagen</label>
-                      <Input name="imageUrl" defaultValue={item.image_url} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Reemplazar imagen
-                    </label>
-                    <Input
-                      name="image"
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                    />
-                  </div>
-
-                  <Button type="submit">Guardar cambios</Button>
-                </form>
+                <GalleryAdminForm
+                  item={item}
+                  testId={`gallery-update-form-${item.id}`}
+                />
 
                 <form action={deleteAction}>
                   <Button type="submit" variant="destructive">

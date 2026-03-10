@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 
 import { getPublishedEventsTimeline } from "@/actions/editorial"
+import { EventImageCarousel } from "@/components/events/EventImageCarousel"
 import { Card, CardContent } from "@/components/ui/card"
 
 export const metadata: Metadata = {
@@ -54,20 +55,10 @@ export default async function EventosPage() {
           )}
           {upcoming.map((event) => (
             <Card key={event.id} className="overflow-hidden border-white/10">
-              <div
-                className="aspect-[16/9] bg-cover bg-center"
-                style={{
-                  backgroundImage: event.image_url
-                    ? `url("${event.image_url}")`
-                    : undefined,
-                }}
-              >
-                {!event.image_url && (
-                  <div className="flex h-full items-center justify-center bg-muted text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    Evento Studio Z
-                  </div>
-                )}
-              </div>
+              <EventImageCarousel
+                images={event.images ?? []}
+                title={event.title}
+              />
               <CardContent className="space-y-3 pt-6">
                 <p className="text-xs uppercase tracking-[0.24em] text-primary">
                   {formatDateTime(event.event_date)}
@@ -101,7 +92,12 @@ export default async function EventosPage() {
             </Card>
           )}
           {past.map((event) => (
-            <Card key={event.id} className="border-white/10">
+            <Card key={event.id} className="overflow-hidden border-white/10">
+              <EventImageCarousel
+                images={event.images ?? []}
+                title={event.title}
+                aspectClassName="aspect-[4/3]"
+              />
               <CardContent className="space-y-3 pt-6">
                 <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
                   {formatDateTime(event.event_date)}
