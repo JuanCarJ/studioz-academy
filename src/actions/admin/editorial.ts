@@ -17,6 +17,7 @@ const ALLOWED_EDITORIAL_IMAGE_TYPES = [
   "image/png",
   "image/webp",
 ]
+let editorialBucketEnsured = false
 
 export interface EditorialFormState {
   error?: string
@@ -72,6 +73,27 @@ async function uploadEditorialAsset(file: File, path: string) {
   }
 
   const supabase = createServiceRoleClient()
+  if (!editorialBucketEnsured) {
+    const { error: bucketError } = await supabase.storage.createBucket(
+      EDITORIAL_ASSETS_BUCKET,
+      {
+        public: true,
+        fileSizeLimit: `${MAX_EDITORIAL_IMAGE_SIZE}`,
+        allowedMimeTypes: ALLOWED_EDITORIAL_IMAGE_TYPES,
+      }
+    )
+
+    if (
+      bucketError &&
+      !bucketError.message.toLowerCase().includes("already") &&
+      !bucketError.message.toLowerCase().includes("exists")
+    ) {
+      throw new Error("No se pudo preparar el almacenamiento editorial.")
+    }
+
+    editorialBucketEnsured = true
+  }
+
   const { error } = await supabase.storage
     .from(EDITORIAL_ASSETS_BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type })

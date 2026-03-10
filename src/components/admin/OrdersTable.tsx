@@ -53,6 +53,22 @@ export function OrdersTable({ orders }: OrdersTableProps) {
     })
   }
 
+  function formatPaymentMethod(method: string | null): string {
+    if (!method) return "—"
+
+    const labels: Record<string, string> = {
+      CARD: "Tarjeta",
+      NEQUI: "Nequi",
+      PSE: "PSE",
+      BANCOLOMBIA_TRANSFER: "Bancolombia",
+      BANCOLOMBIA_COLLECT: "Bancolombia Collect",
+      EFECTY: "Efecty",
+      PROMO: "Promocion interna",
+    }
+
+    return labels[method.toUpperCase()] ?? method
+  }
+
   return (
     <>
       <Table>
@@ -96,9 +112,11 @@ export function OrdersTable({ orders }: OrdersTableProps) {
                   <p>{formatCOP(order.total)}</p>
                   {order.discount_amount > 0 && (
                     <p className="text-xs text-emerald-600 dark:text-emerald-500">
-                      {order.discount_rule_name
-                        ? order.discount_rule_name
-                        : "Descuento historico"}
+                      {order.course_discount_amount > 0 && order.combo_discount_amount > 0
+                        ? "Promos + combo"
+                        : order.combo_discount_amount > 0
+                          ? (order.discount_rule_name ?? "Combo")
+                          : "Promo curso"}
                     </p>
                   )}
                 </div>
@@ -109,7 +127,7 @@ export function OrdersTable({ orders }: OrdersTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="text-sm">
-                {order.payment_method ?? "—"}
+                {formatPaymentMethod(order.payment_method)}
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {formatDate(order.created_at)}

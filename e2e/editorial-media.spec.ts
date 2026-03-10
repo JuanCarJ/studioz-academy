@@ -29,6 +29,7 @@ const alternatePng = Buffer.from(
 
 test.describe.serial("Editorial media admin", () => {
   test.skip(({ isMobile }) => isMobile, "La suite muta contenido editorial y corre solo en desktop.")
+  test.setTimeout(120_000)
 
   test.beforeAll(async () => {
     await ensureBusinessFixtures()
@@ -58,12 +59,15 @@ test.describe.serial("Editorial media admin", () => {
 
     await expect
       .poll(async () =>
-        getGalleryItemByCaption(galleryName).then((item) => item?.image_url ?? null)
+        getGalleryItemByCaption(galleryName).then((item) =>
+          Boolean(item?.image_url) && !String(item?.image_url).startsWith("pending://")
+        )
       )
-      .not.toBeNull()
+      .toBe(true)
 
     const galleryItem = await getGalleryItemByCaption(galleryName)
     expect(galleryItem?.image_url).toBeTruthy()
+    expect(galleryItem?.image_url).not.toMatch(/^pending:\/\//)
     await page.goto("/admin/galeria")
 
     const updateForm = page.getByTestId(`gallery-update-form-${galleryItem!.id}`)

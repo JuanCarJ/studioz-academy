@@ -12,6 +12,7 @@ import {
   deleteBunnyVideo,
 } from "@/lib/bunny"
 import { env } from "@/lib/env"
+import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { slugify } from "@/lib/utils"
 
 import type { BunnyUploadSession, Course, Instructor } from "@/types"
@@ -68,6 +69,78 @@ async function uploadThumbnail(
   return data.publicUrl
 }
 
+function parseCourseDiscountConfig(input: {
+  formData: FormData
+  isFree: boolean
+  priceInCents: number
+}):
+  | {
+      course_discount_enabled: false
+      course_discount_type: null
+      course_discount_value: null
+    }
+  | {
+      course_discount_enabled: true
+      course_discount_type: "percentage" | "fixed"
+      course_discount_value: number
+    }
+  | { error: string } {
+  if (input.isFree) {
+    return {
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
+    }
+  }
+
+  const enabled = input.formData.get("courseDiscountEnabled") === "on"
+  if (!enabled) {
+    return {
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
+    }
+  }
+
+  const type = String(input.formData.get("courseDiscountType") ?? "").trim()
+  const valueRaw = Number(input.formData.get("courseDiscountValue") ?? 0)
+
+  if (type !== "percentage" && type !== "fixed") {
+    return { error: "Selecciona un tipo de descuento valido para el curso." }
+  }
+
+  if (!Number.isFinite(valueRaw) || valueRaw <= 0) {
+    return { error: "El valor del descuento del curso debe ser mayor a 0." }
+  }
+
+  if (type === "percentage") {
+    const percentage = Math.round(valueRaw)
+    if (percentage < 1 || percentage > 100) {
+      return { error: "El descuento porcentual del curso debe estar entre 1 y 100." }
+    }
+
+    return {
+      course_discount_enabled: true,
+      course_discount_type: "percentage",
+      course_discount_value: percentage,
+    }
+  }
+
+  const fixedAmount = Math.round(valueRaw * 100)
+  if (fixedAmount > input.priceInCents) {
+    return {
+      error:
+        "El descuento fijo del curso no puede ser mayor al precio lista actual.",
+    }
+  }
+
+  return {
+    course_discount_enabled: true,
+    course_discount_type: "fixed",
+    course_discount_value: fixedAmount,
+  }
+}
+
 export async function createCourse(
   _prevState: CourseActionState,
   formData: FormData
@@ -99,6 +172,15 @@ export async function createCourse(
     return { error: "El precio debe ser mayor a 0 para cursos pagos." }
   }
 
+  const discountConfig = parseCourseDiscountConfig({
+    formData,
+    isFree,
+    priceInCents,
+  })
+  if ("error" in discountConfig) {
+    return { error: discountConfig.error }
+  }
+
   const slug = slugify(title)
 
   const supabase = await createServerClient()
@@ -123,6 +205,7 @@ export async function createCourse(
       instructor_id: instructorId,
       price: priceInCents,
       is_free: isFree,
+      ...discountConfig,
       is_published: false,
     })
     .select("id")
@@ -180,6 +263,15 @@ export async function updateCourse(
     return { error: "El precio debe ser mayor a 0 para cursos pagos." }
   }
 
+  const discountConfig = parseCourseDiscountConfig({
+    formData,
+    isFree,
+    priceInCents,
+  })
+  if ("error" in discountConfig) {
+    return { error: discountConfig.error }
+  }
+
   const supabase = await createServerClient()
 
   // Fetch current course to detect title change and publish toggle
@@ -205,6 +297,7 @@ export async function updateCourse(
     instructor_id: instructorId,
     price: priceInCents,
     is_free: isFree,
+    ...discountConfig,
     is_published: isPublished,
   }
 
@@ -536,7 +629,7 @@ export async function getAdminCourses(): Promise<AdminCourseRow[]> {
   if (error) return []
 
   return (data ?? []).map((c) => ({
-    ...c,
+    ...decorateCourseWithPricing(c as unknown as PriceableCourse),
     instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
     enrollment_count: Array.isArray(c.enrollments) ? c.enrollments.length : 0,
   })) as AdminCourseRow[]

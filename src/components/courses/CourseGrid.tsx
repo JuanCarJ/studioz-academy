@@ -13,10 +13,14 @@ interface CourseGridProps {
     | "short_description"
     | "category"
     | "price"
+    | "list_price"
+    | "current_price"
     | "is_free"
     | "thumbnail_url"
     | "rating_avg"
     | "reviews_count"
+    | "has_course_discount"
+    | "course_discount_label"
   > & {
     instructor?: Pick<Instructor, "id" | "full_name">
     isNew?: boolean

@@ -1,6 +1,7 @@
 import Image from "next/image"
 import Link from "next/link"
 
+import { isPromotionalFreeCourse } from "@/lib/pricing"
 import { formatCOP } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
@@ -14,10 +15,14 @@ type CourseCardData = Pick<
   | "short_description"
   | "category"
   | "price"
+  | "list_price"
+  | "current_price"
   | "is_free"
   | "thumbnail_url"
   | "rating_avg"
   | "reviews_count"
+  | "has_course_discount"
+  | "course_discount_label"
 > & {
   instructor?: Pick<Instructor, "id" | "full_name">
   isNew?: boolean
@@ -29,6 +34,11 @@ interface CourseCardProps {
 
 export function CourseCard({ course }: CourseCardProps) {
   const isNew = course.isNew ?? false
+  const isPromoFree = isPromotionalFreeCourse({
+    is_free: course.is_free,
+    current_price: course.current_price,
+    has_course_discount: course.has_course_discount,
+  })
 
   return (
     <Link href={`/cursos/${course.slug}`} className="group block">
@@ -62,6 +72,11 @@ export function CourseCard({ course }: CourseCardProps) {
             {isNew && (
               <Badge className="bg-blue-600 text-white hover:bg-blue-600">
                 Nuevo
+              </Badge>
+            )}
+            {!course.is_free && course.has_course_discount && course.course_discount_label && (
+              <Badge className="bg-amber-500 text-black hover:bg-amber-500">
+                {course.course_discount_label}
               </Badge>
             )}
           </div>
@@ -119,8 +134,22 @@ export function CourseCard({ course }: CourseCardProps) {
           <div className="mt-3">
             {course.is_free ? (
               <span className="font-bold text-green-600">Gratis</span>
+            ) : isPromoFree ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm text-muted-foreground line-through">
+                  {formatCOP(course.list_price)}
+                </span>
+                <span className="font-bold text-amber-600">Gratis por promo</span>
+              </div>
             ) : (
-              <span className="font-bold">{formatCOP(course.price)}</span>
+              <div className="flex items-baseline gap-2">
+                {course.has_course_discount && (
+                  <span className="text-sm text-muted-foreground line-through">
+                    {formatCOP(course.list_price)}
+                  </span>
+                )}
+                <span className="font-bold">{formatCOP(course.current_price)}</span>
+              </div>
             )}
           </div>
         </div>

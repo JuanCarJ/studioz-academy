@@ -34,7 +34,15 @@ export interface Course {
   short_description: string | null
   category: "baile" | "tatuaje"
   price: number
+  list_price: number
+  current_price: number
   is_free: boolean
+  course_discount_enabled: boolean
+  course_discount_type: "percentage" | "fixed" | null
+  course_discount_value: number | null
+  has_course_discount: boolean
+  course_discount_amount: number
+  course_discount_label: string | null
   thumbnail_url: string | null
   preview_video_url: string | null
   preview_bunny_video_id: string | null
@@ -98,12 +106,38 @@ export interface DiscountRule {
   id: string
   name: string
   category: "baile" | "tatuaje" | null
+  combo_kind: "threshold_discount" | "buy_x_get_y"
   min_courses: number
-  discount_type: "percentage" | "fixed"
-  discount_value: number
+  discount_type: "percentage" | "fixed" | null
+  discount_value: number | null
+  buy_quantity: number | null
+  free_quantity: number | null
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export interface PricingLine {
+  scope: "course" | "cart"
+  kind: "course_discount" | "combo"
+  source_id: string | null
+  source_name: string
+  course_id: string | null
+  course_title: string | null
+  amount: number
+  metadata: Json | null
+}
+
+export interface PricedCartItem {
+  course_id: string
+  course_title: string
+  list_price: number
+  course_discount_amount: number
+  price_after_course_discount: number
+  combo_discount_amount: number
+  final_price: number
+  course_promotion_label: string | null
+  combo_promotion_label: string | null
 }
 
 // ── Orders & Payments ────────────────────────────────────
@@ -114,11 +148,15 @@ export interface Order {
   customer_email_snapshot: string
   customer_phone_snapshot: string | null
   reference: string
+  list_subtotal: number
   subtotal: number
+  course_discount_amount: number
+  combo_discount_amount: number
   discount_amount: number
   total: number
   discount_rule_id: string | null
   discount_rule_name_snapshot: string | null
+  pricing_snapshot_json: Json | null
   status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
   wompi_transaction_id: string | null
   payment_method: string | null
@@ -139,8 +177,27 @@ export interface OrderItem {
   course_id: string | null
   course_title_snapshot: string
   price_at_purchase: number
+  list_price_snapshot: number
+  course_discount_amount_snapshot: number
+  price_after_course_discount_snapshot: number
+  combo_discount_amount_snapshot: number
+  final_price_snapshot: number
   created_at: string
   course?: Course
+}
+
+export interface OrderDiscountLine {
+  id: string
+  order_id: string
+  scope: "course" | "cart"
+  kind: "course_discount" | "combo"
+  source_id: string | null
+  source_name_snapshot: string
+  course_id: string | null
+  course_title_snapshot: string | null
+  amount: number
+  metadata_json: Json
+  created_at: string
 }
 
 export interface PaymentEvent {
@@ -302,3 +359,4 @@ export interface ContactMessage {
   is_read: boolean
   created_at: string
 }
+import type { Json } from "@/types/database"

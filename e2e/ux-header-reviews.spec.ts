@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test"
 import { loginAsUser } from "./support/auth"
 import {
   ensureBusinessFixtures,
-  ensureReviewForCourse,
   getCourseBySlug,
   getReviewForCourse,
   qaCredentials,

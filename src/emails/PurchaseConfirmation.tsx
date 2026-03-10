@@ -15,11 +15,23 @@ interface PurchaseConfirmationProps {
   customerName: string
   orderReference: string
   orderDate: string
-  subtotalFormatted: string
-  discountFormatted: string | null
+  listSubtotalFormatted: string
+  courseDiscountFormatted: string | null
+  comboDiscountFormatted: string | null
+  totalDiscountFormatted: string | null
   totalFormatted: string
   paymentMethod: string | null
-  courseNames: string[]
+  items: Array<{
+    title: string
+    listPriceFormatted: string
+    courseDiscountFormatted: string | null
+    comboDiscountFormatted: string | null
+    finalPriceFormatted: string
+  }>
+  discountLines: Array<{
+    label: string
+    amountFormatted: string
+  }>
   dashboardUrl: string
 }
 
@@ -27,11 +39,14 @@ export function PurchaseConfirmation({
   customerName,
   orderReference,
   orderDate,
-  subtotalFormatted,
-  discountFormatted,
+  listSubtotalFormatted,
+  courseDiscountFormatted,
+  comboDiscountFormatted,
+  totalDiscountFormatted,
   totalFormatted,
   paymentMethod,
-  courseNames,
+  items,
+  discountLines,
   dashboardUrl,
 }: PurchaseConfirmationProps) {
   return (
@@ -70,23 +85,55 @@ export function PurchaseConfirmation({
 
           <Section style={coursesBox}>
             <Text style={coursesHeading}>Cursos adquiridos</Text>
-            {courseNames.map((name) => (
-              <Text key={name} style={courseItem}>
-                {name}
-              </Text>
+            {items.map((item, index) => (
+              <Section key={`${orderReference}-${index}-${item.title}`} style={courseRow}>
+                <Text style={courseItem}>{item.title}</Text>
+                <Text style={courseMeta}>Lista: {item.listPriceFormatted}</Text>
+                {item.courseDiscountFormatted && (
+                  <Text style={courseMeta}>
+                    Promo curso: -{item.courseDiscountFormatted}
+                  </Text>
+                )}
+                {item.comboDiscountFormatted && (
+                  <Text style={courseMeta}>
+                    Combo: -{item.comboDiscountFormatted}
+                  </Text>
+                )}
+                <Text style={courseTotal}>Final: {item.finalPriceFormatted}</Text>
+              </Section>
             ))}
           </Section>
 
           <Section style={totalBox}>
             <Text style={totalLine}>
-              Subtotal: {subtotalFormatted}
+              Subtotal lista: {listSubtotalFormatted}
             </Text>
-            {discountFormatted && (
+            {courseDiscountFormatted && (
               <Text style={totalLine}>
-                Descuento: -{discountFormatted}
+                Descuentos por curso: -{courseDiscountFormatted}
               </Text>
             )}
+            {comboDiscountFormatted && (
+              <Text style={totalLine}>
+                Combos: -{comboDiscountFormatted}
+              </Text>
+            )}
+            {discountLines.length > 0 && (
+              <Section style={detailBox}>
+                <Text style={detailHeading}>Detalle de promociones</Text>
+                {discountLines.map((line, index) => (
+                  <Text key={`${index}-${line.label}-${line.amountFormatted}`} style={detailLine}>
+                    {line.label}: -{line.amountFormatted}
+                  </Text>
+                ))}
+              </Section>
+            )}
             <Hr style={hr} />
+            {totalDiscountFormatted && (
+              <Text style={totalLine}>
+                Total descuento: -{totalDiscountFormatted}
+              </Text>
+            )}
             <Text style={totalHighlight}>
               Total: {totalFormatted}
             </Text>
@@ -185,13 +232,50 @@ const coursesHeading: React.CSSProperties = {
 const courseItem: React.CSSProperties = {
   color: "#374151",
   fontSize: "14px",
-  padding: "6px 0",
+  fontWeight: "600",
+  margin: "0 0 4px",
+}
+
+const courseRow: React.CSSProperties = {
   borderBottom: "1px solid #f3f4f6",
-  margin: "0",
+  padding: "8px 0",
+}
+
+const courseMeta: React.CSSProperties = {
+  color: "#6b7280",
+  fontSize: "12px",
+  margin: "2px 0",
+}
+
+const courseTotal: React.CSSProperties = {
+  color: "#111827",
+  fontSize: "13px",
+  fontWeight: "600",
+  margin: "4px 0 0",
 }
 
 const totalBox: React.CSSProperties = {
   margin: "16px 0",
+}
+
+const detailBox: React.CSSProperties = {
+  backgroundColor: "#f9fafb",
+  borderRadius: "6px",
+  marginTop: "12px",
+  padding: "12px",
+}
+
+const detailHeading: React.CSSProperties = {
+  color: "#111827",
+  fontSize: "13px",
+  fontWeight: "600",
+  margin: "0 0 8px",
+}
+
+const detailLine: React.CSSProperties = {
+  color: "#4b5563",
+  fontSize: "12px",
+  margin: "4px 0",
 }
 
 const totalLine: React.CSSProperties = {

@@ -221,6 +221,9 @@ export type Database = {
       courses: {
         Row: {
           category: string
+          course_discount_enabled: boolean
+          course_discount_type: string | null
+          course_discount_value: number | null
           created_at: string
           description: string | null
           id: string
@@ -248,6 +251,9 @@ export type Database = {
         }
         Insert: {
           category: string
+          course_discount_enabled?: boolean
+          course_discount_type?: string | null
+          course_discount_value?: number | null
           created_at?: string
           description?: string | null
           id?: string
@@ -275,6 +281,9 @@ export type Database = {
         }
         Update: {
           category?: string
+          course_discount_enabled?: boolean
+          course_discount_type?: string | null
+          course_discount_value?: number | null
           created_at?: string
           description?: string | null
           id?: string
@@ -312,10 +321,13 @@ export type Database = {
       }
       discount_rules: {
         Row: {
+          buy_quantity: number | null
           category: string | null
+          combo_kind: string
           created_at: string
-          discount_type: string
-          discount_value: number
+          discount_type: string | null
+          discount_value: number | null
+          free_quantity: number | null
           id: string
           is_active: boolean
           min_courses: number
@@ -323,10 +335,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          buy_quantity?: number | null
           category?: string | null
+          combo_kind?: string
           created_at?: string
-          discount_type: string
-          discount_value: number
+          discount_type?: string | null
+          discount_value?: number | null
+          free_quantity?: number | null
           id?: string
           is_active?: boolean
           min_courses: number
@@ -334,10 +349,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          buy_quantity?: number | null
           category?: string | null
+          combo_kind?: string
           created_at?: string
-          discount_type?: string
-          discount_value?: number
+          discount_type?: string | null
+          discount_value?: number | null
+          free_quantity?: number | null
           id?: string
           is_active?: boolean
           min_courses?: number
@@ -642,6 +660,63 @@ export type Database = {
           },
         ]
       }
+      order_discount_lines: {
+        Row: {
+          amount: number
+          course_id: string | null
+          course_title_snapshot: string | null
+          created_at: string
+          id: string
+          kind: string
+          metadata_json: Json
+          order_id: string
+          scope: string
+          source_id: string | null
+          source_name_snapshot: string
+        }
+        Insert: {
+          amount: number
+          course_id?: string | null
+          course_title_snapshot?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          metadata_json?: Json
+          order_id: string
+          scope: string
+          source_id?: string | null
+          source_name_snapshot: string
+        }
+        Update: {
+          amount?: number
+          course_id?: string | null
+          course_title_snapshot?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          metadata_json?: Json
+          order_id?: string
+          scope?: string
+          source_id?: string | null
+          source_name_snapshot?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_discount_lines_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_discount_lines_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_email_outbox: {
         Row: {
           attempts: number
@@ -691,27 +766,42 @@ export type Database = {
       }
       order_items: {
         Row: {
+          combo_discount_amount_snapshot: number
           course_id: string | null
+          course_discount_amount_snapshot: number
           course_title_snapshot: string
           created_at: string
+          final_price_snapshot: number
           id: string
+          list_price_snapshot: number
           order_id: string
+          price_after_course_discount_snapshot: number
           price_at_purchase: number
         }
         Insert: {
+          combo_discount_amount_snapshot?: number
           course_id?: string | null
+          course_discount_amount_snapshot?: number
           course_title_snapshot: string
           created_at?: string
+          final_price_snapshot?: number
           id?: string
+          list_price_snapshot?: number
           order_id: string
+          price_after_course_discount_snapshot?: number
           price_at_purchase: number
         }
         Update: {
+          combo_discount_amount_snapshot?: number
           course_id?: string | null
+          course_discount_amount_snapshot?: number
           course_title_snapshot?: string
           created_at?: string
+          final_price_snapshot?: number
           id?: string
+          list_price_snapshot?: number
           order_id?: string
+          price_after_course_discount_snapshot?: number
           price_at_purchase?: number
         }
         Relationships: [
@@ -736,6 +826,8 @@ export type Database = {
           anonymized_at: string | null
           approved_at: string | null
           cart_hash: string | null
+          combo_discount_amount: number
+          course_discount_amount: number
           created_at: string
           currency: string
           customer_email_snapshot: string
@@ -746,8 +838,10 @@ export type Database = {
           discount_rule_name_snapshot: string | null
           id: string
           is_user_anonymized: boolean
+          list_subtotal: number
           payment_detail: string | null
           payment_method: string | null
+          pricing_snapshot_json: Json | null
           reference: string
           reverted_at: string | null
           status: string
@@ -761,6 +855,8 @@ export type Database = {
           anonymized_at?: string | null
           approved_at?: string | null
           cart_hash?: string | null
+          combo_discount_amount?: number
+          course_discount_amount?: number
           created_at?: string
           currency?: string
           customer_email_snapshot: string
@@ -771,8 +867,10 @@ export type Database = {
           discount_rule_name_snapshot?: string | null
           id?: string
           is_user_anonymized?: boolean
+          list_subtotal?: number
           payment_detail?: string | null
           payment_method?: string | null
+          pricing_snapshot_json?: Json | null
           reference: string
           reverted_at?: string | null
           status?: string
@@ -786,6 +884,8 @@ export type Database = {
           anonymized_at?: string | null
           approved_at?: string | null
           cart_hash?: string | null
+          combo_discount_amount?: number
+          course_discount_amount?: number
           created_at?: string
           currency?: string
           customer_email_snapshot?: string
@@ -796,8 +896,10 @@ export type Database = {
           discount_rule_name_snapshot?: string | null
           id?: string
           is_user_anonymized?: boolean
+          list_subtotal?: number
           payment_detail?: string | null
           payment_method?: string | null
+          pricing_snapshot_json?: Json | null
           reference?: string
           reverted_at?: string | null
           status?: string

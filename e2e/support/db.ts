@@ -106,6 +106,20 @@ async function upsertBy<T extends Record<string, unknown>>(
   return data.id as string
 }
 
+async function upsertOrderByReference(payload: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from("orders")
+    .upsert(payload, { onConflict: "reference" })
+    .select("id")
+    .single()
+
+  if (error || !data?.id) {
+    throw error ?? new Error("Unable to upsert order by reference")
+  }
+
+  return data.id as string
+}
+
 async function ensureSinglePostImage(postId: string, imageUrl: string) {
   const { error: deleteError } = await supabase
     .from("post_images")
@@ -230,8 +244,10 @@ async function cleanupTransientBusinessState(userId: string, courseIds: string[]
 
   const orderIds = (orders ?? []).map((order) => order.id)
   if (orderIds.length > 0) {
+    await supabase.from("order_discount_lines").delete().in("order_id", orderIds)
     await supabase.from("order_email_outbox").delete().in("order_id", orderIds)
     await supabase.from("payment_events").delete().in("order_id", orderIds)
+    await supabase.from("enrollments").delete().in("order_id", orderIds)
     await supabase.from("order_items").delete().in("order_id", orderIds)
     await deleteRowsByIds("orders", orderIds)
   }
@@ -246,6 +262,8 @@ async function cleanupTransientBusinessState(userId: string, courseIds: string[]
   await supabase.from("gallery_items").delete().ilike("caption", "QA E2E Temp Gallery %")
   await supabase.from("events").delete().ilike("title", "QA E2E Temp Event %")
   await supabase.from("discount_rules").delete().ilike("name", "QA E2E Temporal %")
+  await supabase.from("discount_rules").delete().ilike("name", "QA E2E Buy2Get1 %")
+  await supabase.from("discount_rules").delete().ilike("name", "QA E2E Combo 100 %")
 }
 
 export async function ensureBusinessFixtures() {
@@ -263,14 +281,28 @@ export async function ensureBusinessFixtures() {
     fullName: "QA Student Studio Z",
   })
 
+  await supabase
+    .from("discount_rules")
+    .update({ is_active: false })
+    .ilike("name", "QA %")
+
   const comboId = await upsertBy("discount_rules", { name: qaFixtures.comboName }, {
     name: qaFixtures.comboName,
     category: "baile",
+    combo_kind: "threshold_discount",
     min_courses: 2,
     discount_type: "percentage",
     discount_value: 10,
+    buy_quantity: null,
+    free_quantity: null,
     is_active: true,
   })
+
+  await supabase
+    .from("discount_rules")
+    .update({ is_active: false })
+    .eq("category", "baile")
+    .neq("name", qaFixtures.comboName)
 
   const publishedPostId = await upsertBy("posts", { slug: qaFixtures.publishedNewsSlug }, {
     title: qaFixtures.publishedNewsTitle,
@@ -374,10 +406,20 @@ export async function ensureBusinessFixtures() {
       is_free: false,
       thumbnail_url: sampleImage,
       preview_video_url: "https://iframe.mediadelivery.net/embed/603019/sample",
+      preview_bunny_video_id: null,
+      preview_bunny_library_id: null,
+      preview_status: "legacy",
+      pending_preview_bunny_video_id: null,
+      pending_preview_bunny_library_id: null,
+      pending_preview_status: "none",
+      preview_upload_error: null,
       instructor_id: danceInstructorId,
       legacy_instructor_name: null,
       is_published: true,
       published_at: fixedNow,
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
     }
   )
 
@@ -394,10 +436,20 @@ export async function ensureBusinessFixtures() {
       is_free: false,
       thumbnail_url: sampleImage,
       preview_video_url: null,
+      preview_bunny_video_id: null,
+      preview_bunny_library_id: null,
+      preview_status: "none",
+      pending_preview_bunny_video_id: null,
+      pending_preview_bunny_library_id: null,
+      pending_preview_status: "none",
+      preview_upload_error: null,
       instructor_id: danceInstructorId,
       legacy_instructor_name: null,
       is_published: true,
       published_at: fixedNow,
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
     }
   )
 
@@ -414,10 +466,20 @@ export async function ensureBusinessFixtures() {
       is_free: false,
       thumbnail_url: sampleImage,
       preview_video_url: null,
+      preview_bunny_video_id: null,
+      preview_bunny_library_id: null,
+      preview_status: "none",
+      pending_preview_bunny_video_id: null,
+      pending_preview_bunny_library_id: null,
+      pending_preview_status: "none",
+      preview_upload_error: null,
       instructor_id: danceInstructorId,
       legacy_instructor_name: null,
       is_published: true,
       published_at: fixedNow,
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
     }
   )
 
@@ -434,10 +496,20 @@ export async function ensureBusinessFixtures() {
       is_free: true,
       thumbnail_url: sampleImage,
       preview_video_url: null,
+      preview_bunny_video_id: null,
+      preview_bunny_library_id: null,
+      preview_status: "none",
+      pending_preview_bunny_video_id: null,
+      pending_preview_bunny_library_id: null,
+      pending_preview_status: "none",
+      preview_upload_error: null,
       instructor_id: tattooInstructorId,
       legacy_instructor_name: null,
       is_published: true,
       published_at: fixedNow,
+      course_discount_enabled: false,
+      course_discount_type: null,
+      course_discount_value: null,
     }
   )
 
@@ -454,6 +526,11 @@ export async function ensureBusinessFixtures() {
       description: "Leccion gratuita del curso pago principal.",
       bunny_video_id: "qa-e2e-preview-salsa",
       bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
+      bunny_status: "ready",
+      pending_bunny_video_id: null,
+      pending_bunny_library_id: null,
+      pending_bunny_status: "none",
+      video_upload_error: null,
       duration_seconds: 90,
       sort_order: 1,
       is_free: true,
@@ -469,6 +546,11 @@ export async function ensureBusinessFixtures() {
       description: "Leccion paga principal del curso de salsa.",
       bunny_video_id: "qa-e2e-salsa-principal",
       bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
+      bunny_status: "ready",
+      pending_bunny_video_id: null,
+      pending_bunny_library_id: null,
+      pending_bunny_status: "none",
+      video_upload_error: null,
       duration_seconds: 180,
       sort_order: 2,
       is_free: false,
@@ -484,6 +566,11 @@ export async function ensureBusinessFixtures() {
       description: "Leccion del curso de carrito uno.",
       bunny_video_id: "qa-e2e-bachata-intro",
       bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
+      bunny_status: "ready",
+      pending_bunny_video_id: null,
+      pending_bunny_library_id: null,
+      pending_bunny_status: "none",
+      video_upload_error: null,
       duration_seconds: 120,
       sort_order: 1,
       is_free: false,
@@ -499,6 +586,11 @@ export async function ensureBusinessFixtures() {
       description: "Leccion del curso de carrito dos.",
       bunny_video_id: "qa-e2e-reggaeton-intro",
       bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
+      bunny_status: "ready",
+      pending_bunny_video_id: null,
+      pending_bunny_library_id: null,
+      pending_bunny_status: "none",
+      video_upload_error: null,
       duration_seconds: 120,
       sort_order: 1,
       is_free: false,
@@ -514,47 +606,59 @@ export async function ensureBusinessFixtures() {
       description: "Leccion gratuita del curso gratuito.",
       bunny_video_id: "qa-e2e-tatuaje-gratis-intro",
       bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
+      bunny_status: "ready",
+      pending_bunny_video_id: null,
+      pending_bunny_library_id: null,
+      pending_bunny_status: "none",
+      video_upload_error: null,
       duration_seconds: 150,
       sort_order: 1,
       is_free: true,
     }
   )
 
-  const { data: primaryOrder, error: orderError } = await supabase
-    .from("orders")
-    .insert({
-      user_id: userId,
-      reference: qaFixtures.orderReference,
-      customer_name_snapshot: "QA Student Studio Z",
-      customer_email_snapshot: qaCredentials.userEmail,
-      customer_phone_snapshot: null,
-      subtotal: 12000000,
-      discount_amount: 0,
-      discount_rule_id: null,
-      total: 12000000,
-      currency: "COP",
-      status: "approved",
-      payment_method: "CARD",
-      payment_detail: "QA seeded approval",
-      wompi_transaction_id: "qa-e2e-wompi-approved",
-      approved_at: fixedNow,
-    })
-    .select("id")
-    .single()
+  const primaryOrderId = await upsertOrderByReference({
+    user_id: userId,
+    reference: qaFixtures.orderReference,
+    customer_name_snapshot: "QA Student Studio Z",
+    customer_email_snapshot: qaCredentials.userEmail,
+    customer_phone_snapshot: null,
+    list_subtotal: 12000000,
+    subtotal: 12000000,
+    course_discount_amount: 0,
+    combo_discount_amount: 0,
+    discount_amount: 0,
+    discount_rule_id: null,
+    pricing_snapshot_json: null,
+    total: 12000000,
+    currency: "COP",
+    status: "approved",
+    payment_method: "CARD",
+    payment_detail: "QA seeded approval",
+    wompi_transaction_id: "qa-e2e-wompi-approved",
+    approved_at: fixedNow,
+  })
 
-  if (orderError || !primaryOrder?.id) {
-    throw orderError ?? new Error("Unable to create seeded order")
-  }
+  await supabase.from("order_discount_lines").delete().eq("order_id", primaryOrderId)
+  await supabase.from("order_email_outbox").delete().eq("order_id", primaryOrderId)
+  await supabase.from("payment_events").delete().eq("order_id", primaryOrderId)
+  await supabase.from("order_items").delete().eq("order_id", primaryOrderId)
+  await supabase.from("enrollments").delete().eq("order_id", primaryOrderId)
 
   await supabase.from("order_items").insert({
-    order_id: primaryOrder.id,
+    order_id: primaryOrderId,
     course_id: paidPrimaryCourseId,
     course_title_snapshot: qaFixtures.paidPrimaryCourseTitle,
     price_at_purchase: 12000000,
+    list_price_snapshot: 12000000,
+    course_discount_amount_snapshot: 0,
+    price_after_course_discount_snapshot: 12000000,
+    combo_discount_amount_snapshot: 0,
+    final_price_snapshot: 12000000,
   })
 
   await supabase.from("payment_events").insert({
-    order_id: primaryOrder.id,
+    order_id: primaryOrderId,
     source: "manual",
     wompi_transaction_id: "qa-e2e-wompi-approved",
     external_status: "APPROVED",
@@ -570,7 +674,7 @@ export async function ensureBusinessFixtures() {
     user_id: userId,
     course_id: paidPrimaryCourseId,
     source: "purchase",
-    order_id: primaryOrder.id,
+    order_id: primaryOrderId,
   })
 
   await supabase.from("course_progress").upsert(
@@ -595,7 +699,7 @@ export async function ensureBusinessFixtures() {
     cartCourseOneId,
     cartCourseTwoId,
     freeCourseId,
-    orderId: primaryOrder.id,
+    orderId: primaryOrderId,
   }
 }
 
@@ -1008,6 +1112,22 @@ export async function getOrderByReference(reference: string) {
     .from("orders")
     .select("*")
     .eq("reference", reference)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function getLatestOrderForEmail(email: string) {
+  const profile = await getProfileByEmail(email)
+  if (!profile) return null
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*, items:order_items(*), discount_lines:order_discount_lines(*)")
+    .eq("user_id", profile.authUser.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (error) throw error

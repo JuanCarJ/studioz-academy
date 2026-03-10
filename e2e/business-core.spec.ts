@@ -119,7 +119,7 @@ test.describe.serial("Business E2E", () => {
     await expect(
       page.getByText(
         new RegExp(
-          `Descuento \\(${escapeRegExp(expectedDiscount.rule!.name)}\\)`,
+          `Combos \\(${escapeRegExp(expectedDiscount.rule!.name)}\\)`,
           "i"
         )
       )
@@ -353,7 +353,7 @@ test.describe.serial("Business E2E", () => {
     })
     await expect(orderRow).toBeVisible()
     await expect(orderRow.getByText("Aprobada", { exact: true })).toBeVisible()
-    await expect(orderRow.getByText("CARD", { exact: true })).toBeVisible()
+    await expect(orderRow.getByText("Tarjeta", { exact: true })).toBeVisible()
   })
 
   test("admin abre detalle de orden y reenvia email de compra", async ({

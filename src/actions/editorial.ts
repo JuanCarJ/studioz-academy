@@ -2,6 +2,7 @@
 
 import { revalidatePath, unstable_noStore as noStore } from "next/cache"
 
+import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
@@ -25,10 +26,14 @@ export interface PublishedCoursePreview
     | "short_description"
     | "thumbnail_url"
     | "price"
+    | "list_price"
+    | "current_price"
     | "category"
     | "is_free"
     | "rating_avg"
     | "reviews_count"
+    | "has_course_discount"
+    | "course_discount_label"
     | "published_at"
   > {
   instructor: Pick<Instructor, "id" | "full_name">
@@ -244,7 +249,7 @@ export async function getHomePageData(): Promise<{
     supabase
       .from("courses")
       .select(
-        "id, title, slug, short_description, thumbnail_url, price, category, is_free, rating_avg, reviews_count, published_at, instructors(id, full_name)"
+        "id, title, slug, short_description, thumbnail_url, price, category, is_free, rating_avg, reviews_count, published_at, course_discount_enabled, course_discount_type, course_discount_value, instructors(id, full_name)"
       )
       .eq("is_published", true)
       .order("published_at", { ascending: false, nullsFirst: false })
@@ -288,7 +293,9 @@ export async function getHomePageData(): Promise<{
   ])
 
   const featuredCourses = (coursesResult.data ?? []).map((course) => ({
-    ...course,
+    ...decorateCourseWithPricing(
+      course as PriceableCourse & (typeof course)
+    ),
     instructor: Array.isArray(course.instructors)
       ? course.instructors[0]
       : course.instructors,

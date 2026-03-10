@@ -9,6 +9,7 @@ import {
   getCartItemsForUser,
   resolveCartStateForUser,
 } from "@/lib/cart"
+import type { PricingLine } from "@/types"
 
 export type { CartItemWithCourse } from "@/lib/cart"
 export type { AddCourseToCartErrorCode } from "@/lib/cart"
@@ -20,9 +21,13 @@ export interface CartActionResult {
 
 export interface CartStateResult {
   items: Awaited<ReturnType<typeof getCartItemsForUser>>
+  listSubtotal: number
   subtotal: number
+  courseDiscountAmount: number
+  comboDiscountAmount: number
   discountAmount: number
   discountName: string | null
+  appliedDiscountLines: PricingLine[]
   total: number
 }
 
@@ -89,9 +94,13 @@ export async function getCartState(): Promise<CartStateResult> {
   if (!user) {
     return {
       items: [],
+      listSubtotal: 0,
       subtotal: 0,
+      courseDiscountAmount: 0,
+      comboDiscountAmount: 0,
       discountAmount: 0,
       discountName: null,
+      appliedDiscountLines: [],
       total: 0,
     }
   }
@@ -104,9 +113,13 @@ export async function getCartState(): Promise<CartStateResult> {
 
   return {
     items: state.items,
+    listSubtotal: state.listSubtotal,
     subtotal: state.subtotal,
+    courseDiscountAmount: state.courseDiscountAmount,
+    comboDiscountAmount: state.comboDiscountAmount,
     discountAmount: state.discountAmount,
-    discountName: state.discountRule?.name ?? null,
+    discountName: state.primaryComboRuleName,
+    appliedDiscountLines: state.appliedDiscountLines,
     total: state.total,
   }
 }

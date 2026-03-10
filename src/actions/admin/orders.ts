@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
 
-import type { Order, OrderItem, PaymentEvent } from "@/types"
+import type { Order, OrderDiscountLine, OrderItem, PaymentEvent } from "@/types"
 
 async function verifyAdmin() {
   const user = await getCurrentUser()
@@ -44,6 +44,9 @@ export interface OrderListItem {
   reference: string
   customer_name_snapshot: string
   customer_email_snapshot: string
+  list_subtotal: number
+  course_discount_amount: number
+  combo_discount_amount: number
   total: number
   discount_amount: number
   discount_rule_name: string | null
@@ -57,6 +60,7 @@ export interface OrderListItem {
 export interface OrderDetailResult {
   order: Order & {
     items: OrderItem[]
+    discount_lines: OrderDiscountLine[]
     payment_events: PaymentEvent[]
     discount_rule_name: string | null
   }
@@ -101,8 +105,8 @@ export async function getOrders(filters?: {
 
   const buildOrdersQuery = (includeSnapshotColumn: boolean) => {
     const selectClause = includeSnapshotColumn
-      ? "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, discount_rule_name_snapshot, status, payment_method, created_at, approved_at, discount_rules(name)"
-      : "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)"
+      ? "id, reference, customer_name_snapshot, customer_email_snapshot, list_subtotal, course_discount_amount, combo_discount_amount, total, discount_amount, discount_rule_name_snapshot, status, payment_method, created_at, approved_at, discount_rules(name)"
+      : "id, reference, customer_name_snapshot, customer_email_snapshot, subtotal, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)"
 
     let query = supabase
       .from("orders")
@@ -179,6 +183,9 @@ export async function getOrders(filters?: {
     reference: o.reference as string,
     customer_name_snapshot: o.customer_name_snapshot as string,
     customer_email_snapshot: o.customer_email_snapshot as string,
+    list_subtotal: (o.list_subtotal as number | null) ?? (o.subtotal as number),
+    course_discount_amount: (o.course_discount_amount as number | null) ?? 0,
+    combo_discount_amount: (o.combo_discount_amount as number | null) ?? 0,
     total: o.total as number,
     discount_amount: o.discount_amount as number,
     discount_rule_name: resolveDiscountRuleName({
@@ -213,7 +220,7 @@ export async function getOrderDetail(
 
   const { data: order, error } = await supabase
     .from("orders")
-    .select("*, discount_rules(name)")
+    .select("*, discount_rules(name), discount_lines:order_discount_lines(*)")
     .eq("id", orderId)
     .single()
 
@@ -250,6 +257,7 @@ export async function getOrderDetail(
           : ((order.discount_rules as { name?: string } | null)?.name ?? null),
       }),
       items: (items ?? []) as OrderItem[],
+      discount_lines: (order.discount_lines ?? []) as OrderDiscountLine[],
       payment_events: (paymentEvents ?? []) as PaymentEvent[],
     },
   }

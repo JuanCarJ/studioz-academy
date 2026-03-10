@@ -525,9 +525,13 @@ async function createScenarioOrder(input: {
       customer_name_snapshot: profile.profile.full_name,
       customer_email_snapshot: qaCredentials.userEmail,
       customer_phone_snapshot: profile.profile.phone,
+      list_subtotal: input.amountInCents,
       subtotal: input.amountInCents,
+      course_discount_amount: 0,
+      combo_discount_amount: 0,
       discount_amount: 0,
       discount_rule_id: null,
+      pricing_snapshot_json: null,
       total: input.amountInCents,
       currency: "COP",
       status: "pending",
@@ -547,6 +551,11 @@ async function createScenarioOrder(input: {
     course_id: course.id,
     course_title_snapshot: course.title,
     price_at_purchase: input.amountInCents,
+    list_price_snapshot: input.amountInCents,
+    course_discount_amount_snapshot: 0,
+    price_after_course_discount_snapshot: input.amountInCents,
+    combo_discount_amount_snapshot: 0,
+    final_price_snapshot: input.amountInCents,
   })
 
   if (itemError) throw itemError
@@ -618,7 +627,9 @@ async function awaitScenarioResult(input: {
 
     if (outboxError) throw outboxError
 
-    if (order.status !== "pending" && (paymentEvents?.length ?? 0) > 0) {
+    const isApprovedWithOutbox = order.status !== "approved" || outbox?.status != null
+
+    if (order.status !== "pending" && (paymentEvents?.length ?? 0) > 0 && isApprovedWithOutbox) {
       return {
         order,
         paymentEvents: paymentEvents ?? [],

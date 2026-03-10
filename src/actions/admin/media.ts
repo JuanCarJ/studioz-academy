@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { decorateCourseWithPricing } from "@/lib/pricing"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { reconcilePendingBunnyAssets } from "@/lib/bunny"
@@ -63,7 +64,9 @@ export async function refreshCourseMediaStatus(
   ])
 
   return {
-    course: (course ?? undefined) as Course | undefined,
+    course: course
+      ? (decorateCourseWithPricing(course as Course) as Course)
+      : undefined,
     lessons: ((lessons ?? []) as Lesson[]) ?? [],
     updated: result.reconciled > 0,
   }

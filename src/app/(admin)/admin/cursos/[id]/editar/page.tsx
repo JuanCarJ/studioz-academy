@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { ChevronLeft } from "lucide-react"
 
 import { createServerClient } from "@/lib/supabase/server"
+import { decorateCourseWithPricing } from "@/lib/pricing"
 import { getInstructors } from "@/actions/admin/instructors"
 import { getLessonsForCourse } from "@/actions/admin/lessons"
 import { CourseForm } from "@/components/admin/CourseForm"
@@ -75,7 +76,7 @@ export default async function EditCoursePage({
       </div>
 
       <CourseForm
-        course={course as Course}
+        course={decorateCourseWithPricing(course as Course)}
         instructors={instructors.map((i) => ({
           id: i.id,
           full_name: i.full_name,

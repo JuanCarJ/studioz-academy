@@ -2,6 +2,7 @@
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { resolveCoursePreview } from "@/lib/bunny"
+import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 
@@ -33,7 +34,7 @@ function mapCourseRows(
   })[]
 ): CourseWithInstructor[] {
   return rows.map((course) => ({
-    ...course,
+    ...decorateCourseWithPricing(course),
     instructor: Array.isArray(course.instructors)
       ? course.instructors[0]
       : course.instructors,
@@ -237,7 +238,7 @@ export async function getCourseBySlug(
   }
 
   return {
-    ...course,
+    ...decorateCourseWithPricing(course as unknown as PriceableCourse),
     instructor: instructor as Instructor,
     lessons: sortedLessons,
     lessonsCount: sortedLessons.length,
@@ -245,7 +246,7 @@ export async function getCourseBySlug(
     enrollmentCount: enrollmentCount ?? 0,
     isEnrolled,
     isInCart,
-    resolvedPreview: resolveCoursePreview(course as Course),
+    resolvedPreview: resolveCoursePreview(course as unknown as Course),
     enrollmentProgress,
   } as CourseDetail
 }
@@ -291,7 +292,7 @@ export async function getRelatedCourses(
   if (error) return []
 
   const mapped = (data ?? []).map((c) => ({
-    ...c,
+    ...decorateCourseWithPricing(c as unknown as PriceableCourse),
     instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
     isNew: computeIsNew(c.published_at),
   })) as (Course & { instructor: Pick<Instructor, "id" | "full_name">; isNew: boolean })[]

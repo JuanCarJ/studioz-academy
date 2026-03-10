@@ -1,6 +1,7 @@
 "use server"
 
 import { createServiceRoleClient } from "@/lib/supabase/admin"
+import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import type { Course, Instructor } from "@/types"
 
 export interface InstructorWithStats extends Instructor {
@@ -48,7 +49,7 @@ export async function getInstructorCourses(
   if (error || !data) return []
 
   return data.map((c) => ({
-    ...c,
+    ...decorateCourseWithPricing(c as unknown as PriceableCourse),
     instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
   })) as (Course & { instructor: Pick<Instructor, "id" | "full_name"> })[]
 }
