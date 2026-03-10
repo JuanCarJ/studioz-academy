@@ -1,12 +1,13 @@
 "use client"
 
-import { useActionState } from "react"
+import { ChangeEvent, useActionState, useEffect, useState } from "react"
 
 import {
   createInstructor,
   updateInstructor,
 } from "@/actions/admin/instructors"
 import type { InstructorActionState } from "@/actions/admin/instructors"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -39,6 +40,23 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
     {}
   )
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!previewUrl) return
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
+
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    setPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return file ? URL.createObjectURL(file) : null
+    })
+  }
+
+  const avatarSrc = previewUrl ?? instructor?.avatar_url ?? undefined
+
   return (
     <form action={formAction} className="space-y-4">
       {state.error && (
@@ -51,6 +69,29 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
           {isEditing ? "Instructor actualizado." : "Instructor creado."}
         </div>
       )}
+
+      <div className="space-y-2">
+        <Label htmlFor="avatar">Foto</Label>
+        <div className="flex items-center gap-4">
+          <Avatar className="h-16 w-16 border">
+            <AvatarImage src={avatarSrc} alt="Avatar del instructor" className="object-cover" />
+            <AvatarFallback className="bg-muted text-xl font-bold text-muted-foreground">
+              {instructor?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+            </AvatarFallback>
+          </Avatar>
+          <Input
+            id="avatar"
+            name="avatar"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="max-w-xs"
+            onChange={handleAvatarChange}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          JPG, PNG o WebP. Maximo 2 MB.
+        </p>
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="fullName">Nombre completo *</Label>

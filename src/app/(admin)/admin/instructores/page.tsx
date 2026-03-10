@@ -1,9 +1,12 @@
 import { Suspense } from "react"
+import Link from "next/link"
 
 import { getInstructors } from "@/actions/admin/instructors"
 import { InstructorForm } from "@/components/admin/InstructorForm"
 import { AdminTableSkeleton } from "@/components/skeletons/AdminTableSkeleton"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -22,22 +25,32 @@ async function InstructorsList() {
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-12">Foto</TableHead>
           <TableHead>Nombre</TableHead>
           <TableHead>Especialidades</TableHead>
           <TableHead>Experiencia</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead className="w-24">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {instructors.length === 0 && (
           <TableRow>
-            <TableCell colSpan={4} className="text-center text-muted-foreground">
+            <TableCell colSpan={6} className="text-center text-muted-foreground">
               No hay instructores registrados.
             </TableCell>
           </TableRow>
         )}
         {instructors.map((inst) => (
           <TableRow key={inst.id}>
+            <TableCell>
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={inst.avatar_url ?? undefined} alt={inst.full_name} className="object-cover" />
+                <AvatarFallback className="bg-muted text-xs font-bold text-muted-foreground">
+                  {inst.full_name.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </TableCell>
             <TableCell className="font-medium">{inst.full_name}</TableCell>
             <TableCell>
               <div className="flex flex-wrap gap-1">
@@ -57,6 +70,13 @@ async function InstructorsList() {
               <Badge variant={inst.is_active ? "default" : "secondary"}>
                 {inst.is_active ? "Activo" : "Inactivo"}
               </Badge>
+            </TableCell>
+            <TableCell>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/instructores/${inst.id}/editar`}>
+                  Editar
+                </Link>
+              </Button>
             </TableCell>
           </TableRow>
         ))}

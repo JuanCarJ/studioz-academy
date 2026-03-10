@@ -1,4 +1,6 @@
 import { Suspense } from "react"
+import Image from "next/image"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
@@ -21,10 +23,10 @@ export default async function CoursePlayerPage({
 
   const supabase = await createServerClient()
 
-  // Fetch course + lessons
+  // Fetch course + lessons + instructor
   const { data: course } = await supabase
     .from("courses")
-    .select("id, title, slug, rating_avg, reviews_count, lessons(*)")
+    .select("id, title, slug, rating_avg, reviews_count, lessons(*), instructors(id, full_name, slug, avatar_url, specialties)")
     .eq("slug", slug)
     .single()
 
@@ -127,9 +129,44 @@ export default async function CoursePlayerPage({
       )}`
     : null
 
+  const instructor = Array.isArray(course.instructors)
+    ? course.instructors[0]
+    : course.instructors
+
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">{course.title}</h1>
+
+      {instructor && (
+        <Link
+          href={`/instructores/${instructor.slug}`}
+          className="inline-flex items-center gap-3 rounded-lg transition-colors hover:bg-muted/50 pr-3"
+        >
+          <div className="relative h-10 w-10 overflow-hidden rounded-full bg-muted">
+            {instructor.avatar_url ? (
+              <Image
+                src={instructor.avatar_url}
+                alt={instructor.full_name}
+                fill
+                className="object-cover"
+                sizes="40px"
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-sm font-bold text-muted-foreground">
+                {instructor.full_name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">{instructor.full_name}</p>
+            {instructor.specialties?.length > 0 && (
+              <p className="truncate text-xs text-muted-foreground">
+                {instructor.specialties.join(" · ")}
+              </p>
+            )}
+          </div>
+        </Link>
+      )}
 
       <PlayerView
         courseId={course.id}
