@@ -4,9 +4,36 @@ import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { slugify } from "@/lib/utils"
 
 import type { Instructor } from "@/types"
+
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024 // 2MB
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+async function uploadInstructorAvatar(
+  file: File,
+  instructorId: string
+): Promise<string | null> {
+  if (!ALLOWED_AVATAR_TYPES.includes(file.type)) return null
+  if (file.size > MAX_AVATAR_SIZE) return null
+
+  const ext = file.name.split(".").pop() ?? "jpg"
+  const path = `instructors/${instructorId}/avatar.${ext}`
+
+  const supabase = createServiceRoleClient()
+
+  const { error } = await supabase.storage
+    .from("avatars")
+    .upload(path, file, { upsert: true, contentType: file.type })
+
+  if (error) return null
+
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path)
+
+  return data.publicUrl
+}
 
 export interface InstructorActionState {
   error?: string
@@ -56,20 +83,38 @@ export async function createInstructor(
 
   const finalSlug = existing ? `${slug}-${Date.now().toString(36)}` : slug
 
-  const { error } = await supabase.from("instructors").insert({
-    full_name: fullName.trim(),
-    slug: finalSlug,
-    bio,
-    specialties,
-    years_experience: yearsExperience,
-    is_active: true,
-  })
+  const { data: instructor, error } = await supabase
+    .from("instructors")
+    .insert({
+      full_name: fullName.trim(),
+      slug: finalSlug,
+      bio,
+      specialties,
+      years_experience: yearsExperience,
+      is_active: true,
+    })
+    .select("id")
+    .single()
 
   if (error) {
     return { error: "No se pudo crear el instructor. Intenta de nuevo." }
   }
 
+  // Upload avatar if provided
+  const avatarFile = formData.get("avatar") as File | null
+  if (avatarFile && avatarFile.size > 0) {
+    const avatarUrl = await uploadInstructorAvatar(avatarFile, instructor.id)
+    if (avatarUrl) {
+      await supabase
+        .from("instructors")
+        .update({ avatar_url: avatarUrl })
+        .eq("id", instructor.id)
+    }
+  }
+
   revalidatePath("/admin/instructores")
+  revalidatePath("/cursos")
+  revalidatePath("/instructores")
   return { success: true }
 }
 
@@ -100,15 +145,26 @@ export async function updateInstructor(
 
   const supabase = await createServerClient()
 
+  const updateData: Record<string, unknown> = {
+    full_name: fullName.trim(),
+    bio,
+    specialties,
+    years_experience: yearsExperience,
+    is_active: isActive,
+  }
+
+  // Upload avatar if provided
+  const avatarFile = formData.get("avatar") as File | null
+  if (avatarFile && avatarFile.size > 0) {
+    const avatarUrl = await uploadInstructorAvatar(avatarFile, instructorId)
+    if (avatarUrl) {
+      updateData.avatar_url = avatarUrl
+    }
+  }
+
   const { error } = await supabase
     .from("instructors")
-    .update({
-      full_name: fullName.trim(),
-      bio,
-      specialties,
-      years_experience: yearsExperience,
-      is_active: isActive,
-    })
+    .update(updateData)
     .eq("id", instructorId)
 
   if (error) {
@@ -116,6 +172,8 @@ export async function updateInstructor(
   }
 
   revalidatePath("/admin/instructores")
+  revalidatePath("/cursos")
+  revalidatePath("/instructores")
   return { success: true }
 }
 

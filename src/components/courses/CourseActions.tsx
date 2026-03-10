@@ -9,7 +9,7 @@ import { enrollFree } from "@/actions/enrollments"
 import { Button } from "@/components/ui/button"
 import { formatCOP } from "@/lib/utils"
 
-interface CourseActionsProps {
+export interface CourseActionsProps {
   courseId: string
   slug: string
   isFree: boolean
@@ -17,6 +17,16 @@ interface CourseActionsProps {
   isInCart: boolean
   price: number
   isAuthenticated: boolean
+  enrollmentProgress?: { isCompleted: boolean; hasProgress: boolean } | null
+  compact?: boolean
+}
+
+function getEnrolledLabel(
+  progress?: { isCompleted: boolean; hasProgress: boolean } | null
+): string {
+  if (progress?.isCompleted) return "Repasar"
+  if (progress?.hasProgress) return "Continuar"
+  return "Comenzar"
 }
 
 export function CourseActions({
@@ -27,10 +37,15 @@ export function CourseActions({
   isInCart,
   price,
   isAuthenticated,
+  enrollmentProgress,
+  compact,
 }: CourseActionsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  const btnSize = compact ? "default" : "lg"
+  const btnClass = compact ? "" : "w-full"
 
   function requireAuth(options?: { includeAddToCart?: boolean }) {
     const params = new URLSearchParams({ redirect: `/cursos/${slug}` })
@@ -75,10 +90,11 @@ export function CourseActions({
   }
 
   if (isEnrolled) {
+    const label = getEnrolledLabel(enrollmentProgress)
     return (
-      <Button size="lg" className="w-full" asChild>
+      <Button size={btnSize} className={btnClass} asChild>
         <Link href={`/dashboard/cursos/${slug}`} prefetch={false}>
-          Ir al curso
+          {label}
         </Link>
       </Button>
     )
@@ -86,9 +102,35 @@ export function CourseActions({
 
   if (isInCart) {
     return (
-      <Button size="lg" variant="secondary" className="w-full" asChild>
+      <Button size={btnSize} variant="secondary" className={btnClass} asChild>
         <Link href="/carrito">Ya en tu carrito</Link>
       </Button>
+    )
+  }
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-3">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {!isFree && (
+          <span className="text-lg font-bold whitespace-nowrap">
+            {formatCOP(price)}
+          </span>
+        )}
+        <Button
+          size="default"
+          onClick={isFree ? handleEnrollFree : handleAddToCart}
+          disabled={isPending}
+        >
+          {isPending
+            ? isFree
+              ? "Inscribiendo..."
+              : "Agregando..."
+            : isFree
+              ? "Inscribirme gratis"
+              : "Agregar al carrito"}
+        </Button>
+      </div>
     )
   }
 

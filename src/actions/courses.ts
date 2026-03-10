@@ -158,6 +158,7 @@ export interface CourseDetail extends Course {
   isEnrolled: boolean
   isInCart: boolean
   resolvedPreview: ResolvedCoursePreview
+  enrollmentProgress: { isCompleted: boolean; hasProgress: boolean } | null
 }
 
 export async function getCourseBySlug(
@@ -197,11 +198,13 @@ export async function getCourseBySlug(
   // Check if current user is enrolled or has course in cart
   let isEnrolled = false
   let isInCart = false
+  let enrollmentProgress: { isCompleted: boolean; hasProgress: boolean } | null =
+    null
 
   const user = await getCurrentUser()
   if (user) {
     const supabase = await createServerClient()
-    const [enrollmentCheck, cartCheck] = await Promise.all([
+    const [enrollmentCheck, cartCheck, progressCheck] = await Promise.all([
       supabase
         .from("enrollments")
         .select("id")
@@ -214,9 +217,23 @@ export async function getCourseBySlug(
         .eq("user_id", user.id)
         .eq("course_id", course.id)
         .maybeSingle(),
+      supabase
+        .from("course_progress")
+        .select("completed_lessons, is_completed, last_lesson_id")
+        .eq("user_id", user.id)
+        .eq("course_id", course.id)
+        .maybeSingle(),
     ])
     isEnrolled = !!enrollmentCheck.data
     isInCart = !!cartCheck.data
+    if (isEnrolled) {
+      enrollmentProgress = {
+        isCompleted: progressCheck.data?.is_completed ?? false,
+        hasProgress:
+          (progressCheck.data?.completed_lessons ?? 0) > 0 ||
+          !!progressCheck.data?.last_lesson_id,
+      }
+    }
   }
 
   return {
@@ -229,6 +246,7 @@ export async function getCourseBySlug(
     isEnrolled,
     isInCart,
     resolvedPreview: resolveCoursePreview(course as Course),
+    enrollmentProgress,
   } as CourseDetail
 }
 
