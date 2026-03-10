@@ -132,6 +132,7 @@ export async function createLesson(
   })
   revalidatePath("/dashboard")
   if (courseSlug) {
+    revalidatePath(`/cursos/${courseSlug}`)
     revalidatePath(`/dashboard/cursos/${courseSlug}`)
   }
 
@@ -171,7 +172,7 @@ export async function updateLesson(
   // Fetch lesson to get course_id for revalidation
   const { data: lesson } = await adminSupabase
     .from("lessons")
-    .select("course_id")
+    .select("course_id, courses(slug)")
     .eq("id", lessonId)
     .single()
 
@@ -194,6 +195,12 @@ export async function updateLesson(
 
   revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
   revalidatePath(`/cursos`)
+  revalidatePath("/dashboard")
+  const course = Array.isArray(lesson.courses) ? lesson.courses[0] : lesson.courses
+  if (course?.slug) {
+    revalidatePath(`/cursos/${course.slug}`)
+    revalidatePath(`/dashboard/cursos/${course.slug}`)
+  }
 
   return { success: true }
 }

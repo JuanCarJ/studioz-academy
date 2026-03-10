@@ -118,6 +118,7 @@ export interface Order {
   discount_amount: number
   total: number
   discount_rule_id: string | null
+  discount_rule_name_snapshot: string | null
   status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
   wompi_transaction_id: string | null
   payment_method: string | null

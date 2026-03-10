@@ -6,6 +6,7 @@ import Link from "next/link"
 
 import { addToCart } from "@/actions/cart"
 import { enrollFree } from "@/actions/enrollments"
+import { getCartErrorMessage } from "@/lib/cart"
 import { Button } from "@/components/ui/button"
 import { formatCOP } from "@/lib/utils"
 
@@ -67,7 +68,7 @@ export function CourseActions({
         if (result.error === "AUTH_REQUIRED") {
           return requireAuth({ includeAddToCart: true })
         }
-        setError(result.error as string)
+        setError(getCartErrorMessage(result.error as string))
       } else {
         router.refresh()
       }

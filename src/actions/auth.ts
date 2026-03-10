@@ -5,9 +5,12 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { isValidCsrfToken } from "@/lib/security/csrf"
+import {
+  addCourseToCartForUser,
+  resolvePostAddToCartRedirect,
+} from "@/lib/cart"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
-import { addToCart } from "@/actions/cart"
 
 export interface AuthActionState {
   error?: string
@@ -125,10 +128,23 @@ export async function register(
 
   revalidatePath("/", "layout")
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   const addToCartId = parseAddToCartId(formData, redirectTo)
-  if (addToCartId) {
-    await addToCart(addToCartId)
-    redirect("/carrito")
+  if (addToCartId && user) {
+    const addToCartResult = await addCourseToCartForUser({
+      supabase,
+      userId: user.id,
+      courseId: addToCartId,
+    })
+    redirect(
+      resolvePostAddToCartRedirect({
+        result: addToCartResult,
+        redirectTo,
+        fallbackPath: "/dashboard",
+      })
+    )
   }
 
   if (redirectTo) {
@@ -182,8 +198,19 @@ export async function login(
 
     const addToCartId = parseAddToCartId(formData, redirectTo)
     if (addToCartId) {
-      await addToCart(addToCartId)
-      redirect("/carrito")
+      const addToCartResult = await addCourseToCartForUser({
+        supabase,
+        userId: user.id,
+        courseId: addToCartId,
+      })
+
+      redirect(
+        resolvePostAddToCartRedirect({
+          result: addToCartResult,
+          redirectTo,
+          fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
+        })
+      )
     }
 
     if (redirectTo) {

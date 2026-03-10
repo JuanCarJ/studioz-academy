@@ -1,12 +1,15 @@
+import { requireAuthenticatedUser } from "@/lib/auth/user"
 import { DashboardNav } from "@/components/layout/DashboardNav"
 import { PublicNavbar } from "@/components/layout/PublicNavbar"
 import { Footer } from "@/components/layout/Footer"
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  await requireAuthenticatedUser()
+
   return (
     <>
       <PublicNavbar />

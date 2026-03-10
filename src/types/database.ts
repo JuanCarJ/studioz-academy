@@ -708,6 +708,7 @@ export type Database = {
           customer_phone_snapshot: string | null
           discount_amount: number
           discount_rule_id: string | null
+          discount_rule_name_snapshot: string | null
           id: string
           is_user_anonymized: boolean
           payment_detail: string | null
@@ -732,6 +733,7 @@ export type Database = {
           customer_phone_snapshot?: string | null
           discount_amount?: number
           discount_rule_id?: string | null
+          discount_rule_name_snapshot?: string | null
           id?: string
           is_user_anonymized?: boolean
           payment_detail?: string | null
@@ -756,6 +758,7 @@ export type Database = {
           customer_phone_snapshot?: string | null
           discount_amount?: number
           discount_rule_id?: string | null
+          discount_rule_name_snapshot?: string | null
           id?: string
           is_user_anonymized?: boolean
           payment_detail?: string | null

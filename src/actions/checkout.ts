@@ -8,13 +8,12 @@ import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
+import { resolveCartStateForUser } from "@/lib/cart"
+import { isMissingDiscountRuleNameSnapshotColumn } from "@/lib/discount-rule-snapshot"
 import { env } from "@/lib/env"
-import { getBestDiscount } from "@/lib/discounts"
 import { generateReference } from "@/lib/utils"
 import { withVercelProtectionBypass } from "@/lib/vercel-protection"
 import { createCheckoutUrl } from "@/lib/wompi"
-import { getCart } from "@/actions/cart"
-import type { DiscountRule } from "@/types"
 
 /**
  * Compute a deterministic hash of cart contents for idempotency.
@@ -55,43 +54,26 @@ export async function createOrder(): Promise<never> {
   const user = await getCurrentUser()
   if (!user) redirect("/login?redirect=/carrito")
 
-  const items = await getCart()
+  const rlsClient = await createServerClient()
+  const cartState = await resolveCartStateForUser({
+    supabase: rlsClient,
+    userId: user.id,
+  })
+  const items = cartState.items
 
   if (items.length === 0) {
     redirect("/carrito")
   }
 
-  // Filter only paid courses (free courses should use enrollFree)
-  const paidItems = items.filter((item) => !item.course.is_free)
-  if (paidItems.length === 0) {
-    redirect("/carrito")
-  }
-
-  const subtotal = paidItems.reduce((acc, item) => acc + item.course.price, 0)
-
   const supabase = createServiceRoleClient()
-  const rlsClient = await createServerClient()
-  const { data: discountRules } = await rlsClient
-    .from("discount_rules")
-    .select("*")
-    .eq("is_active", true)
-
-  const discount = getBestDiscount(
-    paidItems.map((item) => ({
-      category: item.course.category,
-      price: item.course.price,
-      isFree: item.course.is_free,
-    })),
-    (discountRules ?? []) as DiscountRule[]
-  )
-
-  const discountAmount = discount.amount
-  const discountRuleId = discount.rule?.id ?? null
-
-  const total = subtotal - discountAmount
+  const subtotal = cartState.subtotal
+  const discountAmount = cartState.discountAmount
+  const discountRuleId = cartState.discountRule?.id ?? null
+  const discountRuleNameSnapshot = cartState.discountRule?.name ?? null
+  const total = cartState.total
 
   const cartHash = computeCartHash(
-    paidItems.map((item) => ({
+    items.map((item) => ({
       courseId: item.course.id,
       price: item.course.price,
     }))
@@ -135,7 +117,7 @@ export async function createOrder(): Promise<never> {
       orderTotal = existingOrder.total
     } else {
       // Order exists but items are missing — recreate items
-      const orderItems = paidItems.map((item) => ({
+      const orderItems = items.map((item) => ({
         order_id: existingOrder.id,
         course_id: item.course.id,
         course_title_snapshot: item.course.title,
@@ -163,31 +145,48 @@ export async function createOrder(): Promise<never> {
     }
 
     // Create new order with snapshot data
-    const { data: order, error: orderError } = await supabase
+    const orderPayload = {
+      user_id: user.id,
+      reference,
+      customer_name_snapshot: user.full_name,
+      customer_email_snapshot: user.email,
+      customer_phone_snapshot: user.phone ?? null,
+      subtotal,
+      discount_amount: discountAmount,
+      discount_rule_id: discountRuleId,
+      discount_rule_name_snapshot: discountRuleNameSnapshot,
+      total,
+      currency: "COP",
+      status: "pending" as const,
+      cart_hash: cartHash,
+    }
+
+    let { data: order, error: orderError } = await supabase
       .from("orders")
-      .insert({
-        user_id: user.id,
-        reference,
-        customer_name_snapshot: user.full_name,
-        customer_email_snapshot: user.email,
-        customer_phone_snapshot: user.phone ?? null,
-        subtotal,
-        discount_amount: discountAmount,
-        discount_rule_id: discountRuleId,
-        total,
-        currency: "COP",
-        status: "pending",
-        cart_hash: cartHash,
-      })
+      .insert(orderPayload)
       .select("id")
       .single()
+
+    if (isMissingDiscountRuleNameSnapshotColumn(orderError)) {
+      const { discount_rule_name_snapshot: _snapshot, ...legacyOrderPayload } =
+        orderPayload
+
+      const legacyInsert = await supabase
+        .from("orders")
+        .insert(legacyOrderPayload)
+        .select("id")
+        .single()
+
+      order = legacyInsert.data
+      orderError = legacyInsert.error
+    }
 
     if (orderError || !order) {
       redirect("/carrito?error=order_failed")
     }
 
     // Create order items with price snapshot
-    const orderItems = paidItems.map((item) => ({
+    const orderItems = items.map((item) => ({
       order_id: order.id,
       course_id: item.course.id,
       course_title_snapshot: item.course.title,
@@ -216,8 +215,9 @@ export async function createOrder(): Promise<never> {
       subtotal,
       discountAmount,
       discountRuleId,
+      discountRuleNameSnapshot,
       total: orderTotal,
-      itemCount: paidItems.length,
+      itemCount: items.length,
     })
   )
 

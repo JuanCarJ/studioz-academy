@@ -98,7 +98,7 @@ export function OrdersTable({ orders }: OrdersTableProps) {
                     <p className="text-xs text-emerald-600 dark:text-emerald-500">
                       {order.discount_rule_name
                         ? order.discount_rule_name
-                        : "Combo aplicado"}
+                        : "Descuento historico"}
                     </p>
                   )}
                 </div>
