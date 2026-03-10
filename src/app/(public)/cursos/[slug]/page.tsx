@@ -8,6 +8,7 @@ import type { Metadata } from "next"
 
 import { getCourseBySlug, getRelatedCourses } from "@/actions/courses"
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { isPromotionalFreeCourse } from "@/lib/pricing"
 import { createServerClient } from "@/lib/supabase/server"
 import { CourseActions } from "@/components/courses/CourseActions"
 import { CourseGrid } from "@/components/courses/CourseGrid"
@@ -171,14 +172,21 @@ export default async function CourseDetailPage({ params }: PageProps) {
   }
 
   const user = await getCurrentUser()
+  const isPromoFree = isPromotionalFreeCourse({
+    is_free: course.is_free,
+    current_price: course.current_price,
+    has_course_discount: course.has_course_discount,
+  })
 
   const courseActionsProps: CourseActionsProps = {
     courseId: course.id,
     slug: course.slug,
-    isFree: course.is_free,
+    isFree: course.is_free || course.current_price === 0,
     isEnrolled: course.isEnrolled,
     isInCart: course.isInCart,
-    price: course.price,
+    price: course.current_price,
+    listPrice: course.list_price,
+    coursePromotionLabel: course.course_discount_label,
     isAuthenticated: !!user,
     enrollmentProgress: course.enrollmentProgress,
   }
@@ -228,7 +236,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
                     className="text-sm text-muted-foreground hover:text-primary"
                   >
                     ({course.reviews_count}{" "}
-                    {course.reviews_count === 1 ? "resena" : "resenas"})
+                    {course.reviews_count === 1 ? "reseña" : "reseñas"})
                   </a>
                 </div>
               )}
@@ -273,6 +281,11 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 Gratis
               </Badge>
             )}
+            {!course.is_free && course.has_course_discount && course.course_discount_label && (
+              <Badge className="bg-amber-500 text-black hover:bg-amber-500">
+                {course.course_discount_label}
+              </Badge>
+            )}
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
@@ -310,6 +323,13 @@ export default async function CourseDetailPage({ params }: PageProps) {
               <span>Por {course.instructor.full_name}</span>
             )}
           </div>
+          {!course.is_free && (
+            <p className="text-sm text-muted-foreground">
+              {isPromoFree
+                ? "Esta promocion te da acceso inmediato. Los combos se calculan automaticamente cuando el total del carrito es mayor a cero."
+                : "Los combos se calculan automaticamente en el carrito."}
+            </p>
+          )}
         </div>
 
         {/* Content: description, temario, instructor */}

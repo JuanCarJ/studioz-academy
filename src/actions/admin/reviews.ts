@@ -91,7 +91,7 @@ export async function deleteReviewAdmin(
     .delete()
     .eq("id", reviewId)
 
-  if (error) return { error: "No se pudo eliminar la resena." }
+  if (error) return { error: "No se pudo eliminar la reseña." }
 
   revalidatePath("/admin/resenas")
   return { success: true }

@@ -19,6 +19,7 @@ import {
   getOrderByReference,
   getOutboxEntry,
   getPostBySlug,
+  getPostImages,
   getProfileByEmail,
   getReviewForCourse,
   qaCredentials,
@@ -38,6 +39,10 @@ const instructorName = `QA E2E Instructor ${runId}`
 const courseTitle = `QA E2E Curso Admin ${runId}`
 const avatarPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0p7x8AAAAASUVORK5CYII=",
+  "base64"
+)
+const alternateUploadPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP8z8Dwn4EIwDiqAABhWQO6U0YvrQAAAABJRU5ErkJggg==",
   "base64"
 )
 
@@ -114,7 +119,7 @@ test.describe.serial("Business E2E", () => {
     await expect(
       page.getByText(
         new RegExp(
-          `Descuento \\(${escapeRegExp(expectedDiscount.rule!.name)}\\)`,
+          `Combos \\(${escapeRegExp(expectedDiscount.rule!.name)}\\)`,
           "i"
         )
       )
@@ -235,9 +240,9 @@ test.describe.serial("Business E2E", () => {
 
     await page.getByRole("radio", { name: /5 estrellas/i }).click()
     await page.getByLabel(/comentario/i).fill(reviewTextInitial)
-    await page.getByRole("button", { name: /publicar resena/i }).click()
+    await page.getByRole("button", { name: /publicar reseña/i }).click()
 
-    await expect(page.getByText(/tu resena fue publicada/i)).toBeVisible()
+    await expect(page.getByText(/tu reseña fue publicada/i)).toBeVisible()
     await expect
       .poll(async () =>
         getReviewForCourse(qaCredentials.userEmail, paidCourse!.id).then((review) => review?.text ?? null)
@@ -249,7 +254,7 @@ test.describe.serial("Business E2E", () => {
     await page.getByLabel(/comentario/i).fill(reviewTextUpdated)
     await page.getByRole("button", { name: /guardar cambios/i }).click()
 
-    await expect(page.getByText(/tu resena fue actualizada/i)).toBeVisible()
+    await expect(page.getByText(/tu reseña fue actualizada/i)).toBeVisible()
     await expect
       .poll(async () =>
         getReviewForCourse(qaCredentials.userEmail, paidCourse!.id).then(
@@ -348,7 +353,7 @@ test.describe.serial("Business E2E", () => {
     })
     await expect(orderRow).toBeVisible()
     await expect(orderRow.getByText("Aprobada", { exact: true })).toBeVisible()
-    await expect(orderRow.getByText("CARD", { exact: true })).toBeVisible()
+    await expect(orderRow.getByText("Tarjeta", { exact: true })).toBeVisible()
   })
 
   test("admin abre detalle de orden y reenvia email de compra", async ({
@@ -445,7 +450,18 @@ test.describe.serial("Business E2E", () => {
     await createForm.locator('textarea[name="content"]').fill(
       "Contenido temporal QA E2E para validar CRUD editorial."
     )
-    await createForm.getByRole("checkbox").check()
+    await createForm.locator('input[name="images"]').setInputFiles([
+      {
+        name: "news-one.png",
+        mimeType: "image/png",
+        buffer: avatarPng,
+      },
+      {
+        name: "news-two.png",
+        mimeType: "image/png",
+        buffer: alternateUploadPng,
+      },
+    ])
     await createForm.getByRole("button", { name: /crear noticia/i }).click()
 
     await expect
@@ -454,6 +470,10 @@ test.describe.serial("Business E2E", () => {
 
     const post = await getPostBySlug(newsSlug)
     expect(post?.id).toBeTruthy()
+    await expect
+      .poll(async () => getPostImages(post!.id).then((images) => images.length))
+      .toBe(2)
+    await page.goto("/admin/noticias")
 
     const postCard = page.getByTestId(`news-card-${post!.id}`)
     await postCard.locator('input[name="title"]').fill(newsTitleUpdated)
@@ -466,10 +486,14 @@ test.describe.serial("Business E2E", () => {
       .poll(async () => getPostBySlug(newsSlugUpdated).then((row) => row?.title ?? null))
       .toBe(newsTitleUpdated)
 
+    await page.goto(`/noticias/${newsSlug}`)
+    await expect(page).toHaveURL(new RegExp(`/noticias/${newsSlugUpdated}$`))
+
     await page.goto(`/noticias/${newsSlugUpdated}`)
     await expect(
       page.getByRole("heading", { level: 1, name: newsTitleUpdated })
     ).toBeVisible()
+    await expect(page.getByRole("button", { name: /siguiente/i }).first()).toBeVisible()
 
     await page.goto("/admin/auditoria?action=post.update")
     await expect(page.getByRole("cell", { name: "post.update" }).first()).toBeVisible()

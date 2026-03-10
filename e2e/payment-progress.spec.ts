@@ -102,9 +102,13 @@ test.describe.serial("payment progress initialization", () => {
           customer_name_snapshot: profile?.profile.full_name ?? "QA Student Studio Z",
           customer_email_snapshot: qaCredentials.userEmail,
           customer_phone_snapshot: profile?.profile.phone ?? null,
+          list_subtotal: course?.price ?? 0,
           subtotal: course?.price ?? 0,
+          course_discount_amount: 0,
+          combo_discount_amount: 0,
           discount_amount: 0,
           discount_rule_id: null,
+          pricing_snapshot_json: null,
           total: course?.price ?? 0,
           currency: "COP",
           status: "pending",
@@ -126,6 +130,11 @@ test.describe.serial("payment progress initialization", () => {
         course_id: fixtures.cartCourseOneId,
         course_title_snapshot: course?.title ?? qaCredentials.userEmail,
         price_at_purchase: course?.price ?? 0,
+        list_price_snapshot: course?.price ?? 0,
+        course_discount_amount_snapshot: 0,
+        price_after_course_discount_snapshot: course?.price ?? 0,
+        combo_discount_amount_snapshot: 0,
+        final_price_snapshot: course?.price ?? 0,
       })
 
       if (itemError) {
@@ -219,9 +228,13 @@ test.describe.serial("payment progress initialization", () => {
           customer_name_snapshot: profile?.profile.full_name ?? "QA Student Studio Z",
           customer_email_snapshot: qaCredentials.userEmail,
           customer_phone_snapshot: profile?.profile.phone ?? null,
+          list_subtotal: purchasedCourse?.price ?? 0,
           subtotal: purchasedCourse?.price ?? 0,
+          course_discount_amount: 0,
+          combo_discount_amount: 0,
           discount_amount: 0,
           discount_rule_id: null,
+          pricing_snapshot_json: null,
           total: purchasedCourse?.price ?? 0,
           currency: "COP",
           status: "pending",
@@ -243,6 +256,11 @@ test.describe.serial("payment progress initialization", () => {
         course_id: fixtures.cartCourseOneId,
         course_title_snapshot: purchasedCourse?.title ?? "Purchased Course",
         price_at_purchase: purchasedCourse?.price ?? 0,
+        list_price_snapshot: purchasedCourse?.price ?? 0,
+        course_discount_amount_snapshot: 0,
+        price_after_course_discount_snapshot: purchasedCourse?.price ?? 0,
+        combo_discount_amount_snapshot: 0,
+        final_price_snapshot: purchasedCourse?.price ?? 0,
       })
 
       if (itemError) {

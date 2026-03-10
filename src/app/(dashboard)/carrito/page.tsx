@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
 
+import { createOrder } from "@/actions/checkout"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { getCartState } from "@/actions/cart"
 import { CartItem } from "@/components/cart/CartItem"
@@ -13,8 +14,17 @@ export default async function CartPage() {
   const user = await getCurrentUser()
   if (!user) redirect("/login?redirect=/carrito")
 
-  const { items, subtotal, discountAmount, discountName, total } =
-    await getCartState()
+  const {
+    items,
+    listSubtotal,
+    subtotal,
+    courseDiscountAmount,
+    comboDiscountAmount,
+    discountAmount,
+    discountName,
+    appliedDiscountLines,
+    total,
+  } = await getCartState()
 
   if (items.length === 0) {
     return (
@@ -48,9 +58,14 @@ export default async function CartPage() {
         {/* Summary sidebar */}
         <div className="space-y-4">
           <CartSummary
+            checkoutAction={createOrder}
+            listSubtotal={listSubtotal}
             subtotal={subtotal}
+            courseDiscountAmount={courseDiscountAmount}
+            comboDiscountAmount={comboDiscountAmount}
             discountAmount={discountAmount}
             discountName={discountName}
+            appliedDiscountLines={appliedDiscountLines}
             total={total}
             itemCount={items.length}
           />

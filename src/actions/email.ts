@@ -9,6 +9,22 @@ import { env } from "@/lib/env"
 const MAX_ATTEMPTS = 5
 const RETRY_DELAY_MS = [60_000, 120_000, 300_000, 600_000, 1_200_000] // 1m, 2m, 5m, 10m, 20m
 
+function formatPaymentMethod(method: string | null): string | null {
+  if (!method) return null
+
+  const labels: Record<string, string> = {
+    CARD: "Tarjeta",
+    NEQUI: "Nequi",
+    PSE: "PSE",
+    BANCOLOMBIA_TRANSFER: "Bancolombia",
+    BANCOLOMBIA_COLLECT: "Bancolombia Collect",
+    EFECTY: "Efecty",
+    PROMO: "Promocion interna",
+  }
+
+  return labels[method.toUpperCase()] ?? method
+}
+
 /**
  * Enqueue a purchase confirmation email in the outbox.
  * Called from the webhook after successful payment — must be idempotent.
@@ -52,7 +68,7 @@ export async function sendPurchaseConfirmation(orderId: string): Promise<boolean
   // Fetch order with items
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("*, items:order_items(*)")
+    .select("*, items:order_items(*), discount_lines:order_discount_lines(*)")
     .eq("id", orderId)
     .single()
 
@@ -68,6 +84,37 @@ export async function sendPurchaseConfirmation(orderId: string): Promise<boolean
   }
 
   const appUrl = env.APP_URL()
+  const items = (order.items as Array<{
+    course_title_snapshot: string
+    list_price_snapshot?: number | null
+    price_at_purchase: number
+    course_discount_amount_snapshot?: number | null
+    combo_discount_amount_snapshot?: number | null
+    final_price_snapshot?: number | null
+  }> | null) ?? []
+  const discountLines = (order.discount_lines as Array<{
+    kind: "course_discount" | "combo"
+    source_name_snapshot: string
+    course_title_snapshot: string | null
+    amount: number
+  }> | null) ?? []
+  const groupedLines = discountLines.reduce<Array<{ key: string; label: string; amount: number }>>(
+    (acc, line) => {
+      const label =
+        line.kind === "course_discount"
+          ? `Promo curso: ${line.course_title_snapshot ?? line.source_name_snapshot}`
+          : `Combo: ${line.source_name_snapshot}`
+      const key = `${line.kind}:${label}`
+      const existing = acc.find((entry) => entry.key === key)
+      if (existing) {
+        existing.amount += line.amount
+        return acc
+      }
+      acc.push({ key, label, amount: line.amount })
+      return acc
+    },
+    []
+  )
 
   const result = await sendEmail({
     to: order.customer_email_snapshot,
@@ -80,13 +127,32 @@ export async function sendPurchaseConfirmation(orderId: string): Promise<boolean
         month: "long",
         day: "numeric",
       }),
-      subtotalFormatted: formatCOP(order.subtotal),
-      discountFormatted: order.discount_amount > 0 ? formatCOP(order.discount_amount) : null,
+      listSubtotalFormatted: formatCOP(order.list_subtotal ?? order.subtotal),
+      courseDiscountFormatted:
+        order.course_discount_amount > 0 ? formatCOP(order.course_discount_amount) : null,
+      comboDiscountFormatted:
+        order.combo_discount_amount > 0 ? formatCOP(order.combo_discount_amount) : null,
+      totalDiscountFormatted:
+        order.discount_amount > 0 ? formatCOP(order.discount_amount) : null,
       totalFormatted: formatCOP(order.total),
-      paymentMethod: order.payment_method,
-      courseNames: (order.items as { course_title_snapshot: string }[]).map(
-        (item) => item.course_title_snapshot
-      ),
+      paymentMethod: formatPaymentMethod(order.payment_method),
+      items: items.map((item) => ({
+        title: item.course_title_snapshot,
+        listPriceFormatted: formatCOP(item.list_price_snapshot ?? item.price_at_purchase),
+        courseDiscountFormatted:
+          (item.course_discount_amount_snapshot ?? 0) > 0
+            ? formatCOP(item.course_discount_amount_snapshot ?? 0)
+            : null,
+        comboDiscountFormatted:
+          (item.combo_discount_amount_snapshot ?? 0) > 0
+            ? formatCOP(item.combo_discount_amount_snapshot ?? 0)
+            : null,
+        finalPriceFormatted: formatCOP(item.final_price_snapshot ?? item.price_at_purchase),
+      })),
+      discountLines: groupedLines.map((line) => ({
+        label: line.label,
+        amountFormatted: formatCOP(line.amount),
+      })),
       dashboardUrl: `${appUrl}/dashboard`,
     }),
   })

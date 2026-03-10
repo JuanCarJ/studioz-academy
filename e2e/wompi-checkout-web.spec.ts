@@ -24,6 +24,10 @@ test.describe("Wompi checkout web", () => {
     "La verificacion del checkout web corre una sola vez en desktop."
   )
 
+  test.beforeEach(async () => {
+    await ensureBusinessFixtures()
+  })
+
   test("genera la URL de checkout con los parametros documentados por Wompi", async ({
     page,
   }) => {
@@ -79,8 +83,6 @@ test.describe("Wompi checkout web", () => {
   test("genera checkout con combo y congela el nombre historico del descuento", async ({
     page,
   }) => {
-    await ensureBusinessFixtures()
-
     await clearUserCart(qaCredentials.userEmail)
     await loginAsUser(page)
 

@@ -21,7 +21,14 @@ test.describe.serial("User Session Recovery", () => {
     await page.goto("/dashboard")
     await degradeAccessTokenCookie(page)
 
-    await page.getByRole("link", { name: /mi perfil/i }).click()
+    const desktopProfileLink = page.getByRole("link", { name: /mi perfil/i }).first()
+    if (await desktopProfileLink.isVisible().catch(() => false)) {
+      await desktopProfileLink.click()
+    } else {
+      await page.getByTestId("mobile-bottom-menu-trigger").click()
+      await page.getByRole("link", { name: /mi perfil/i }).click()
+      await page.getByRole("button", { name: /close/i }).click()
+    }
 
     await expect(page).toHaveURL(/\/dashboard\/perfil$/)
     await expect(

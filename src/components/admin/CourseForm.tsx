@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import Image from "next/image"
 
 import { createCourse, updateCourse } from "@/actions/admin/courses"
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { formatCOP } from "@/lib/utils"
 
 import type { Course, Instructor } from "@/types"
 
@@ -40,6 +41,46 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
 
   // Price display: stored as centavos, shown as pesos
   const priceInPesos = course ? course.price / 100 : ""
+  const [priceValue, setPriceValue] = useState(String(priceInPesos))
+  const [isFreeChecked, setIsFreeChecked] = useState(course?.is_free ?? false)
+  const [courseDiscountEnabled, setCourseDiscountEnabled] = useState(
+    course?.course_discount_enabled ?? false
+  )
+  const [courseDiscountType, setCourseDiscountType] = useState<
+    "percentage" | "fixed"
+  >(
+    course?.course_discount_type === "fixed" ? "fixed" : "percentage"
+  )
+  const [courseDiscountValue, setCourseDiscountValue] = useState(
+    course?.course_discount_type === "fixed" && course.course_discount_value
+      ? String(course.course_discount_value / 100)
+      : String(course?.course_discount_value ?? 10)
+  )
+
+  const listPriceInCents = isFreeChecked
+    ? 0
+    : Math.max(0, Math.round(Number(priceValue || 0) * 100))
+  const rawDiscountValue = Number(courseDiscountValue || 0)
+  const previewDiscountAmount =
+    !courseDiscountEnabled || isFreeChecked || !Number.isFinite(rawDiscountValue) || rawDiscountValue <= 0
+      ? 0
+      : courseDiscountType === "percentage"
+        ? Math.min(
+            listPriceInCents,
+            Math.round((listPriceInCents * rawDiscountValue) / 100)
+          )
+        : Math.min(listPriceInCents, Math.round(rawDiscountValue * 100))
+  const previewFinalPrice = Math.max(0, listPriceInCents - previewDiscountAmount)
+  const isFixedDiscountInvalid =
+    courseDiscountEnabled &&
+    !isFreeChecked &&
+    courseDiscountType === "fixed" &&
+    Math.round(rawDiscountValue * 100) > listPriceInCents
+  const isPercentageDiscountInvalid =
+    courseDiscountEnabled &&
+    !isFreeChecked &&
+    courseDiscountType === "percentage" &&
+    (rawDiscountValue < 1 || rawDiscountValue > 100)
 
   return (
     <form action={formAction} className="max-w-2xl space-y-6">
@@ -127,8 +168,10 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
             type="number"
             min={0}
             step={100}
-            defaultValue={priceInPesos}
+            value={priceValue}
+            onChange={(event) => setPriceValue(event.target.value)}
             placeholder="100000"
+            disabled={isFreeChecked}
           />
           <p className="text-xs text-muted-foreground">
             Ingresa el precio en pesos colombianos (ej: 100000 = $100.000)
@@ -140,10 +183,102 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
             <Switch
               id="isFree"
               name="isFree"
-              defaultChecked={course?.is_free ?? false}
+              checked={isFreeChecked}
+              onCheckedChange={(checked) => {
+                setIsFreeChecked(checked)
+                if (checked) {
+                  setCourseDiscountEnabled(false)
+                }
+              }}
             />
             <Label htmlFor="isFree">Curso gratuito</Label>
           </div>
+        </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold">Promocion del curso</h3>
+            <p className="text-xs text-muted-foreground">
+              Configura un descuento individual por curso. Los combos se calculan aparte en carrito.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="courseDiscountEnabled"
+              name="courseDiscountEnabled"
+              checked={courseDiscountEnabled && !isFreeChecked}
+              onCheckedChange={setCourseDiscountEnabled}
+              disabled={isFreeChecked}
+            />
+            <Label htmlFor="courseDiscountEnabled">Activar promo</Label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="courseDiscountType">Tipo</Label>
+            <Select
+              name="courseDiscountType"
+              value={courseDiscountType}
+              onValueChange={(value) =>
+                setCourseDiscountType(value === "fixed" ? "fixed" : "percentage")
+              }
+              disabled={!courseDiscountEnabled || isFreeChecked}
+            >
+              <SelectTrigger id="courseDiscountType">
+                <SelectValue placeholder="Seleccionar tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="percentage">Porcentaje</SelectItem>
+                <SelectItem value="fixed">Monto fijo (COP)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="courseDiscountValue">Valor</Label>
+            <Input
+              id="courseDiscountValue"
+              name="courseDiscountValue"
+              type="number"
+              min={1}
+              max={courseDiscountType === "percentage" ? 100 : undefined}
+              value={courseDiscountValue}
+              onChange={(event) => setCourseDiscountValue(event.target.value)}
+              disabled={!courseDiscountEnabled || isFreeChecked}
+            />
+            <p className="text-xs text-muted-foreground">
+              {courseDiscountType === "percentage"
+                ? "Entre 1 y 100."
+                : "En pesos colombianos. No puede superar el precio lista actual."}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-muted/40 p-3 text-sm">
+          <p className="font-medium">Preview de precio</p>
+          {isFreeChecked ? (
+            <p className="mt-1 text-muted-foreground">
+              El curso es gratuito, por lo tanto no puede tener promocion individual activa.
+            </p>
+          ) : (
+            <div className="mt-2 space-y-1 text-muted-foreground">
+              <p>Precio lista: {formatCOP(listPriceInCents)}</p>
+              <p>Descuento: -{formatCOP(previewDiscountAmount)}</p>
+              <p className="font-semibold text-foreground">
+                Precio final: {formatCOP(previewFinalPrice)}
+              </p>
+            </div>
+          )}
+          {(isFixedDiscountInvalid || isPercentageDiscountInvalid) && (
+            <p className="mt-2 text-sm text-destructive">
+              {isPercentageDiscountInvalid
+                ? "El descuento porcentual debe estar entre 1 y 100."
+                : "El descuento fijo no puede superar el precio lista actual."}
+            </p>
+          )}
         </div>
       </div>
 

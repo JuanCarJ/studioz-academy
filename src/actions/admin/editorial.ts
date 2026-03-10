@@ -8,7 +8,7 @@ import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 import { slugify } from "@/lib/utils"
 
-import type { Event, EventImage, GalleryItem, Post } from "@/types"
+import type { Event, EventImage, GalleryItem, Post, PostImage } from "@/types"
 
 const EDITORIAL_ASSETS_BUCKET = "editorial-assets"
 const MAX_EDITORIAL_IMAGE_SIZE = 5 * 1024 * 1024
@@ -17,6 +17,7 @@ const ALLOWED_EDITORIAL_IMAGE_TYPES = [
   "image/png",
   "image/webp",
 ]
+let editorialBucketEnsured = false
 
 export interface EditorialFormState {
   error?: string
@@ -54,8 +55,10 @@ function getUploadedFiles(formData: FormData, name: string) {
 
 function revalidateEditorialPaths() {
   revalidatePath("/")
+  revalidatePath("/admin/noticias")
   revalidatePath("/admin/galeria")
   revalidatePath("/admin/eventos")
+  revalidatePath("/noticias")
   revalidatePath("/galeria")
   revalidatePath("/eventos")
 }
@@ -70,6 +73,27 @@ async function uploadEditorialAsset(file: File, path: string) {
   }
 
   const supabase = createServiceRoleClient()
+  if (!editorialBucketEnsured) {
+    const { error: bucketError } = await supabase.storage.createBucket(
+      EDITORIAL_ASSETS_BUCKET,
+      {
+        public: true,
+        fileSizeLimit: `${MAX_EDITORIAL_IMAGE_SIZE}`,
+        allowedMimeTypes: ALLOWED_EDITORIAL_IMAGE_TYPES,
+      }
+    )
+
+    if (
+      bucketError &&
+      !bucketError.message.toLowerCase().includes("already") &&
+      !bucketError.message.toLowerCase().includes("exists")
+    ) {
+      throw new Error("No se pudo preparar el almacenamiento editorial.")
+    }
+
+    editorialBucketEnsured = true
+  }
+
   const { error } = await supabase.storage
     .from(EDITORIAL_ASSETS_BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type })
@@ -85,25 +109,8 @@ async function uploadEditorialAsset(file: File, path: string) {
   return data.publicUrl
 }
 
-async function resolveImageUrl(options: {
-  file: File | null
-  imageUrl: string | null
-  folder: string
-  objectId: string
-}) {
-  if (options.file && options.file.size > 0) {
-    const ext = options.file.name.split(".").pop() ?? "jpg"
-    return uploadEditorialAsset(
-      options.file,
-      `${options.folder}/${options.objectId}.${ext}`
-    )
-  }
-
-  return options.imageUrl?.trim() || null
-}
-
-function parsePublishedFlag(formData: FormData) {
-  return formData.get("isPublished") === "on"
+function generateExcerpt(content: string, excerpt: string) {
+  return excerpt || content.slice(0, 160)
 }
 
 async function getEventImagesMap(
@@ -239,6 +246,156 @@ async function syncEventImages(options: {
   return { finalImages, coverImageUrl }
 }
 
+async function getPostImagesMap(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  postIds: string[]
+) {
+  if (postIds.length === 0) return {} as Record<string, PostImage[]>
+
+  const { data, error } = await supabase
+    .from("post_images")
+    .select("*")
+    .in("post_id", postIds)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) {
+    console.error("[admin.editorial] Failed to load post images:", error)
+    return {} as Record<string, PostImage[]>
+  }
+
+  return (data ?? []).reduce<Record<string, PostImage[]>>((acc, image) => {
+    const key = image.post_id
+    acc[key] ??= []
+    acc[key].push(image as PostImage)
+    return acc
+  }, {})
+}
+
+function mergePostsWithImages(
+  posts: Post[],
+  imagesMap: Record<string, PostImage[]>
+) {
+  return posts.map((post) => {
+    const images = imagesMap[post.id] ?? []
+    return {
+      ...post,
+      cover_image_url: images[0]?.image_url ?? post.cover_image_url,
+      images,
+    }
+  })
+}
+
+function serializePostForAudit(post: Post, images: PostImage[]) {
+  return {
+    ...post,
+    images: images.map((image) => ({ ...image })),
+  }
+}
+
+async function getPostImagesForPost(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  postId: string
+) {
+  const imagesMap = await getPostImagesMap(supabase, [postId])
+  return imagesMap[postId] ?? []
+}
+
+async function syncPostImages(options: {
+  supabase: Awaited<ReturnType<typeof createServerClient>>
+  postId: string
+  existingImages: PostImage[]
+  removeImageIds: string[]
+  newFiles: File[]
+}) {
+  const removedIds = new Set(options.removeImageIds)
+  const keptImages = options.existingImages.filter((image) => !removedIds.has(image.id))
+
+  const uploadedUrls: string[] = []
+  for (const [index, file] of options.newFiles.entries()) {
+    const ext = file.name.split(".").pop() ?? "jpg"
+    uploadedUrls.push(
+      await uploadEditorialAsset(
+        file,
+        `posts/${options.postId}/${Date.now().toString(36)}-${index}.${ext}`
+      )
+    )
+  }
+
+  if (keptImages.length + uploadedUrls.length === 0) {
+    throw new Error("Debes conservar o cargar al menos una imagen de la noticia.")
+  }
+
+  if (removedIds.size > 0) {
+    const { error } = await options.supabase
+      .from("post_images")
+      .delete()
+      .in("id", Array.from(removedIds))
+
+    if (error) {
+      throw new Error("No se pudieron eliminar las imagenes marcadas.")
+    }
+  }
+
+  for (const [index, image] of keptImages.entries()) {
+    const { error } = await options.supabase
+      .from("post_images")
+      .update({ sort_order: index })
+      .eq("id", image.id)
+
+    if (error) {
+      throw new Error("No se pudo reordenar la galeria de la noticia.")
+    }
+  }
+
+  if (uploadedUrls.length > 0) {
+    const { error } = await options.supabase
+      .from("post_images")
+      .insert(
+        uploadedUrls.map((imageUrl, index) => ({
+          post_id: options.postId,
+          image_url: imageUrl,
+          sort_order: keptImages.length + index,
+        }))
+      )
+
+    if (error) {
+      throw new Error("No se pudieron guardar las imagenes de la noticia.")
+    }
+  }
+
+  const finalImages = await getPostImagesForPost(options.supabase, options.postId)
+  const coverImageUrl = finalImages[0]?.image_url ?? null
+
+  const { error: coverError } = await options.supabase
+    .from("posts")
+    .update({ cover_image_url: coverImageUrl })
+    .eq("id", options.postId)
+
+  if (coverError) {
+    throw new Error("No se pudo actualizar la portada de la noticia.")
+  }
+
+  return { finalImages, coverImageUrl }
+}
+
+async function buildUniquePostSlug(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  title: string,
+  postId?: string
+) {
+  const baseSlug = slugify(title)
+
+  let query = supabase.from("posts").select("id").eq("slug", baseSlug)
+  if (postId) {
+    query = query.neq("id", postId)
+  }
+
+  const { data: existingSlug } = await query.maybeSingle()
+
+  return existingSlug ? `${baseSlug}-${Date.now().toString(36)}` : baseSlug
+}
+
 export async function getAdminPosts(): Promise<Post[]> {
   noStore()
   const admin = await verifyAdmin()
@@ -255,7 +412,13 @@ export async function getAdminPosts(): Promise<Post[]> {
     return []
   }
 
-  return (data ?? []) as Post[]
+  const posts = (data ?? []) as Post[]
+  const imagesMap = await getPostImagesMap(
+    supabase,
+    posts.map((post) => post.id)
+  )
+
+  return mergePostsWithImages(posts, imagesMap)
 }
 
 export async function getAdminEvents(): Promise<Event[]> {
@@ -302,158 +465,196 @@ export async function getAdminGalleryItems(): Promise<GalleryItem[]> {
   return (data ?? []) as GalleryItem[]
 }
 
-export async function createNews(formData: FormData) {
+export async function createNews(
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const title = String(formData.get("title") ?? "").trim()
   const content = String(formData.get("content") ?? "").trim()
   const excerpt = String(formData.get("excerpt") ?? "").trim()
-  const isPublished = parsePublishedFlag(formData)
+  const images = getUploadedFiles(formData, "images")
 
   if (!title || !content) {
-    throw new Error("Titulo y contenido son obligatorios.")
+    return { error: "Titulo y contenido son obligatorios." }
+  }
+
+  if (images.length === 0) {
+    return { error: "Debes cargar al menos una imagen para la noticia." }
   }
 
   const supabase = await createServerClient()
-  const baseSlug = slugify(title)
-  const { data: existingSlug } = await supabase
-    .from("posts")
-    .select("id")
-    .eq("slug", baseSlug)
-    .maybeSingle()
 
-  const finalSlug = existingSlug ? `${baseSlug}-${Date.now().toString(36)}` : baseSlug
+  try {
+    const finalSlug = await buildUniquePostSlug(supabase, title)
+    const publishedAt = new Date().toISOString()
 
-  const { data: created, error } = await supabase
-    .from("posts")
-    .insert({
-      title,
-      slug: finalSlug,
-      content,
-      excerpt: excerpt || content.slice(0, 160),
-      is_published: isPublished,
-      published_at: isPublished ? new Date().toISOString() : null,
-    })
-    .select("*")
-    .single()
-
-  if (error || !created) {
-    throw new Error("No se pudo crear la noticia.")
-  }
-
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("coverImage") as File | null,
-    imageUrl: (formData.get("coverImageUrl") as string | null) ?? null,
-    folder: "posts",
-    objectId: created.id,
-  })
-
-  let finalPost = created
-  if (imageUrl) {
-    const { data: updated } = await supabase
+    const { data: created, error } = await supabase
       .from("posts")
-      .update({ cover_image_url: imageUrl })
-      .eq("id", created.id)
+      .insert({
+        title,
+        slug: finalSlug,
+        content,
+        excerpt: generateExcerpt(content, excerpt),
+        cover_image_url: "pending://upload",
+        is_published: true,
+        published_at: publishedAt,
+      })
       .select("*")
       .single()
 
-    if (updated) finalPost = updated
+    if (error || !created) {
+      return { error: "No se pudo crear la noticia." }
+    }
+
+    try {
+      const { finalImages, coverImageUrl } = await syncPostImages({
+        supabase,
+        postId: created.id,
+        existingImages: [],
+        removeImageIds: [],
+        newFiles: images,
+      })
+
+      const { data: after, error: updateError } = await supabase
+        .from("posts")
+        .update({
+          title,
+          slug: finalSlug,
+          content,
+          excerpt: generateExcerpt(content, excerpt),
+          cover_image_url: coverImageUrl,
+          is_published: true,
+          published_at: publishedAt,
+        })
+        .eq("id", created.id)
+        .select("*")
+        .single()
+
+      if (updateError || !after) {
+        throw new Error("No se pudo finalizar la publicacion de la noticia.")
+      }
+
+      await recordAdminAuditLog({
+        action: "post.create",
+        entityType: "post",
+        entityId: after.id,
+        afterData: serializePostForAudit(after as Post, finalImages),
+      })
+
+      revalidateEditorialPaths()
+      return { success: true }
+    } catch (error) {
+      await supabase.from("post_images").delete().eq("post_id", created.id)
+      await supabase.from("posts").delete().eq("id", created.id)
+      return { error: toErrorMessage(error) }
+    }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  await recordAdminAuditLog({
-    action: "post.create",
-    entityType: "post",
-    entityId: finalPost.id,
-    afterData: finalPost,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/noticias")
-  revalidatePath("/noticias")
 }
 
-export async function updateNews(newsId: string, formData: FormData) {
+export async function updateNews(
+  newsId: string,
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const title = String(formData.get("title") ?? "").trim()
   const content = String(formData.get("content") ?? "").trim()
   const excerpt = String(formData.get("excerpt") ?? "").trim()
-  const isPublished = parsePublishedFlag(formData)
+  const newImages = getUploadedFiles(formData, "images")
+  const removeImageIds = formData
+    .getAll("removeImageIds")
+    .map((value) => String(value))
 
   if (!title || !content) {
-    throw new Error("Titulo y contenido son obligatorios.")
+    return { error: "Titulo y contenido son obligatorios." }
   }
 
   const supabase = await createServerClient()
-  const { data: before } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("id", newsId)
-    .single()
 
-  if (!before) throw new Error("Noticia no encontrada.")
-
-  const updateData: Record<string, unknown> = {
-    title,
-    content,
-    excerpt: excerpt || content.slice(0, 160),
-    is_published: isPublished,
-  }
-
-  if (title !== before.title) {
-    const baseSlug = slugify(title)
-    const { data: existingSlug } = await supabase
+  try {
+    const { data: before } = await supabase
       .from("posts")
-      .select("id")
-      .eq("slug", baseSlug)
-      .neq("id", newsId)
-      .maybeSingle()
+      .select("*")
+      .eq("id", newsId)
+      .single()
 
-    updateData.slug = existingSlug
-      ? `${baseSlug}-${Date.now().toString(36)}`
-      : baseSlug
+    if (!before) return { error: "Noticia no encontrada." }
+
+    const existingImages = await getPostImagesForPost(supabase, newsId)
+    const keptImagesCount = existingImages.filter(
+      (image) => !removeImageIds.includes(image.id)
+    ).length
+
+    if (keptImagesCount + newImages.length <= 0) {
+      return { error: "La noticia debe conservar al menos una imagen." }
+    }
+
+    const nextSlug =
+      title !== before.title
+        ? await buildUniquePostSlug(supabase, title, newsId)
+        : before.slug
+
+    const { finalImages, coverImageUrl } = await syncPostImages({
+      supabase,
+      postId: newsId,
+      existingImages,
+      removeImageIds,
+      newFiles: newImages,
+    })
+
+    const { data: after, error } = await supabase
+      .from("posts")
+      .update({
+        title,
+        slug: nextSlug,
+        content,
+        excerpt: generateExcerpt(content, excerpt),
+        cover_image_url: coverImageUrl,
+        is_published: true,
+        published_at: before.published_at ?? new Date().toISOString(),
+      })
+      .eq("id", newsId)
+      .select("*")
+      .single()
+
+    if (error || !after) {
+      return { error: "No se pudo actualizar la noticia." }
+    }
+
+    if (nextSlug !== before.slug) {
+      const adminSupabase = createServiceRoleClient()
+      await adminSupabase.from("slug_redirects").upsert(
+        {
+          old_slug: before.slug,
+          new_slug: nextSlug,
+          entity_type: "post",
+        },
+        { onConflict: "old_slug,entity_type" }
+      )
+    }
+
+    await recordAdminAuditLog({
+      action: "post.update",
+      entityType: "post",
+      entityId: newsId,
+      beforeData: serializePostForAudit(before as Post, existingImages),
+      afterData: serializePostForAudit(after as Post, finalImages),
+    })
+
+    revalidateEditorialPaths()
+    revalidatePath(`/noticias/${before.slug}`)
+    revalidatePath(`/noticias/${after.slug}`)
+    return { success: true }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  if (isPublished && !before.published_at) {
-    updateData.published_at = new Date().toISOString()
-  }
-
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("coverImage") as File | null,
-    imageUrl: (formData.get("coverImageUrl") as string | null) ?? before.cover_image_url,
-    folder: "posts",
-    objectId: newsId,
-  })
-
-  if (imageUrl) {
-    updateData.cover_image_url = imageUrl
-  }
-
-  const { data: after, error } = await supabase
-    .from("posts")
-    .update(updateData)
-    .eq("id", newsId)
-    .select("*")
-    .single()
-
-  if (error || !after) {
-    throw new Error("No se pudo actualizar la noticia.")
-  }
-
-  await recordAdminAuditLog({
-    action: "post.update",
-    entityType: "post",
-    entityId: newsId,
-    beforeData: before,
-    afterData: after,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/noticias")
-  revalidatePath("/noticias")
-  revalidatePath(`/noticias/${after.slug}`)
 }
 
 export async function deleteNews(newsId: string) {
@@ -466,6 +667,7 @@ export async function deleteNews(newsId: string) {
     .select("*")
     .eq("id", newsId)
     .single()
+  const beforeImages = await getPostImagesForPost(supabase, newsId)
 
   const { error } = await supabase.from("posts").delete().eq("id", newsId)
   if (error) throw new Error("No se pudo eliminar la noticia.")
@@ -474,12 +676,13 @@ export async function deleteNews(newsId: string) {
     action: "post.delete",
     entityType: "post",
     entityId: newsId,
-    beforeData: before ?? null,
+    beforeData: before ? serializePostForAudit(before as Post, beforeImages) : null,
   })
 
-  revalidatePath("/")
-  revalidatePath("/admin/noticias")
-  revalidatePath("/noticias")
+  revalidateEditorialPaths()
+  if (before?.slug) {
+    revalidatePath(`/noticias/${before.slug}`)
+  }
 }
 
 export async function createEvent(

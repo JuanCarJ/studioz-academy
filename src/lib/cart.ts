@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { getBestDiscount } from "@/lib/discounts"
+import { calculatePricing, decorateCourseWithPricing } from "@/lib/pricing"
 
-import type { DiscountRule, Instructor } from "@/types"
+import type { DiscountRule, Instructor, PricingLine } from "@/types"
 import type { Database } from "@/types/database"
 
 type RlsClient = SupabaseClient<Database>
@@ -13,6 +13,11 @@ type CartCourseCategory = "baile" | "tatuaje"
 interface CartCourse extends CourseRow {
   category: CartCourseCategory
   instructor: Pick<Instructor, "id" | "full_name">
+  list_price: number
+  current_price: number
+  has_course_discount: boolean
+  course_discount_amount: number
+  course_discount_label: string | null
 }
 
 export type AddCourseToCartErrorCode =
@@ -27,6 +32,13 @@ export interface CartItemWithCourse {
   user_id: string
   course_id: string
   added_at: string
+  listPrice: number
+  courseDiscountAmount: number
+  priceAfterCourseDiscount: number
+  comboDiscountAmount: number
+  finalPrice: number
+  coursePromotionLabel: string | null
+  comboPromotionLabel: string | null
   course: CartCourse
 }
 
@@ -38,9 +50,14 @@ export interface AddCourseToCartResult {
 
 export interface ResolvedCartState {
   items: CartItemWithCourse[]
+  listSubtotal: number
   subtotal: number
+  courseDiscountAmount: number
+  comboDiscountAmount: number
   discountAmount: number
-  discountRule: DiscountRule | null
+  appliedDiscountLines: PricingLine[]
+  primaryComboRuleIds: string[]
+  primaryComboRuleName: string | null
   total: number
 }
 
@@ -61,7 +78,7 @@ function mapCartItem(
         })[]
       | null
   }
-): CartItemWithCourse | null {
+): Omit<CartItemWithCourse, "listPrice" | "courseDiscountAmount" | "priceAfterCourseDiscount" | "comboDiscountAmount" | "finalPrice" | "coursePromotionLabel" | "comboPromotionLabel"> | null {
   const rawCourse = Array.isArray(item.courses) ? item.courses[0] : item.courses
   if (!rawCourse) return null
 
@@ -75,7 +92,20 @@ function mapCartItem(
     return null
   }
 
-  const { instructors: _instructors, ...course } = rawCourse
+  const course = { ...rawCourse }
+  delete (course as { instructors?: unknown }).instructors
+  const decoratedCourse = decorateCourseWithPricing({
+    ...course,
+    category: rawCourse.category,
+    is_free: rawCourse.is_free,
+    course_discount_enabled: rawCourse.course_discount_enabled,
+    course_discount_type:
+      rawCourse.course_discount_type === "percentage" ||
+      rawCourse.course_discount_type === "fixed"
+        ? rawCourse.course_discount_type
+        : null,
+    course_discount_value: rawCourse.course_discount_value,
+  })
 
   return {
     id: item.id,
@@ -86,8 +116,33 @@ function mapCartItem(
       ...course,
       category: rawCourse.category,
       instructor,
+      list_price: decoratedCourse.list_price,
+      current_price: decoratedCourse.current_price,
+      has_course_discount: decoratedCourse.has_course_discount,
+      course_discount_amount: decoratedCourse.course_discount_amount,
+      course_discount_label: decoratedCourse.course_discount_label,
     },
   }
+}
+
+function buildCartDiscountName(lines: PricingLine[]): string | null {
+  const comboNames = [...new Set(
+    lines
+      .filter((line) => line.kind === "combo")
+      .map((line) => line.source_name)
+  )]
+
+  if (comboNames.length === 1) return comboNames[0] ?? null
+  if (comboNames.length > 1) return "Promociones multiples"
+  return null
+}
+
+function getComboRuleIds(lines: PricingLine[]): string[] {
+  return [...new Set(
+    lines
+      .filter((line) => line.kind === "combo" && line.source_id)
+      .map((line) => line.source_id as string)
+  )]
 }
 
 export async function addCourseToCartForUser(input: {
@@ -97,7 +152,9 @@ export async function addCourseToCartForUser(input: {
 }): Promise<AddCourseToCartResult> {
   const { data: course, error: courseError } = await input.supabase
     .from("courses")
-    .select("id, slug, is_free, is_published")
+    .select(
+      "id, slug, category, price, is_free, is_published, course_discount_enabled, course_discount_type, course_discount_value"
+    )
     .eq("id", input.courseId)
     .maybeSingle()
 
@@ -109,7 +166,13 @@ export async function addCourseToCartForUser(input: {
     }
   }
 
-  if (course.is_free) {
+  const decoratedCourse = decorateCourseWithPricing({
+    ...course,
+    title: course.slug,
+    category: course.category === "tatuaje" ? "tatuaje" : "baile",
+  })
+
+  if (course.is_free || decoratedCourse.current_price <= 0) {
     return {
       success: false,
       code: "COURSE_IS_FREE",
@@ -175,11 +238,11 @@ export async function getCartItemsForUser(input: {
     .from("cart_items")
     .select("*, courses(*, instructors(id, full_name))")
     .eq("user_id", input.userId)
-    .order("added_at", { ascending: false })
+    .order("added_at", { ascending: true })
 
   if (error || !data) return []
 
-  const validItems: CartItemWithCourse[] = []
+  const baseItems: Array<ReturnType<typeof mapCartItem>> = []
   const invalidItemIds: string[] = []
 
   for (const item of data) {
@@ -189,19 +252,59 @@ export async function getCartItemsForUser(input: {
       continue
     }
 
-    if (!mappedItem.course.is_published || mappedItem.course.is_free) {
+    if (
+      !mappedItem.course.is_published ||
+      mappedItem.course.is_free ||
+      mappedItem.course.current_price <= 0
+    ) {
       invalidItemIds.push(item.id)
       continue
     }
 
-    validItems.push(mappedItem)
+    baseItems.push(mappedItem)
   }
 
   if (invalidItemIds.length > 0) {
     await input.supabase.from("cart_items").delete().in("id", invalidItemIds)
   }
 
-  return validItems
+  const validItems = baseItems.filter((item): item is NonNullable<typeof item> => Boolean(item))
+  if (validItems.length === 0) return []
+
+  const pricing = calculatePricing(
+    validItems.map((item) => ({
+      id: item.course.id,
+      title: item.course.title,
+      category: item.course.category,
+      price: item.course.price,
+      is_free: item.course.is_free,
+      added_at: item.added_at,
+      course_discount_enabled: item.course.course_discount_enabled,
+      course_discount_type:
+        item.course.course_discount_type === "percentage" ||
+        item.course.course_discount_type === "fixed"
+          ? item.course.course_discount_type
+          : null,
+      course_discount_value: item.course.course_discount_value,
+    })),
+    []
+  )
+
+  const pricedByCourseId = new Map(pricing.items.map((item) => [item.courseId, item]))
+
+  return validItems.map((item) => {
+    const pricedItem = pricedByCourseId.get(item.course.id)
+    return {
+      ...item,
+      listPrice: pricedItem?.listPrice ?? item.course.price,
+      courseDiscountAmount: pricedItem?.courseDiscountAmount ?? 0,
+      priceAfterCourseDiscount: pricedItem?.priceAfterCourseDiscount ?? item.course.current_price,
+      comboDiscountAmount: 0,
+      finalPrice: pricedItem?.finalPrice ?? item.course.current_price,
+      coursePromotionLabel: pricedItem?.coursePromotionLabel ?? item.course.course_discount_label,
+      comboPromotionLabel: null,
+    }
+  })
 }
 
 export async function resolveCartStateForUser(input: {
@@ -210,28 +313,59 @@ export async function resolveCartStateForUser(input: {
 }): Promise<ResolvedCartState> {
   const items = await getCartItemsForUser(input)
 
-  const subtotal = items.reduce((acc, item) => acc + item.course.price, 0)
-
   const { data: rules } = await input.supabase
     .from("discount_rules")
     .select("*")
     .eq("is_active", true)
+    .order("created_at", { ascending: true })
 
-  const discount = getBestDiscount(
+  const pricing = calculatePricing(
     items.map((item) => ({
+      id: item.course.id,
+      title: item.course.title,
       category: item.course.category,
       price: item.course.price,
-      isFree: item.course.is_free,
+      is_free: item.course.is_free,
+      added_at: item.added_at,
+      course_discount_enabled: item.course.course_discount_enabled,
+      course_discount_type:
+        item.course.course_discount_type === "percentage" ||
+        item.course.course_discount_type === "fixed"
+          ? item.course.course_discount_type
+          : null,
+      course_discount_value: item.course.course_discount_value,
     })),
     (rules ?? []) as DiscountRule[]
   )
 
+  const pricedByCourseId = new Map(pricing.items.map((item) => [item.courseId, item]))
+  const resolvedItems = items.map((item) => {
+    const pricedItem = pricedByCourseId.get(item.course.id)
+    if (!pricedItem) return item
+
+    return {
+      ...item,
+      listPrice: pricedItem.listPrice,
+      courseDiscountAmount: pricedItem.courseDiscountAmount,
+      priceAfterCourseDiscount: pricedItem.priceAfterCourseDiscount,
+      comboDiscountAmount: pricedItem.comboDiscountAmount,
+      finalPrice: pricedItem.finalPrice,
+      coursePromotionLabel: pricedItem.coursePromotionLabel,
+      comboPromotionLabel: pricedItem.comboPromotionLabel,
+    }
+  })
+
   return {
-    items,
-    subtotal,
-    discountAmount: discount.amount,
-    discountRule: discount.rule,
-    total: subtotal - discount.amount,
+    items: resolvedItems,
+    listSubtotal: pricing.listSubtotal,
+    subtotal: pricing.subtotal,
+    courseDiscountAmount: pricing.courseDiscountTotal,
+    comboDiscountAmount: pricing.comboDiscountTotal,
+    discountAmount: pricing.discountTotal,
+    appliedDiscountLines: pricing.appliedDiscountLines,
+    primaryComboRuleIds: getComboRuleIds(pricing.appliedDiscountLines),
+    primaryComboRuleName: buildCartDiscountName(pricing.appliedDiscountLines),
+    total: pricing.total,
   }
 }
 

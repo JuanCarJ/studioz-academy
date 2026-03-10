@@ -6,17 +6,26 @@ import {
   readDiscountRuleNameSnapshot,
 } from "@/lib/discount-rule-snapshot"
 import { createServerClient } from "@/lib/supabase/server"
+import type { OrderDiscountLine } from "@/types"
 
 export interface OrderItemSummary {
   course_title_snapshot: string
   price_at_purchase: number
+  list_price_snapshot: number
+  course_discount_amount_snapshot: number
+  price_after_course_discount_snapshot: number
+  combo_discount_amount_snapshot: number
+  final_price_snapshot: number
 }
 
 export interface OrderSummary {
   id: string
   reference: string
   status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
+  list_subtotal: number
   subtotal: number
+  course_discount_amount: number
+  combo_discount_amount: number
   discount_amount: number
   discount_rule_name: string | null
   total: number
@@ -24,6 +33,7 @@ export interface OrderSummary {
   created_at: string
   approved_at: string | null
   items: OrderItemSummary[]
+  discount_lines: OrderDiscountLine[]
 }
 
 function resolveDiscountRuleName(input: {
@@ -53,7 +63,10 @@ export async function getUserOrders(): Promise<{
       id,
       reference,
       status,
+      list_subtotal,
       subtotal,
+      course_discount_amount,
+      combo_discount_amount,
       discount_amount,
       discount_rules(name),
       total,
@@ -62,8 +75,14 @@ export async function getUserOrders(): Promise<{
       approved_at,
       items:order_items(
         course_title_snapshot,
-        price_at_purchase
-      )
+        price_at_purchase,
+        list_price_snapshot,
+        course_discount_amount_snapshot,
+        price_after_course_discount_snapshot,
+        combo_discount_amount_snapshot,
+        final_price_snapshot
+      ),
+      discount_lines:order_discount_lines(*)
     `
 
   let data: Array<Record<string, unknown>> | null = null
@@ -104,7 +123,10 @@ export async function getUserOrders(): Promise<{
     id: row.id as string,
     reference: row.reference as string,
     status: row.status as OrderSummary["status"],
+    list_subtotal: (row.list_subtotal as number | null) ?? (row.subtotal as number),
     subtotal: row.subtotal as number,
+    course_discount_amount: (row.course_discount_amount as number | null) ?? 0,
+    combo_discount_amount: (row.combo_discount_amount as number | null) ?? 0,
     discount_amount: row.discount_amount as number,
     discount_rule_name: resolveDiscountRuleName({
       discountAmount: row.discount_amount as number,
@@ -118,6 +140,7 @@ export async function getUserOrders(): Promise<{
     created_at: row.created_at as string,
     approved_at: (row.approved_at as string | null) ?? null,
     items: (row.items as OrderItemSummary[]) ?? [],
+    discount_lines: (row.discount_lines as OrderDiscountLine[]) ?? [],
   }))
 
   return { orders }

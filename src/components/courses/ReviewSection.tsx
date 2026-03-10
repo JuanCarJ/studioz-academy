@@ -54,7 +54,7 @@ export async function ReviewSection({
 
   return (
     <section className="space-y-6">
-      <h2 className="text-xl font-bold">Resenas</h2>
+      <h2 className="text-xl font-bold">Reseñas</h2>
 
       {/* Summary */}
       {reviewsCount > 0 && ratingAvg != null && (
@@ -63,7 +63,7 @@ export async function ReviewSection({
           <div className="space-y-1">
             <StarRating value={ratingAvg} mode="display" size="md" />
             <p className="text-sm text-muted-foreground">
-              {reviewsCount} {reviewsCount === 1 ? "resena" : "resenas"}
+              {reviewsCount} {reviewsCount === 1 ? "reseña" : "reseñas"}
             </p>
           </div>
         </div>
@@ -71,7 +71,7 @@ export async function ReviewSection({
 
       {reviewsCount === 0 && (
         <p className="text-sm text-muted-foreground">
-          Este curso aun no tiene resenas. Se el primero en opinar.
+          Este curso aún no tiene reseñas. Sé el primero en opinar.
         </p>
       )}
 
@@ -81,14 +81,14 @@ export async function ReviewSection({
       ) : !user ? (
         <div className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">
           <a href="/login" className="text-primary hover:underline">
-            Inicia sesion
+            Inicia sesión
           </a>{" "}
-          y compra este curso para dejar tu resena.
+          y compra este curso para dejar tu reseña.
         </div>
       ) : (
         // Authenticated but not enrolled
         <div className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">
-          Compra este curso para dejar tu resena.
+          Compra este curso para dejar tu reseña.
         </div>
       )}
 

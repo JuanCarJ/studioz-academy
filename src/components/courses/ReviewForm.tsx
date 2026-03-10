@@ -32,7 +32,7 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
     setSuccess(null)
 
     if (rating === 0) {
-      setError("Por favor selecciona una calificacion.")
+      setError("Por favor selecciona una calificación.")
       return
     }
 
@@ -50,8 +50,8 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
       } else {
         setSuccess(
           isEditing
-            ? "Tu resena fue actualizada."
-            : "Tu resena fue publicada. Gracias por tu opinion."
+            ? "Tu reseña fue actualizada."
+            : "Tu reseña fue publicada. Gracias por tu opinión."
         )
       }
     })
@@ -67,7 +67,7 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
       if (result.error) {
         setError(result.error)
       } else {
-        setSuccess("Tu resena fue eliminada.")
+        setSuccess("Tu reseña fue eliminada.")
         setRating(0)
         setText("")
       }
@@ -79,7 +79,7 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
   return (
     <div className="rounded-lg border p-5 space-y-4">
       <h3 className="text-base font-semibold">
-        {isEditing ? "Tu resena" : "Deja tu resena"}
+        {isEditing ? "Tu reseña" : "Deja tu reseña"}
       </h3>
 
       {error && (
@@ -95,7 +95,7 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label>Calificacion *</Label>
+          <Label>Calificación *</Label>
           <StarRating
             value={rating}
             onChange={setRating}
@@ -131,7 +131,7 @@ export function ReviewForm({ courseId, existingReview }: ReviewFormProps) {
               ? "Guardando..."
               : isEditing
                 ? "Guardar cambios"
-                : "Publicar resena"}
+                : "Publicar reseña"}
           </Button>
 
           {isEditing && (

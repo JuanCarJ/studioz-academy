@@ -9,12 +9,14 @@ interface EventImageCarouselProps {
   images: Array<{ id: string; image_url: string }>
   title: string
   aspectClassName?: string
+  fallbackLabel?: string
 }
 
 export function EventImageCarousel({
   images,
   title,
   aspectClassName = "aspect-[16/9]",
+  fallbackLabel = "Evento Studio Z",
 }: EventImageCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0)
 
@@ -26,7 +28,7 @@ export function EventImageCarousel({
           aspectClassName
         )}
       >
-        Evento Studio Z
+        {fallbackLabel}
       </div>
     )
   }

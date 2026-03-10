@@ -36,7 +36,7 @@ const adminLinks = [
   { href: "/admin/ventas", label: "Ventas", icon: DollarSign },
   { href: "/admin/usuarios", label: "Usuarios", icon: Users },
   { href: "/admin/instructores", label: "Instructores", icon: UserCog },
-  { href: "/admin/resenas", label: "Resenas", icon: Star },
+  { href: "/admin/resenas", label: "Reseñas", icon: Star },
   { href: "/admin/noticias", label: "Noticias", icon: Newspaper },
   { href: "/admin/eventos", label: "Eventos", icon: CalendarDays },
   { href: "/admin/galeria", label: "Galeria", icon: Image },

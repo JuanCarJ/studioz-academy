@@ -17,6 +17,8 @@ export interface CourseActionsProps {
   isEnrolled: boolean
   isInCart: boolean
   price: number
+  listPrice?: number
+  coursePromotionLabel?: string | null
   isAuthenticated: boolean
   enrollmentProgress?: { isCompleted: boolean; hasProgress: boolean } | null
   compact?: boolean
@@ -37,6 +39,8 @@ export function CourseActions({
   isEnrolled,
   isInCart,
   price,
+  listPrice,
+  coursePromotionLabel,
   isAuthenticated,
   enrollmentProgress,
   compact,
@@ -44,6 +48,7 @@ export function CourseActions({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const isPromotionalFree = isFree && price === 0 && (listPrice ?? 0) > 0
 
   const btnSize = compact ? "default" : "lg"
   const btnClass = compact ? "" : "w-full"
@@ -113,10 +118,20 @@ export function CourseActions({
     return (
       <div className="flex items-center gap-3">
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {!isFree && (
-          <span className="text-lg font-bold whitespace-nowrap">
-            {formatCOP(price)}
-          </span>
+        {(!isFree || isPromotionalFree) && (
+          <div className="flex flex-col items-end whitespace-nowrap">
+            {listPrice && listPrice > price && (
+              <span className="text-xs text-muted-foreground line-through">
+                {formatCOP(listPrice)}
+              </span>
+            )}
+            <span className="text-lg font-bold">
+              {isPromotionalFree ? "Gratis por promo" : formatCOP(price)}
+            </span>
+            {coursePromotionLabel && (
+              <span className="text-xs text-amber-600">{coursePromotionLabel}</span>
+            )}
+          </div>
         )}
         <Button
           size="default"
@@ -142,17 +157,42 @@ export function CourseActions({
       )}
 
       {isFree ? (
-        <Button
-          size="lg"
-          className="w-full"
-          onClick={handleEnrollFree}
-          disabled={isPending}
-        >
-          {isPending ? "Inscribiendo..." : "Inscribirme gratis"}
-        </Button>
+        <>
+          {isPromotionalFree && (
+            <div className="space-y-1">
+              {listPrice && listPrice > 0 && (
+                <div className="text-sm text-muted-foreground line-through">
+                  {formatCOP(listPrice)}
+                </div>
+              )}
+              <div className="text-2xl font-bold text-amber-600">Gratis por promo</div>
+              {coursePromotionLabel && (
+                <div className="text-sm text-amber-600">{coursePromotionLabel}</div>
+              )}
+            </div>
+          )}
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={handleEnrollFree}
+            disabled={isPending}
+          >
+            {isPending ? "Inscribiendo..." : "Inscribirme gratis"}
+          </Button>
+        </>
       ) : (
         <>
-          <div className="text-2xl font-bold">{formatCOP(price)}</div>
+          <div className="space-y-1">
+            {listPrice && listPrice > price && (
+              <div className="text-sm text-muted-foreground line-through">
+                {formatCOP(listPrice)}
+              </div>
+            )}
+            <div className="text-2xl font-bold">{formatCOP(price)}</div>
+            {coursePromotionLabel && (
+              <div className="text-sm text-amber-600">{coursePromotionLabel}</div>
+            )}
+          </div>
           <Button
             size="lg"
             className="w-full"

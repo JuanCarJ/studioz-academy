@@ -1,10 +1,12 @@
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 
 import type { Metadata } from "next"
 
 import { getPostBySlug, getPublishedPosts } from "@/actions/editorial"
+import { EventImageCarousel } from "@/components/events/EventImageCarousel"
 import { Card, CardContent } from "@/components/ui/card"
+import { createServerClient } from "@/lib/supabase/server"
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -31,6 +33,18 @@ export default async function NoticiaDetailPage({ params }: PageProps) {
   const post = await getPostBySlug(slug)
 
   if (!post) {
+    const supabase = await createServerClient()
+    const { data: slugRedirect } = await supabase
+      .from("slug_redirects")
+      .select("new_slug")
+      .eq("old_slug", slug)
+      .eq("entity_type", "post")
+      .maybeSingle()
+
+    if (slugRedirect) {
+      permanentRedirect(`/noticias/${slugRedirect.new_slug}`)
+    }
+
     notFound()
   }
 
@@ -67,19 +81,13 @@ export default async function NoticiaDetailPage({ params }: PageProps) {
           )}
         </div>
 
-        <div
-          className="aspect-[16/9] rounded-3xl border bg-cover bg-center"
-          style={{
-            backgroundImage: post.cover_image_url
-              ? `url("${post.cover_image_url}")`
-              : undefined,
-          }}
-        >
-          {!post.cover_image_url && (
-            <div className="flex h-full items-center justify-center rounded-3xl bg-muted text-sm uppercase tracking-[0.24em] text-muted-foreground">
-              Studio Z Academy
-            </div>
-          )}
+        <div className="overflow-hidden rounded-3xl border">
+          <EventImageCarousel
+            images={post.images ?? []}
+            title={post.title}
+            aspectClassName="aspect-[16/9]"
+            fallbackLabel="Noticia Studio Z"
+          />
         </div>
 
         <div className="space-y-5 text-base leading-8 text-muted-foreground">

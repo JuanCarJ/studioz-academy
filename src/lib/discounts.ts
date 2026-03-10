@@ -27,6 +27,14 @@ function calculateRuleDiscount(
   items: DiscountableItem[],
   rule: DiscountRule
 ): DiscountCalculation {
+  if (
+    rule.combo_kind !== "threshold_discount" ||
+    !rule.discount_type ||
+    !rule.discount_value
+  ) {
+    return { amount: 0, rule: null, eligibleItemsCount: 0 }
+  }
+
   const eligibleItems = getEligibleItemsForRule(items, rule)
   if (eligibleItems.length < rule.min_courses) {
     return { amount: 0, rule: null, eligibleItemsCount: eligibleItems.length }

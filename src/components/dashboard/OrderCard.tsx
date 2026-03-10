@@ -66,6 +66,7 @@ function formatPaymentMethod(method: string | null): string {
     BANCOLOMBIA_TRANSFER: "Bancolombia",
     BANCOLOMBIA_COLLECT: "Bancolombia Collect",
     EFECTY: "Efecty",
+    PROMO: "Promocion interna",
   }
   return labels[method.toUpperCase()] ?? method
 }
@@ -102,6 +103,22 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
   }
 
   const hasPendingStatus = currentStatus === "pending"
+  const groupedDiscountLines = order.discount_lines.reduce<
+    Array<{ key: string; label: string; amount: number }>
+  >((acc, line) => {
+    const label =
+      line.kind === "course_discount"
+        ? `Promo curso: ${line.course_title_snapshot ?? line.source_name_snapshot}`
+        : `Combo: ${line.source_name_snapshot}`
+    const key = `${line.kind}:${label}`
+    const existing = acc.find((entry) => entry.key === key)
+    if (existing) {
+      existing.amount += line.amount
+      return acc
+    }
+    acc.push({ key, label, amount: line.amount })
+    return acc
+  }, [])
 
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-sm">
@@ -164,9 +181,27 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
               <ul className="space-y-2">
                 {order.items.map((item, idx) => (
                   <li key={idx} className="flex items-start justify-between gap-2 text-sm">
-                    <span className="flex-1 leading-snug">{item.course_title_snapshot}</span>
+                    <div className="flex-1 leading-snug">
+                      <div>{item.course_title_snapshot}</div>
+                      {(item.course_discount_amount_snapshot > 0 ||
+                        item.combo_discount_amount_snapshot > 0) && (
+                        <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                          <div>Lista: {formatCOP(item.list_price_snapshot)}</div>
+                          {item.course_discount_amount_snapshot > 0 && (
+                            <div>
+                              Promo curso: -{formatCOP(item.course_discount_amount_snapshot)}
+                            </div>
+                          )}
+                          {item.combo_discount_amount_snapshot > 0 && (
+                            <div>
+                              Combo: -{formatCOP(item.combo_discount_amount_snapshot)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <span className="flex-shrink-0 font-medium">
-                      {formatCOP(item.price_at_purchase)}
+                      {formatCOP(item.final_price_snapshot)}
                     </span>
                   </li>
                 ))}
@@ -179,16 +214,35 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
           {/* Subtotals */}
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
-              <span>Subtotal</span>
-              <span>{formatCOP(order.subtotal)}</span>
+              <span>Subtotal lista</span>
+              <span>{formatCOP(order.list_subtotal)}</span>
             </div>
-            {order.discount_amount > 0 && (
+            {order.course_discount_amount > 0 && (
+              <div className="flex justify-between text-emerald-600 dark:text-emerald-500">
+                <span>Descuentos por curso</span>
+                <span>-{formatCOP(order.course_discount_amount)}</span>
+              </div>
+            )}
+            {order.combo_discount_amount > 0 && (
               <div className="flex justify-between text-emerald-600 dark:text-emerald-500">
                 <span>
-                  Descuento
+                  Combos
                   {order.discount_rule_name ? ` (${order.discount_rule_name})` : ""}
                 </span>
-                <span>-{formatCOP(order.discount_amount)}</span>
+                <span>-{formatCOP(order.combo_discount_amount)}</span>
+              </div>
+            )}
+            {groupedDiscountLines.length > 0 && (
+              <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                <p className="mb-2 font-medium text-foreground">Detalle de descuentos</p>
+                <div className="space-y-1">
+                  {groupedDiscountLines.map((line) => (
+                    <div key={line.key} className="flex justify-between gap-3">
+                      <span>{line.label}</span>
+                      <span>-{formatCOP(line.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="flex justify-between font-semibold">

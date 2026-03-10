@@ -19,39 +19,84 @@ async function verifyAdmin() {
 function parseComboFormData(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim()
   const categoryRaw = String(formData.get("category") ?? "").trim()
+  const comboKind = String(formData.get("comboKind") ?? "").trim()
   const minCourses = Number(formData.get("minCourses") ?? 0)
   const discountType = String(formData.get("discountType") ?? "").trim()
   const discountValueRaw = Number(formData.get("discountValue") ?? 0)
+  const buyQuantity = Number(formData.get("buyQuantity") ?? 0)
+  const freeQuantity = Number(formData.get("freeQuantity") ?? 0)
   const isActive = formData.get("isActive") === "on"
 
   if (!name) {
     throw new Error("El nombre del combo es obligatorio.")
   }
 
-  if (!["percentage", "fixed"].includes(discountType)) {
-    throw new Error("Tipo de descuento invalido.")
+  if (!["threshold_discount", "buy_x_get_y"].includes(comboKind)) {
+    throw new Error("Tipo de combo invalido.")
   }
 
   if (!Number.isFinite(minCourses) || minCourses < 1) {
     throw new Error("La cantidad minima debe ser al menos 1.")
   }
 
-  if (!Number.isFinite(discountValueRaw) || discountValueRaw <= 0) {
-    throw new Error("El valor del descuento debe ser mayor a 0.")
+  if (comboKind === "threshold_discount") {
+    if (minCourses < 2) {
+      throw new Error("Los combos por umbral requieren minimo 2 cursos.")
+    }
+
+    if (!["percentage", "fixed"].includes(discountType)) {
+      throw new Error("Tipo de descuento invalido.")
+    }
+
+    if (!Number.isFinite(discountValueRaw) || discountValueRaw <= 0) {
+      throw new Error("El valor del descuento debe ser mayor a 0.")
+    }
+
+    const discountValue =
+      discountType === "fixed"
+        ? Math.round(discountValueRaw * 100)
+        : Math.round(discountValueRaw)
+
+    if (discountType === "percentage" && (discountValue < 1 || discountValue > 100)) {
+      throw new Error("El descuento porcentual del combo debe estar entre 1 y 100.")
+    }
+
+    return {
+      name,
+      category:
+        categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
+      combo_kind: "threshold_discount" as const,
+      min_courses: Math.round(minCourses),
+      discount_type: discountType as "percentage" | "fixed",
+      discount_value: Math.round(discountValue),
+      buy_quantity: null,
+      free_quantity: null,
+      is_active: isActive,
+    }
   }
 
-  const discountValue =
-    discountType === "fixed"
-      ? Math.round(discountValueRaw * 100)
-      : Math.round(discountValueRaw)
+  if (!Number.isFinite(buyQuantity) || buyQuantity < 1) {
+    throw new Error("La cantidad a llevar debe ser al menos 1.")
+  }
+
+  if (!Number.isFinite(freeQuantity) || freeQuantity < 1) {
+    throw new Error("La cantidad gratis debe ser al menos 1.")
+  }
+
+  if (buyQuantity + freeQuantity < 2) {
+    throw new Error("El combo gratis debe involucrar al menos 2 cursos.")
+  }
 
   return {
     name,
     category:
       categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
-    min_courses: Math.round(minCourses),
-    discount_type: discountType as "percentage" | "fixed",
-    discount_value: Math.round(discountValue),
+    combo_kind: "buy_x_get_y" as const,
+    min_courses: Math.round(buyQuantity + freeQuantity),
+    discount_type: null,
+    discount_value: null,
+    buy_quantity: Math.round(buyQuantity),
+    free_quantity: Math.round(freeQuantity),
     is_active: isActive,
   }
 }

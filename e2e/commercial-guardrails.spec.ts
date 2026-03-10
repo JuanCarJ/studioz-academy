@@ -10,6 +10,7 @@ import {
   ensureBusinessFixtures,
   getCartItemsForEmail,
   getCourseBySlug,
+  getDiscountRuleByName,
   getLessonByTitle,
   getOrderByReference,
   getProfileByEmail,
@@ -128,6 +129,32 @@ test.describe.serial("commercial guardrails", () => {
 
   test.beforeAll(async () => {
     await ensureBusinessFixtures()
+  })
+
+  test("admin no puede crear combos invalidos debajo del minimo permitido", async ({
+    page,
+  }) => {
+    const invalidComboName = `QA Invalid Combo ${runId}`
+
+    await loginAsAdmin(page)
+    await page.goto("/admin/combos")
+
+    const createForm = page.getByTestId("combo-create-form")
+    const minCoursesInput = createForm.locator('input[name="minCourses"]')
+
+    await createForm.locator('input[name="name"]').fill(invalidComboName)
+    await minCoursesInput.fill("1")
+    await createForm.locator('input[name="discountValue"]').fill("10")
+    await createForm.getByRole("button", { name: /crear combo/i }).click()
+
+    const validationMessage = await minCoursesInput.evaluate((node) =>
+      (node as HTMLInputElement).validationMessage
+    )
+
+    expect(validationMessage).not.toBe("")
+    await expect
+      .poll(async () => getDiscountRuleByName(invalidComboName).then(Boolean))
+      .toBe(false)
   })
 
   test("login con addToCart hacia un curso gratis vuelve al curso y no fuerza carrito", async ({
@@ -282,9 +309,12 @@ test.describe.serial("commercial guardrails", () => {
           .insert({
             name: snapshotComboName,
             category: "baile",
+            combo_kind: "threshold_discount",
             min_courses: 2,
             discount_type: "percentage",
             discount_value: 10,
+            buy_quantity: null,
+            free_quantity: null,
             is_active: true,
           })
           .select("id")
@@ -302,9 +332,12 @@ test.describe.serial("commercial guardrails", () => {
         .insert({
           name: legacyComboName,
           category: "baile",
+          combo_kind: "threshold_discount",
           min_courses: 2,
           discount_type: "percentage",
           discount_value: 10,
+          buy_quantity: null,
+          free_quantity: null,
           is_active: true,
         })
         .select("id")
@@ -323,10 +356,14 @@ test.describe.serial("commercial guardrails", () => {
           customer_name_snapshot: profile?.profile.full_name ?? "QA Student Studio Z",
           customer_email_snapshot: qaCredentials.userEmail,
           customer_phone_snapshot: profile?.profile.phone ?? null,
+          list_subtotal: 17000000,
           subtotal: 17000000,
+          course_discount_amount: 0,
+          combo_discount_amount: 1700000,
           discount_amount: 1700000,
           discount_rule_id: snapshotRuleId,
           discount_rule_name_snapshot: snapshotComboName,
+          pricing_snapshot_json: null,
           total: 15300000,
           currency: "COP",
           status: "approved",
@@ -345,9 +382,13 @@ test.describe.serial("commercial guardrails", () => {
         customer_name_snapshot: profile?.profile.full_name ?? "QA Student Studio Z",
         customer_email_snapshot: qaCredentials.userEmail,
         customer_phone_snapshot: profile?.profile.phone ?? null,
+        list_subtotal: 17000000,
         subtotal: 17000000,
+        course_discount_amount: 0,
+        combo_discount_amount: 1700000,
         discount_amount: 1700000,
         discount_rule_id: null,
+        pricing_snapshot_json: null,
         total: 15300000,
         currency: "COP",
         status: "approved",

@@ -5,7 +5,6 @@ import {
   e2eSupabase,
   ensureBusinessFixtures,
   getInstructorBySlug,
-  qaCredentials,
   qaFixtures,
   slugify,
 } from "./support/db"
