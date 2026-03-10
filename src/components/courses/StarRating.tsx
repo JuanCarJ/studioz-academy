@@ -91,7 +91,7 @@ export function StarRating({
 
   // mode === "input"
   return (
-    <div className="flex items-center gap-1" role="radiogroup" aria-label="Calificacion">
+    <div className="flex items-center gap-1" role="radiogroup" aria-label="Calificación">
       {Array.from({ length: 5 }).map((_, i) => {
         const starValue = i + 1
         const isFilled = starValue <= value

@@ -245,7 +245,17 @@ export interface Post {
   excerpt: string | null
   cover_image_url: string | null
   is_published: boolean
+  images?: PostImage[]
   published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PostImage {
+  id: string
+  post_id: string
+  image_url: string
+  sort_order: number
   created_at: string
   updated_at: string
 }

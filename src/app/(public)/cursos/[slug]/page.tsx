@@ -228,7 +228,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
                     className="text-sm text-muted-foreground hover:text-primary"
                   >
                     ({course.reviews_count}{" "}
-                    {course.reviews_count === 1 ? "resena" : "resenas"})
+                    {course.reviews_count === 1 ? "reseña" : "reseñas"})
                   </a>
                 </div>
               )}

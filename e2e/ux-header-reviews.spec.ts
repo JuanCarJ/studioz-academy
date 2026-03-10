@@ -119,12 +119,12 @@ test.describe.serial("resenas en dashboard player", () => {
     await waitForPlayerReady(page)
 
     await expect(
-      page.getByRole("heading", { name: /resenas/i })
+      page.getByRole("heading", { name: /reseñas/i })
     ).toBeVisible()
 
     // Student is enrolled, so the review form should appear
     await expect(
-      page.getByText(/deja tu resena/i)
+      page.getByText(/deja tu reseña/i)
     ).toBeVisible()
   })
 
@@ -140,9 +140,9 @@ test.describe.serial("resenas en dashboard player", () => {
 
     await page.getByRole("radio", { name: /5 estrellas/i }).click()
     await page.getByLabel(/comentario/i).fill(reviewText)
-    await page.getByRole("button", { name: /publicar resena/i }).click()
+    await page.getByRole("button", { name: /publicar reseña/i }).click()
 
-    await expect(page.getByText(/tu resena fue publicada/i)).toBeVisible()
+    await expect(page.getByText(/tu reseña fue publicada/i)).toBeVisible()
 
     // Verify in DB
     await expect
@@ -172,14 +172,14 @@ test.describe.serial("resenas en dashboard player", () => {
     await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
     await waitForPlayerReady(page)
 
-    // Form should show "Tu resena" (editing mode)
-    await expect(page.getByText(/tu resena$/i)).toBeVisible()
+    // Form should show "Tu reseña" (editing mode)
+    await expect(page.getByText(/tu reseña$/i)).toBeVisible()
 
     await page.getByRole("radio", { name: /3 estrellas/i }).click()
     await page.getByLabel(/comentario/i).fill(reviewTextEdited)
     await page.getByRole("button", { name: /guardar cambios/i }).click()
 
-    await expect(page.getByText(/tu resena fue actualizada/i)).toBeVisible()
+    await expect(page.getByText(/tu reseña fue actualizada/i)).toBeVisible()
 
     // Verify in DB
     await expect
@@ -203,7 +203,7 @@ test.describe.serial("resenas en dashboard player", () => {
 
     await page.getByRole("button", { name: /eliminar/i }).click()
 
-    await expect(page.getByText(/tu resena fue eliminada/i)).toBeVisible()
+    await expect(page.getByText(/tu reseña fue eliminada/i)).toBeVisible()
 
     // Verify deleted in DB
     await expect
@@ -212,8 +212,8 @@ test.describe.serial("resenas en dashboard player", () => {
       )
       .toBeNull()
 
-    // Form should revert to "Deja tu resena"
-    await expect(page.getByText(/deja tu resena/i)).toBeVisible()
+    // Form should revert to "Deja tu reseña"
+    await expect(page.getByText(/deja tu reseña/i)).toBeVisible()
   })
 
   test("resena eliminada en dashboard desaparece de la pagina publica", async ({

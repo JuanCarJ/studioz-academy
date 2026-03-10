@@ -30,13 +30,6 @@ interface ReviewsTableProps {
   reviews: AdminReview[]
 }
 
-const MAX_TEXT_PREVIEW = 80
-
-function truncate(text: string | null, max: number): string {
-  if (!text) return "—"
-  return text.length > max ? text.slice(0, max) + "..." : text
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es-CO", {
     year: "numeric",
@@ -71,7 +64,7 @@ function VisibilityToggle({
       checked={isVisible}
       onCheckedChange={handleToggle}
       disabled={isPending}
-      aria-label={isVisible ? "Ocultar resena" : "Mostrar resena"}
+      aria-label={isVisible ? "Ocultar reseña" : "Mostrar reseña"}
     />
   )
 }
@@ -102,9 +95,9 @@ function DeleteButton({ reviewId }: { reviewId: string }) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Eliminar resena</DialogTitle>
+          <DialogTitle>Eliminar reseña</DialogTitle>
           <DialogDescription>
-            Esta accion es permanente y no se puede deshacer. La resena sera
+            Esta acción es permanente y no se puede deshacer. La reseña será
             eliminada definitivamente.
           </DialogDescription>
         </DialogHeader>
@@ -136,28 +129,28 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
   if (reviews.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
-        No hay resenas registradas.
+        No hay reseñas registradas.
       </p>
     )
   }
 
   return (
-    <Table>
+    <Table className="min-w-[1160px] table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead>Curso</TableHead>
-          <TableHead>Usuario</TableHead>
-          <TableHead>Calificacion</TableHead>
-          <TableHead>Comentario</TableHead>
-          <TableHead>Visible</TableHead>
-          <TableHead>Fecha</TableHead>
-          <TableHead className="text-right">Acciones</TableHead>
+          <TableHead className="w-[18%]">Curso</TableHead>
+          <TableHead className="w-[20%]">Usuario</TableHead>
+          <TableHead className="w-[13%]">Calificación</TableHead>
+          <TableHead className="w-[27%]">Comentario</TableHead>
+          <TableHead className="w-[8%] text-center">Visible</TableHead>
+          <TableHead className="w-[8%]">Fecha</TableHead>
+          <TableHead className="w-[6%] text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {reviews.map((review) => (
           <TableRow key={review.id}>
-            <TableCell className="font-medium max-w-[160px]">
+            <TableCell className="align-top font-medium whitespace-normal break-words">
               {review.course ? (
                 <a
                   href={`/cursos/${review.course.slug}`}
@@ -171,28 +164,35 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
                 "—"
               )}
             </TableCell>
-            <TableCell>{review.user?.full_name ?? "—"}</TableCell>
-            <TableCell>
-              <div className="flex items-center gap-1.5">
+            <TableCell className="align-top whitespace-normal break-words">
+              {review.user?.full_name ?? "—"}
+            </TableCell>
+            <TableCell className="align-top">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <StarRating value={review.rating} mode="display" size="sm" />
                 <span className="text-xs text-muted-foreground">
                   ({review.rating})
                 </span>
               </div>
             </TableCell>
-            <TableCell className="max-w-[200px] text-sm text-muted-foreground">
-              {truncate(review.text, MAX_TEXT_PREVIEW)}
+            <TableCell
+              className="align-top whitespace-normal break-words text-sm leading-6 text-muted-foreground"
+              title={review.text ?? ""}
+            >
+              {review.text?.trim() || "—"}
             </TableCell>
-            <TableCell>
-              <VisibilityToggle
-                reviewId={review.id}
-                initialVisible={review.is_visible}
-              />
+            <TableCell className="align-top text-center">
+              <div className="flex justify-center">
+                <VisibilityToggle
+                  reviewId={review.id}
+                  initialVisible={review.is_visible}
+                />
+              </div>
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+            <TableCell className="align-top text-sm text-muted-foreground whitespace-nowrap">
               {formatDate(review.created_at)}
             </TableCell>
-            <TableCell className="text-right">
+            <TableCell className="align-top text-right">
               <DeleteButton reviewId={review.id} />
             </TableCell>
           </TableRow>

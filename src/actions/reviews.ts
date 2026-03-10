@@ -66,14 +66,14 @@ export async function createReview(
   formData: FormData
 ): Promise<ReviewActionResult> {
   const user = await getCurrentUser()
-  if (!user) return { error: "Debes iniciar sesion para dejar una resena." }
+  if (!user) return { error: "Debes iniciar sesión para dejar una reseña." }
 
   const ratingRaw = formData.get("rating")
   const text = (formData.get("text") as string | null) || null
 
   const rating = Number(ratingRaw)
   if (!ratingRaw || isNaN(rating) || rating < 1 || rating > 5) {
-    return { error: "La calificacion debe ser un numero entre 1 y 5." }
+    return { error: "La calificación debe ser un número entre 1 y 5." }
   }
 
   if (text && text.length > 500) {
@@ -91,7 +91,7 @@ export async function createReview(
     .maybeSingle()
 
   if (!enrollment) {
-    return { error: "Debes estar inscrito en el curso para dejar una resena." }
+    return { error: "Debes estar inscrito en el curso para dejar una reseña." }
   }
 
   // One review per user per course (unique constraint enforced by DB too)
@@ -103,7 +103,7 @@ export async function createReview(
     .maybeSingle()
 
   if (existing) {
-    return { error: "Ya tienes una resena para este curso. Puedes editarla." }
+    return { error: "Ya tienes una reseña para este curso. Puedes editarla." }
   }
 
   const { error } = await supabase.from("reviews").insert({
@@ -114,7 +114,7 @@ export async function createReview(
   })
 
   if (error) {
-    return { error: "No se pudo guardar la resena. Intenta de nuevo." }
+    return { error: "No se pudo guardar la reseña. Intenta de nuevo." }
   }
 
   revalidatePath(`/cursos/`)
@@ -127,14 +127,14 @@ export async function updateReview(
   formData: FormData
 ): Promise<ReviewActionResult> {
   const user = await getCurrentUser()
-  if (!user) return { error: "Debes iniciar sesion." }
+  if (!user) return { error: "Debes iniciar sesión." }
 
   const ratingRaw = formData.get("rating")
   const text = (formData.get("text") as string | null) || null
 
   const rating = Number(ratingRaw)
   if (!ratingRaw || isNaN(rating) || rating < 1 || rating > 5) {
-    return { error: "La calificacion debe ser un numero entre 1 y 5." }
+    return { error: "La calificación debe ser un número entre 1 y 5." }
   }
 
   if (text && text.length > 500) {
@@ -150,7 +150,7 @@ export async function updateReview(
     .eq("id", reviewId)
     .maybeSingle()
 
-  if (!existing) return { error: "Resena no encontrada." }
+  if (!existing) return { error: "Reseña no encontrada." }
   if (existing.user_id !== user.id) return { error: "No autorizado." }
 
   const { error } = await supabase
@@ -159,7 +159,7 @@ export async function updateReview(
     .eq("id", reviewId)
 
   if (error) {
-    return { error: "No se pudo actualizar la resena. Intenta de nuevo." }
+    return { error: "No se pudo actualizar la reseña. Intenta de nuevo." }
   }
 
   revalidatePath(`/cursos/`)
@@ -171,7 +171,7 @@ export async function deleteReview(
   reviewId: string
 ): Promise<ReviewActionResult> {
   const user = await getCurrentUser()
-  if (!user) return { error: "Debes iniciar sesion." }
+  if (!user) return { error: "Debes iniciar sesión." }
 
   const supabase = await createServerClient()
 
@@ -182,7 +182,7 @@ export async function deleteReview(
     .eq("id", reviewId)
     .maybeSingle()
 
-  if (!existing) return { error: "Resena no encontrada." }
+  if (!existing) return { error: "Reseña no encontrada." }
   if (existing.user_id !== user.id) return { error: "No autorizado." }
 
   const { error } = await supabase
@@ -191,7 +191,7 @@ export async function deleteReview(
     .eq("id", reviewId)
 
   if (error) {
-    return { error: "No se pudo eliminar la resena. Intenta de nuevo." }
+    return { error: "No se pudo eliminar la reseña. Intenta de nuevo." }
   }
 
   revalidatePath(`/cursos/`)

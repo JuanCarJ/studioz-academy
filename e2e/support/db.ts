@@ -106,6 +106,23 @@ async function upsertBy<T extends Record<string, unknown>>(
   return data.id as string
 }
 
+async function ensureSinglePostImage(postId: string, imageUrl: string) {
+  const { error: deleteError } = await supabase
+    .from("post_images")
+    .delete()
+    .eq("post_id", postId)
+
+  if (deleteError) throw deleteError
+
+  const { error: insertError } = await supabase.from("post_images").insert({
+    post_id: postId,
+    image_url: imageUrl,
+    sort_order: 0,
+  })
+
+  if (insertError) throw insertError
+}
+
 async function ensureUser(input: {
   email: string
   password: string
@@ -221,6 +238,11 @@ async function cleanupTransientBusinessState(userId: string, courseIds: string[]
 
   await supabase.from("contact_messages").delete().ilike("subject", "QA E2E contact %")
   await supabase.from("posts").delete().ilike("slug", "qa-e2e-temp-%")
+  await supabase
+    .from("slug_redirects")
+    .delete()
+    .eq("entity_type", "post")
+    .or("old_slug.ilike.qa-e2e-temp-%,new_slug.ilike.qa-e2e-temp-%")
   await supabase.from("gallery_items").delete().ilike("caption", "QA E2E Temp Gallery %")
   await supabase.from("events").delete().ilike("title", "QA E2E Temp Event %")
   await supabase.from("discount_rules").delete().ilike("name", "QA E2E Temporal %")
@@ -250,7 +272,7 @@ export async function ensureBusinessFixtures() {
     is_active: true,
   })
 
-  await upsertBy("posts", { slug: qaFixtures.publishedNewsSlug }, {
+  const publishedPostId = await upsertBy("posts", { slug: qaFixtures.publishedNewsSlug }, {
     title: qaFixtures.publishedNewsTitle,
     slug: qaFixtures.publishedNewsSlug,
     excerpt: "Noticia publica semilla para validar editorial y detalle.",
@@ -259,8 +281,9 @@ export async function ensureBusinessFixtures() {
     is_published: true,
     published_at: fixedNow,
   })
+  await ensureSinglePostImage(publishedPostId, sampleImage)
 
-  await upsertBy("posts", { slug: qaFixtures.draftNewsSlug }, {
+  const draftPostId = await upsertBy("posts", { slug: qaFixtures.draftNewsSlug }, {
     title: qaFixtures.draftNewsTitle,
     slug: qaFixtures.draftNewsSlug,
     excerpt: "Borrador semilla invisible en el sitio publico.",
@@ -269,6 +292,7 @@ export async function ensureBusinessFixtures() {
     is_published: false,
     published_at: null,
   })
+  await ensureSinglePostImage(draftPostId, sampleImage)
 
   const upcomingEventId = await upsertBy("events", { title: qaFixtures.upcomingEventTitle }, {
     title: qaFixtures.upcomingEventTitle,
@@ -1021,6 +1045,18 @@ export async function getPostBySlug(slug: string) {
 
   if (error) throw error
   return data
+}
+
+export async function getPostImages(postId: string) {
+  const { data, error } = await supabase
+    .from("post_images")
+    .select("*")
+    .eq("post_id", postId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+  return data ?? []
 }
 
 export async function getDiscountRuleByName(name: string) {
