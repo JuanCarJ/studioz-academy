@@ -7,6 +7,7 @@ import { Play } from "lucide-react"
 
 import { addToCart } from "@/actions/cart"
 import { getSignedVideoUrl } from "@/actions/lessons"
+import { getCartErrorMessage } from "@/lib/cart"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -131,7 +132,7 @@ export function FreeLessonPlayer({
       }
 
       if (result.error) {
-        setActionError(result.error)
+        setActionError(getCartErrorMessage(result.error))
         return
       }
 

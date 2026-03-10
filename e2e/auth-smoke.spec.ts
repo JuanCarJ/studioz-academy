@@ -1,11 +1,11 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 
 const userEmail = process.env.PLAYWRIGHT_USER_EMAIL
 const userPassword = process.env.PLAYWRIGHT_USER_PASSWORD
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD
 
-async function login(page: Parameters<typeof test>[0]["page"], email: string, password: string) {
+async function login(page: Page, email: string, password: string) {
   await page.goto("/login")
   await page.getByLabel(/^email$/i).fill(email)
   await page.getByLabel(/contrasena/i).fill(password)

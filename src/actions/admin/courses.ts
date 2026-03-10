@@ -262,8 +262,19 @@ export async function updateCourse(
     return { error: "No se pudo actualizar el curso." }
   }
 
+  const nextSlug =
+    typeof updateData.slug === "string" ? updateData.slug : current.slug
+
   revalidatePath("/admin/cursos")
+  revalidatePath(`/admin/cursos/${courseId}/editar`)
   revalidatePath("/cursos")
+  revalidatePath(`/cursos/${current.slug}`)
+  revalidatePath("/dashboard")
+  revalidatePath(`/dashboard/cursos/${current.slug}`)
+  if (nextSlug !== current.slug) {
+    revalidatePath(`/cursos/${nextSlug}`)
+    revalidatePath(`/dashboard/cursos/${nextSlug}`)
+  }
   return { success: true }
 }
 

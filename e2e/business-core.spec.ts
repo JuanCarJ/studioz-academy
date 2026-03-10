@@ -296,8 +296,8 @@ test.describe.serial("Business E2E", () => {
     await expect(page.getByText(qaFixtures.orderReference)).toBeVisible()
 
     await page.getByRole("button", { name: new RegExp(qaFixtures.orderReference) }).click()
-    await expect(page.getByText(qaFixtures.paidPrimaryCourseTitle)).toBeVisible()
-    await expect(page.getByText(/tarjeta/i)).toBeVisible()
+    await expect(page.getByText(qaFixtures.paidPrimaryCourseTitle).first()).toBeVisible()
+    await expect(page.getByText(/tarjeta/i).first()).toBeVisible()
   })
 
   test("procesa contacto y persiste el mensaje en DB", async ({ page }) => {

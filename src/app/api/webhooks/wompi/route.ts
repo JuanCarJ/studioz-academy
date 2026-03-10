@@ -1,50 +1,14 @@
 import { createHash } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 
-import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { env } from "@/lib/env"
-import { tryRevalidateVideoProgressPaths } from "@/lib/video-progress"
+import { applyApprovedOrderEffects } from "@/lib/order-approval"
 import { verifyWebhookSignature, type WompiWebhookEvent } from "@/lib/wompi"
 import { mapWompiStatus, isValidTransition } from "@/lib/payments"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
 
 import type { Json } from "@/types/database"
-
-async function ensureApprovedEnrollmentProgress(input: {
-  supabase: ReturnType<typeof createServiceRoleClient>
-  userId: string
-  orderId: string
-}) {
-  const { data: orderItems, error: orderItemsError } = await input.supabase
-    .from("order_items")
-    .select("course_id, courses(slug)")
-    .eq("order_id", input.orderId)
-
-  if (orderItemsError) {
-    throw orderItemsError
-  }
-
-  const courseEntries = new Map<string, string | null>()
-  for (const item of orderItems ?? []) {
-    if (!item.course_id) continue
-
-    const course = Array.isArray(item.courses) ? item.courses[0] : item.courses
-    courseEntries.set(item.course_id, course?.slug ?? null)
-  }
-
-  for (const [courseId, courseSlug] of courseEntries) {
-    await syncCourseProgressSnapshot({
-      supabase: input.supabase,
-      userId: input.userId,
-      courseId,
-      courseSlug,
-      touchLastAccess: true,
-    })
-  }
-
-  return Array.from(courseEntries.values())
-}
 
 export async function POST(request: NextRequest) {
   // 1. Parse body
@@ -242,69 +206,15 @@ export async function POST(request: NextRequest) {
 
   // 10. If approved: create enrollments + clear cart (idempotent and retry-safe)
   if (mappedStatus === "approved" && order.user_id) {
-    const { data: orderItems, error: orderItemsError } = await supabase
-      .from("order_items")
-      .select("course_id")
-      .eq("order_id", order.id)
-
-    if (orderItemsError) {
+    try {
+      await applyApprovedOrderEffects({
+        supabase,
+        orderId: order.id,
+        userId: order.user_id,
+      })
+    } catch {
       return NextResponse.json(
-        { error: "Failed to load order items" },
-        { status: 500 }
-      )
-    }
-
-    const enrollments =
-      orderItems
-        ?.filter((item) => item.course_id !== null)
-        .map((item) => ({
-          user_id: order.user_id!,
-          course_id: item.course_id!,
-          source: "purchase",
-          order_id: order.id,
-        })) ?? []
-
-    if (enrollments.length > 0) {
-      const { error: enrollmentError } = await supabase
-        .from("enrollments")
-        .upsert(enrollments, {
-          onConflict: "user_id,course_id",
-          ignoreDuplicates: true,
-        })
-
-      if (enrollmentError) {
-        return NextResponse.json(
-          { error: "Failed to create enrollments" },
-          { status: 500 }
-        )
-      }
-
-      try {
-        const revalidationSlugs = await ensureApprovedEnrollmentProgress({
-          supabase,
-          userId: order.user_id,
-          orderId: order.id,
-        })
-
-        for (const courseSlug of revalidationSlugs) {
-          tryRevalidateVideoProgressPaths(courseSlug)
-        }
-      } catch {
-        return NextResponse.json(
-          { error: "Failed to initialize course progress" },
-          { status: 500 }
-        )
-      }
-    }
-
-    const { error: clearCartError } = await supabase
-      .from("cart_items")
-      .delete()
-      .eq("user_id", order.user_id)
-
-    if (clearCartError) {
-      return NextResponse.json(
-        { error: "Failed to clear user cart" },
+        { error: "Failed to apply approved order side effects" },
         { status: 500 }
       )
     }

@@ -2,6 +2,10 @@
 
 import { createClient } from "@supabase/supabase-js"
 
+import {
+  isMissingDiscountRuleNameSnapshotColumn,
+  readDiscountRuleNameSnapshot,
+} from "@/lib/discount-rule-snapshot"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { enqueuePurchaseConfirmation } from "@/actions/email"
@@ -67,6 +71,17 @@ export interface SalesSummary {
   statusDistribution: Record<string, number>
 }
 
+function resolveDiscountRuleName(input: {
+  discountAmount: number
+  snapshotName: string | null
+  joinedName: string | null
+}): string | null {
+  if (input.snapshotName) return input.snapshotName
+  if (input.joinedName) return input.joinedName
+  if (input.discountAmount > 0) return "Descuento historico"
+  return null
+}
+
 export async function getOrders(filters?: {
   status?: string
   dateFrom?: string
@@ -84,46 +99,65 @@ export async function getOrders(filters?: {
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
-  let query = supabase
-    .from("orders")
-    .select(
-      "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)",
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false })
-    .range(from, to)
+  const buildOrdersQuery = (includeSnapshotColumn: boolean) => {
+    let query: any = (supabase.from("orders") as any)
+      .select(
+        includeSnapshotColumn
+          ? "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, discount_rule_name_snapshot, status, payment_method, created_at, approved_at, discount_rules(name)"
+          : "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)",
+        { count: "exact" }
+      )
+      .order("created_at", { ascending: false })
+      .range(from, to)
 
-  if (filters?.status && filters.status !== "all") {
-    query = query.eq("status", filters.status)
+    if (filters?.status && filters.status !== "all") {
+      query = query.eq("status", filters.status)
+    }
+
+    if (filters?.dateFrom) {
+      query = query.gte("created_at", filters.dateFrom)
+    }
+
+    if (filters?.dateTo) {
+      query = query.lte("created_at", `${filters.dateTo}T23:59:59`)
+    }
+
+    if (filters?.paymentMethod && filters.paymentMethod !== "all") {
+      query = query.eq("payment_method", filters.paymentMethod)
+    }
+
+    if (filters?.combo === "with") {
+      query = query.gt("discount_amount", 0)
+    } else if (filters?.combo === "without") {
+      query = query.eq("discount_amount", 0)
+    }
+
+    if (filters?.search) {
+      const term = filters.search.trim()
+      query = query.or(
+        `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%,wompi_transaction_id.ilike.%${term}%`
+      )
+    }
+
+    return query
   }
 
-  if (filters?.dateFrom) {
-    query = query.gte("created_at", filters.dateFrom)
-  }
+  let {
+    data,
+    count,
+    error,
+  }: {
+    data: Array<Record<string, unknown>> | null
+    count: number | null
+    error: unknown
+  } = await buildOrdersQuery(true)
 
-  if (filters?.dateTo) {
-    // Include the full end day by appending end-of-day time
-    query = query.lte("created_at", `${filters.dateTo}T23:59:59`)
+  if (isMissingDiscountRuleNameSnapshotColumn(error as Record<string, unknown> | null)) {
+    const legacyQuery = await buildOrdersQuery(false)
+    data = legacyQuery.data
+    count = legacyQuery.count
+    error = legacyQuery.error
   }
-
-  if (filters?.paymentMethod && filters.paymentMethod !== "all") {
-    query = query.eq("payment_method", filters.paymentMethod)
-  }
-
-  if (filters?.combo === "with") {
-    query = query.not("discount_rule_id", "is", null)
-  } else if (filters?.combo === "without") {
-    query = query.is("discount_rule_id", null)
-  }
-
-  if (filters?.search) {
-    const term = filters.search.trim()
-    query = query.or(
-      `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%,wompi_transaction_id.ilike.%${term}%`
-    )
-  }
-
-  const { data, count, error } = await query
 
   if (error) {
     console.error("[admin.getOrders]", error)
@@ -131,7 +165,7 @@ export async function getOrders(filters?: {
   }
 
   // Fetch items count per order
-  const orderIds = (data ?? []).map((o) => o.id)
+  const orderIds = (data ?? []).map((o) => o.id as string)
   const itemsCounts: Record<string, number> = {}
 
   if (orderIds.length > 0) {
@@ -146,20 +180,24 @@ export async function getOrders(filters?: {
   }
 
   const orders: OrderListItem[] = (data ?? []).map((o) => ({
-    id: o.id,
-    reference: o.reference,
-    customer_name_snapshot: o.customer_name_snapshot,
-    customer_email_snapshot: o.customer_email_snapshot,
-    total: o.total,
-    discount_amount: o.discount_amount,
-    discount_rule_name: Array.isArray(o.discount_rules)
-      ? (o.discount_rules[0]?.name ?? null)
-      : ((o.discount_rules as { name?: string } | null)?.name ?? null),
-    status: o.status,
-    payment_method: o.payment_method,
-    created_at: o.created_at,
-    approved_at: o.approved_at,
-    items_count: itemsCounts[o.id] ?? 0,
+    id: o.id as string,
+    reference: o.reference as string,
+    customer_name_snapshot: o.customer_name_snapshot as string,
+    customer_email_snapshot: o.customer_email_snapshot as string,
+    total: o.total as number,
+    discount_amount: o.discount_amount as number,
+    discount_rule_name: resolveDiscountRuleName({
+      discountAmount: o.discount_amount as number,
+      snapshotName: readDiscountRuleNameSnapshot(o),
+      joinedName: Array.isArray(o.discount_rules)
+        ? (o.discount_rules[0]?.name ?? null)
+        : ((o.discount_rules as { name?: string } | null)?.name ?? null),
+    }),
+    status: o.status as string,
+    payment_method: (o.payment_method as string | null) ?? null,
+    created_at: o.created_at as string,
+    approved_at: (o.approved_at as string | null) ?? null,
+    items_count: itemsCounts[o.id as string] ?? 0,
   }))
 
   return {
@@ -209,9 +247,13 @@ export async function getOrderDetail(
     order: {
       ...order,
       status: typedStatus,
-      discount_rule_name: Array.isArray(order.discount_rules)
-        ? (order.discount_rules[0]?.name ?? null)
-        : ((order.discount_rules as { name?: string } | null)?.name ?? null),
+      discount_rule_name: resolveDiscountRuleName({
+        discountAmount: order.discount_amount,
+        snapshotName: readDiscountRuleNameSnapshot(order),
+        joinedName: Array.isArray(order.discount_rules)
+          ? (order.discount_rules[0]?.name ?? null)
+          : ((order.discount_rules as { name?: string } | null)?.name ?? null),
+      }),
       items: (items ?? []) as OrderItem[],
       payment_events: (paymentEvents ?? []) as PaymentEvent[],
     },

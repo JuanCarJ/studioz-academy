@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test"
 import { loginAsUser } from "./support/auth"
 import {
   clearUserCart,
+  ensureBusinessFixtures,
   getOrderByReference,
   getProfileByEmail,
   qaCredentials,
@@ -73,5 +74,45 @@ test.describe("Wompi checkout web", () => {
     expect(order?.status).toBe("pending")
     expect(order?.customer_email_snapshot).toBe(qaCredentials.userEmail)
     expect(order?.total).toBe(9000000)
+  })
+
+  test("genera checkout con combo y congela el nombre historico del descuento", async ({
+    page,
+  }) => {
+    await ensureBusinessFixtures()
+
+    await clearUserCart(qaCredentials.userEmail)
+    await loginAsUser(page)
+
+    await page.goto(`/cursos/${qaFixtures.cartCourseOneSlug}`)
+    await page.getByRole("button", { name: /agregar al carrito/i }).click()
+
+    await page.goto(`/cursos/${qaFixtures.cartCourseTwoSlug}`)
+    await page.getByRole("button", { name: /agregar al carrito/i }).click()
+
+    await page.goto("/carrito")
+    await Promise.all([
+      page.waitForURL(/checkout\.wompi\.co\/p\//),
+      page.getByRole("button", { name: /proceder al pago/i }).click(),
+    ])
+
+    const checkoutUrl = new URL(page.url())
+    const reference = checkoutUrl.searchParams.get("reference")
+    const amountInCents = checkoutUrl.searchParams.get("amount-in-cents")
+
+    expect(reference).toBeTruthy()
+    expect(amountInCents).toBe("15300000")
+
+    await expect
+      .poll(async () => (reference ? getOrderByReference(reference) : null))
+      .not.toBeNull()
+
+    const order = await getOrderByReference(reference!)
+    expect(order?.subtotal).toBe(17000000)
+    expect(order?.discount_amount).toBe(1700000)
+    if ("discount_rule_name_snapshot" in (order ?? {})) {
+      expect(order?.discount_rule_name_snapshot).toBe(qaFixtures.comboName)
+    }
+    expect(order?.total).toBe(15300000)
   })
 })

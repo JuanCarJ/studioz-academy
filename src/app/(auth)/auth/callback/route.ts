@@ -2,6 +2,10 @@ import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 
+import {
+  addCourseToCartForUser,
+  resolvePostAddToCartRedirect,
+} from "@/lib/cart"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 
@@ -52,30 +56,16 @@ export async function GET(request: Request) {
     const addToCartId = nextUrl.searchParams.get("addToCart")
 
     if (addToCartId) {
-      const { data: enrollment } = await supabase
-        .from("enrollments")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("course_id", addToCartId)
-        .maybeSingle()
-
-      if (!enrollment) {
-        const { data: existingCartItem } = await supabase
-          .from("cart_items")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("course_id", addToCartId)
-          .maybeSingle()
-
-        if (!existingCartItem) {
-          await supabase.from("cart_items").insert({
-            user_id: user.id,
-            course_id: addToCartId,
-          })
-        }
-      }
-
-      next = "/carrito"
+      const addToCartResult = await addCourseToCartForUser({
+        supabase,
+        userId: user.id,
+        courseId: addToCartId,
+      })
+      next = resolvePostAddToCartRedirect({
+        result: addToCartResult,
+        redirectTo: next,
+        fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
+      })
     } else if (profile?.role === "admin" && !providedNext) {
       next = "/admin"
     }

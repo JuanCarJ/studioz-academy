@@ -1,8 +1,7 @@
 "use server"
 
-import { syncCourseProgressSnapshot } from "@/lib/course-progress"
+import { applyApprovedOrderEffects } from "@/lib/order-approval"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { tryRevalidateVideoProgressPaths } from "@/lib/video-progress"
 import {
   queryWompiByReference,
   queryWompiTransactionById,
@@ -20,41 +19,6 @@ const RECONCILE_PENDING_BATCH_SIZE = 100
 export interface OrderItem {
   courseTitle: string
   courseSlug: string
-}
-
-async function ensureApprovedEnrollmentProgress(input: {
-  supabase: ReturnType<typeof createServiceRoleClient>
-  userId: string
-  orderId: string
-}) {
-  const { data: orderItems, error: orderItemsError } = await input.supabase
-    .from("order_items")
-    .select("course_id, courses(slug)")
-    .eq("order_id", input.orderId)
-
-  if (orderItemsError) {
-    throw orderItemsError
-  }
-
-  const courseEntries = new Map<string, string | null>()
-  for (const item of orderItems ?? []) {
-    if (!item.course_id) continue
-
-    const course = Array.isArray(item.courses) ? item.courses[0] : item.courses
-    courseEntries.set(item.course_id, course?.slug ?? null)
-  }
-
-  for (const [courseId, courseSlug] of courseEntries) {
-    await syncCourseProgressSnapshot({
-      supabase: input.supabase,
-      userId: input.userId,
-      courseId,
-      courseSlug,
-      touchLastAccess: true,
-    })
-  }
-
-  return Array.from(courseEntries.values())
 }
 
 async function resolveWompiTransaction(params: {
@@ -290,39 +254,11 @@ async function applyReconciliation(
 
   // If approved: create enrollments + clear cart
   if (newStatus === "approved" && userId) {
-    const { data: orderItems } = await supabase
-      .from("order_items")
-      .select("course_id")
-      .eq("order_id", orderId)
-
-    const enrollments =
-      orderItems
-        ?.filter((item) => item.course_id !== null)
-        .map((item) => ({
-          user_id: userId,
-          course_id: item.course_id!,
-          source: "purchase",
-          order_id: orderId,
-        })) ?? []
-
-    if (enrollments.length > 0) {
-      await supabase.from("enrollments").upsert(enrollments, {
-        onConflict: "user_id,course_id",
-        ignoreDuplicates: true,
-      })
-
-      const revalidationSlugs = await ensureApprovedEnrollmentProgress({
-        supabase,
-        userId,
-        orderId,
-      })
-
-      for (const courseSlug of revalidationSlugs) {
-        tryRevalidateVideoProgressPaths(courseSlug)
-      }
-    }
-
-    await supabase.from("cart_items").delete().eq("user_id", userId)
+    await applyApprovedOrderEffects({
+      supabase,
+      orderId,
+      userId,
+    })
   }
 
   // H-02: Use "polling" source for reconciliation fallback checks.

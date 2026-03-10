@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/supabase/auth"
+import { requireAdminUser } from "@/lib/auth/admin"
 import { AdminSidebar } from "@/components/layout/AdminSidebar"
 
 export default async function AdminLayout({
@@ -6,11 +6,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  const user = await getCurrentUser()
-
-  const adminUser = user
-    ? { fullName: user.full_name, email: user.email }
-    : null
+  const user = await requireAdminUser()
+  const adminUser = { fullName: user.full_name, email: user.email }
 
   return (
     <div className="flex min-h-screen">
