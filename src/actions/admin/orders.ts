@@ -100,13 +100,13 @@ export async function getOrders(filters?: {
   const to = from + PAGE_SIZE - 1
 
   const buildOrdersQuery = (includeSnapshotColumn: boolean) => {
-    let query: any = (supabase.from("orders") as any)
-      .select(
-        includeSnapshotColumn
-          ? "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, discount_rule_name_snapshot, status, payment_method, created_at, approved_at, discount_rules(name)"
-          : "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)",
-        { count: "exact" }
-      )
+    const selectClause = includeSnapshotColumn
+      ? "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, discount_rule_name_snapshot, status, payment_method, created_at, approved_at, discount_rules(name)"
+      : "id, reference, customer_name_snapshot, customer_email_snapshot, total, discount_amount, status, payment_method, created_at, approved_at, discount_rules(name)"
+
+    let query = supabase
+      .from("orders")
+      .select(selectClause, { count: "exact" })
       .order("created_at", { ascending: false })
       .range(from, to)
 
@@ -142,19 +142,14 @@ export async function getOrders(filters?: {
     return query
   }
 
-  let {
-    data,
-    count,
-    error,
-  }: {
-    data: Array<Record<string, unknown>> | null
-    count: number | null
-    error: unknown
-  } = await buildOrdersQuery(true)
+  const snapshotQuery = await buildOrdersQuery(true)
+  let data = snapshotQuery.data as unknown as Array<Record<string, unknown>> | null
+  let count = snapshotQuery.count
+  let error: unknown = snapshotQuery.error
 
   if (isMissingDiscountRuleNameSnapshotColumn(error as Record<string, unknown> | null)) {
     const legacyQuery = await buildOrdersQuery(false)
-    data = legacyQuery.data
+    data = legacyQuery.data as unknown as Array<Record<string, unknown>> | null
     count = legacyQuery.count
     error = legacyQuery.error
   }

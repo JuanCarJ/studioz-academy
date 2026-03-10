@@ -69,10 +69,11 @@ export async function getUserOrders(): Promise<{
   let data: Array<Record<string, unknown>> | null = null
   let error: unknown = null
 
-  const snapshotQuery = await ((supabase.from("orders") as any)
+  const snapshotQuery = await supabase
+    .from("orders")
     .select(`${baseSelect}, discount_rule_name_snapshot`)
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false })) as {
+    .order("created_at", { ascending: false }) as {
     data: Array<Record<string, unknown>> | null
     error: unknown
   }
@@ -81,10 +82,11 @@ export async function getUserOrders(): Promise<{
   error = snapshotQuery.error
 
   if (isMissingDiscountRuleNameSnapshotColumn(error as Record<string, unknown> | null)) {
-    const legacyQuery = await ((supabase.from("orders") as any)
+    const legacyQuery = await supabase
+      .from("orders")
       .select(baseSelect)
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false })) as {
+      .order("created_at", { ascending: false }) as {
       data: Array<Record<string, unknown>> | null
       error: unknown
     }
