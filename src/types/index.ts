@@ -258,6 +258,16 @@ export interface Event {
   event_date: string
   location: string | null
   is_published: boolean
+  images?: EventImage[]
+  created_at: string
+  updated_at: string
+}
+
+export interface EventImage {
+  id: string
+  event_id: string
+  image_url: string
+  sort_order: number
   created_at: string
   updated_at: string
 }

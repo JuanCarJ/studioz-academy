@@ -1,14 +1,14 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, unstable_noStore as noStore } from "next/cache"
 
+import { recordAdminAuditLog } from "@/actions/admin/audit"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
 import { slugify } from "@/lib/utils"
-import { recordAdminAuditLog } from "@/actions/admin/audit"
 
-import type { Event, GalleryItem, Post } from "@/types"
+import type { Event, EventImage, GalleryItem, Post } from "@/types"
 
 const EDITORIAL_ASSETS_BUCKET = "editorial-assets"
 const MAX_EDITORIAL_IMAGE_SIZE = 5 * 1024 * 1024
@@ -18,10 +18,46 @@ const ALLOWED_EDITORIAL_IMAGE_TYPES = [
   "image/webp",
 ]
 
+export interface EditorialFormState {
+  error?: string
+  success?: boolean
+}
+
 async function verifyAdmin() {
   const user = await getCurrentUser()
   if (!user || user.role !== "admin") return null
   return user
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "No se pudo completar la operacion."
+}
+
+function isValidGalleryCategory(value: string): value is GalleryItem["category"] {
+  return value === "baile" || value === "tatuaje"
+}
+
+function isUploadedFile(value: FormDataEntryValue | null): value is File {
+  return value instanceof File && value.size > 0
+}
+
+function getUploadedFile(formData: FormData, name: string) {
+  const value = formData.get(name)
+  return isUploadedFile(value) ? value : null
+}
+
+function getUploadedFiles(formData: FormData, name: string) {
+  return formData
+    .getAll(name)
+    .filter((value): value is File => isUploadedFile(value))
+}
+
+function revalidateEditorialPaths() {
+  revalidatePath("/")
+  revalidatePath("/admin/galeria")
+  revalidatePath("/admin/eventos")
+  revalidatePath("/galeria")
+  revalidatePath("/eventos")
 }
 
 async function uploadEditorialAsset(file: File, path: string) {
@@ -70,7 +106,141 @@ function parsePublishedFlag(formData: FormData) {
   return formData.get("isPublished") === "on"
 }
 
+async function getEventImagesMap(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  eventIds: string[]
+) {
+  if (eventIds.length === 0) return {} as Record<string, EventImage[]>
+
+  const { data, error } = await supabase
+    .from("event_images")
+    .select("*")
+    .in("event_id", eventIds)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) {
+    console.error("[admin.editorial] Failed to load event images:", error)
+    return {} as Record<string, EventImage[]>
+  }
+
+  return (data ?? []).reduce<Record<string, EventImage[]>>((acc, image) => {
+    const key = image.event_id
+    acc[key] ??= []
+    acc[key].push(image as EventImage)
+    return acc
+  }, {})
+}
+
+function mergeEventsWithImages(
+  events: Event[],
+  imagesMap: Record<string, EventImage[]>
+) {
+  return events.map((event) => {
+    const images = imagesMap[event.id] ?? []
+    return {
+      ...event,
+      image_url: images[0]?.image_url ?? event.image_url,
+      images,
+    }
+  })
+}
+
+function serializeEventForAudit(event: Event, images: EventImage[]) {
+  return {
+    ...event,
+    images: images.map((image) => ({ ...image })),
+  }
+}
+
+async function getEventImagesForEvent(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  eventId: string
+) {
+  const imagesMap = await getEventImagesMap(supabase, [eventId])
+  return imagesMap[eventId] ?? []
+}
+
+async function syncEventImages(options: {
+  supabase: Awaited<ReturnType<typeof createServerClient>>
+  eventId: string
+  existingImages: EventImage[]
+  removeImageIds: string[]
+  newFiles: File[]
+}) {
+  const removedIds = new Set(options.removeImageIds)
+  const keptImages = options.existingImages.filter((image) => !removedIds.has(image.id))
+
+  const uploadedUrls: string[] = []
+  for (const [index, file] of options.newFiles.entries()) {
+    const ext = file.name.split(".").pop() ?? "jpg"
+    uploadedUrls.push(
+      await uploadEditorialAsset(
+        file,
+        `events/${options.eventId}/${Date.now().toString(36)}-${index}.${ext}`
+      )
+    )
+  }
+
+  if (keptImages.length + uploadedUrls.length === 0) {
+    throw new Error("Debes conservar o cargar al menos una imagen del evento.")
+  }
+
+  if (removedIds.size > 0) {
+    const { error } = await options.supabase
+      .from("event_images")
+      .delete()
+      .in("id", Array.from(removedIds))
+
+    if (error) {
+      throw new Error("No se pudieron eliminar las imagenes marcadas.")
+    }
+  }
+
+  for (const [index, image] of keptImages.entries()) {
+    const { error } = await options.supabase
+      .from("event_images")
+      .update({ sort_order: index })
+      .eq("id", image.id)
+
+    if (error) {
+      throw new Error("No se pudo reordenar la galeria del evento.")
+    }
+  }
+
+  if (uploadedUrls.length > 0) {
+    const { error } = await options.supabase
+      .from("event_images")
+      .insert(
+        uploadedUrls.map((imageUrl, index) => ({
+          event_id: options.eventId,
+          image_url: imageUrl,
+          sort_order: keptImages.length + index,
+        }))
+      )
+
+    if (error) {
+      throw new Error("No se pudieron guardar las imagenes del evento.")
+    }
+  }
+
+  const finalImages = await getEventImagesForEvent(options.supabase, options.eventId)
+  const coverImageUrl = finalImages[0]?.image_url ?? null
+
+  const { error: coverError } = await options.supabase
+    .from("events")
+    .update({ image_url: coverImageUrl })
+    .eq("id", options.eventId)
+
+  if (coverError) {
+    throw new Error("No se pudo actualizar la portada del evento.")
+  }
+
+  return { finalImages, coverImageUrl }
+}
+
 export async function getAdminPosts(): Promise<Post[]> {
+  noStore()
   const admin = await verifyAdmin()
   if (!admin) return []
 
@@ -89,6 +259,7 @@ export async function getAdminPosts(): Promise<Post[]> {
 }
 
 export async function getAdminEvents(): Promise<Event[]> {
+  noStore()
   const admin = await verifyAdmin()
   if (!admin) return []
 
@@ -103,10 +274,17 @@ export async function getAdminEvents(): Promise<Event[]> {
     return []
   }
 
-  return (data ?? []) as Event[]
+  const events = (data ?? []) as Event[]
+  const imagesMap = await getEventImagesMap(
+    supabase,
+    events.map((event) => event.id)
+  )
+
+  return mergeEventsWithImages(events, imagesMap)
 }
 
 export async function getAdminGalleryItems(): Promise<GalleryItem[]> {
+  noStore()
   const admin = await verifyAdmin()
   if (!admin) return []
 
@@ -114,7 +292,6 @@ export async function getAdminGalleryItems(): Promise<GalleryItem[]> {
   const { data, error } = await supabase
     .from("gallery_items")
     .select("*")
-    .order("sort_order")
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -305,127 +482,173 @@ export async function deleteNews(newsId: string) {
   revalidatePath("/noticias")
 }
 
-export async function createEvent(formData: FormData) {
+export async function createEvent(
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const title = String(formData.get("title") ?? "").trim()
   const description = String(formData.get("description") ?? "").trim()
   const location = String(formData.get("location") ?? "").trim()
   const eventDate = String(formData.get("eventDate") ?? "").trim()
-  const isPublished = parsePublishedFlag(formData)
+  const images = getUploadedFiles(formData, "images")
 
-  if (!title || !eventDate) {
-    throw new Error("Titulo y fecha son obligatorios.")
+  if (!title || !eventDate || !location) {
+    return { error: "Titulo, fecha y direccion son obligatorios." }
+  }
+
+  if (images.length === 0) {
+    return { error: "Debes cargar al menos una imagen del evento." }
   }
 
   const supabase = await createServerClient()
-  const { data: created, error } = await supabase
-    .from("events")
-    .insert({
-      title,
-      description: description || null,
-      location: location || null,
-      event_date: eventDate,
-      is_published: isPublished,
-    })
-    .select("*")
-    .single()
 
-  if (error || !created) {
-    throw new Error("No se pudo crear el evento.")
-  }
-
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("image") as File | null,
-    imageUrl: (formData.get("imageUrl") as string | null) ?? null,
-    folder: "events",
-    objectId: created.id,
-  })
-
-  let finalEvent = created
-  if (imageUrl) {
-    const { data: updated } = await supabase
+  try {
+    const { data: created, error } = await supabase
       .from("events")
-      .update({ image_url: imageUrl })
-      .eq("id", created.id)
+      .insert({
+        title,
+        description: description || null,
+        location,
+        event_date: eventDate,
+        image_url: "pending://upload",
+        is_published: true,
+      })
       .select("*")
       .single()
 
-    if (updated) finalEvent = updated
+    if (error || !created) {
+      return { error: "No se pudo crear el evento." }
+    }
+
+    try {
+      const { finalImages, coverImageUrl } = await syncEventImages({
+        supabase,
+        eventId: created.id,
+        existingImages: [],
+        removeImageIds: [],
+        newFiles: images,
+      })
+
+      const { data: after, error: updateError } = await supabase
+        .from("events")
+        .update({
+          title,
+          description: description || null,
+          location,
+          event_date: eventDate,
+          image_url: coverImageUrl,
+          is_published: true,
+        })
+        .eq("id", created.id)
+        .select("*")
+        .single()
+
+      if (updateError || !after) {
+        throw new Error("No se pudo finalizar la publicacion del evento.")
+      }
+
+      await recordAdminAuditLog({
+        action: "event.create",
+        entityType: "event",
+        entityId: after.id,
+        afterData: serializeEventForAudit(after as Event, finalImages),
+      })
+
+      revalidateEditorialPaths()
+      return { success: true }
+    } catch (error) {
+      await supabase.from("event_images").delete().eq("event_id", created.id)
+      await supabase.from("events").delete().eq("id", created.id)
+      return { error: toErrorMessage(error) }
+    }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  await recordAdminAuditLog({
-    action: "event.create",
-    entityType: "event",
-    entityId: finalEvent.id,
-    afterData: finalEvent,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/eventos")
-  revalidatePath("/eventos")
 }
 
-export async function updateEvent(eventId: string, formData: FormData) {
+export async function updateEvent(
+  eventId: string,
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const title = String(formData.get("title") ?? "").trim()
   const description = String(formData.get("description") ?? "").trim()
   const location = String(formData.get("location") ?? "").trim()
   const eventDate = String(formData.get("eventDate") ?? "").trim()
-  const isPublished = parsePublishedFlag(formData)
+  const newImages = getUploadedFiles(formData, "images")
+  const removeImageIds = formData
+    .getAll("removeImageIds")
+    .map((value) => String(value))
 
-  if (!title || !eventDate) {
-    throw new Error("Titulo y fecha son obligatorios.")
+  if (!title || !eventDate || !location) {
+    return { error: "Titulo, fecha y direccion son obligatorios." }
   }
 
   const supabase = await createServerClient()
-  const { data: before } = await supabase
-    .from("events")
-    .select("*")
-    .eq("id", eventId)
-    .single()
 
-  if (!before) throw new Error("Evento no encontrado.")
+  try {
+    const { data: before } = await supabase
+      .from("events")
+      .select("*")
+      .eq("id", eventId)
+      .single()
 
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("image") as File | null,
-    imageUrl: (formData.get("imageUrl") as string | null) ?? before.image_url,
-    folder: "events",
-    objectId: eventId,
-  })
+    if (!before) return { error: "Evento no encontrado." }
 
-  const { data: after, error } = await supabase
-    .from("events")
-    .update({
-      title,
-      description: description || null,
-      location: location || null,
-      event_date: eventDate,
-      image_url: imageUrl,
-      is_published: isPublished,
+    const existingImages = await getEventImagesForEvent(supabase, eventId)
+    const keptImagesCount = existingImages.filter(
+      (image) => !removeImageIds.includes(image.id)
+    ).length
+
+    if (keptImagesCount + newImages.length <= 0) {
+      return { error: "El evento debe conservar al menos una imagen." }
+    }
+
+    const { finalImages, coverImageUrl } = await syncEventImages({
+      supabase,
+      eventId,
+      existingImages,
+      removeImageIds,
+      newFiles: newImages,
     })
-    .eq("id", eventId)
-    .select("*")
-    .single()
 
-  if (error || !after) {
-    throw new Error("No se pudo actualizar el evento.")
+    const { data: after, error } = await supabase
+      .from("events")
+      .update({
+        title,
+        description: description || null,
+        location,
+        event_date: eventDate,
+        image_url: coverImageUrl,
+        is_published: true,
+      })
+      .eq("id", eventId)
+      .select("*")
+      .single()
+
+    if (error || !after) {
+      return { error: "No se pudo actualizar el evento." }
+    }
+
+    await recordAdminAuditLog({
+      action: "event.update",
+      entityType: "event",
+      entityId: eventId,
+      beforeData: serializeEventForAudit(before as Event, existingImages),
+      afterData: serializeEventForAudit(after as Event, finalImages),
+    })
+
+    revalidateEditorialPaths()
+    return { success: true }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  await recordAdminAuditLog({
-    action: "event.update",
-    entityType: "event",
-    entityId: eventId,
-    beforeData: before,
-    afterData: after,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/eventos")
-  revalidatePath("/eventos")
 }
 
 export async function deleteEvent(eventId: string) {
@@ -438,6 +661,7 @@ export async function deleteEvent(eventId: string) {
     .select("*")
     .eq("id", eventId)
     .single()
+  const beforeImages = await getEventImagesForEvent(supabase, eventId)
 
   const { error } = await supabase.from("events").delete().eq("id", eventId)
   if (error) throw new Error("No se pudo eliminar el evento.")
@@ -446,140 +670,158 @@ export async function deleteEvent(eventId: string) {
     action: "event.delete",
     entityType: "event",
     entityId: eventId,
-    beforeData: before ?? null,
+    beforeData: before ? serializeEventForAudit(before as Event, beforeImages) : null,
   })
 
-  revalidatePath("/")
-  revalidatePath("/admin/eventos")
-  revalidatePath("/eventos")
+  revalidateEditorialPaths()
 }
 
-export async function createGalleryImage(formData: FormData) {
+export async function createGalleryImage(
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const caption = String(formData.get("caption") ?? "").trim()
   const category = String(formData.get("category") ?? "").trim()
-  const providedSortOrder = Number(formData.get("sortOrder") ?? NaN)
+  const image = getUploadedFile(formData, "image")
 
-  if (!["baile", "tatuaje"].includes(category)) {
-    throw new Error("Categoria invalida.")
+  if (!caption) {
+    return { error: "El nombre es obligatorio." }
+  }
+
+  if (!isValidGalleryCategory(category)) {
+    return { error: "Categoria invalida." }
+  }
+
+  if (!image) {
+    return { error: "Debes subir una imagen para la galeria." }
   }
 
   const supabase = await createServerClient()
-  const { data: lastItem } = await supabase
-    .from("gallery_items")
-    .select("sort_order")
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
-  const nextSortOrder = lastItem ? lastItem.sort_order + 1 : 0
+  try {
+    const { data: created, error } = await supabase
+      .from("gallery_items")
+      .insert({
+        caption,
+        category,
+        image_url: "pending://upload",
+      })
+      .select("*")
+      .single()
 
-  const { data: created, error } = await supabase
-    .from("gallery_items")
-    .insert({
-      caption: caption || null,
-      category,
-      image_url: "pending://upload",
-      sort_order:
-        Number.isFinite(providedSortOrder) && providedSortOrder >= 0
-          ? Math.round(providedSortOrder)
-          : nextSortOrder,
-    })
-    .select("*")
-    .single()
+    if (error || !created) {
+      return { error: "No se pudo crear el item de galeria." }
+    }
 
-  if (error || !created) {
-    throw new Error("No se pudo crear el item de galeria.")
+    try {
+      const imageUrl = await uploadEditorialAsset(
+        image,
+        `gallery/${created.id}.${image.name.split(".").pop() ?? "jpg"}`
+      )
+
+      const { data: finalItem, error: updateError } = await supabase
+        .from("gallery_items")
+        .update({ image_url: imageUrl })
+        .eq("id", created.id)
+        .select("*")
+        .single()
+
+      if (updateError || !finalItem) {
+        throw new Error("No se pudo finalizar la carga de la imagen.")
+      }
+
+      await recordAdminAuditLog({
+        action: "gallery.create",
+        entityType: "gallery_item",
+        entityId: finalItem.id,
+        afterData: finalItem,
+      })
+
+      revalidateEditorialPaths()
+      return { success: true }
+    } catch (error) {
+      await supabase.from("gallery_items").delete().eq("id", created.id)
+      return { error: toErrorMessage(error) }
+    }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("image") as File | null,
-    imageUrl: (formData.get("imageUrl") as string | null) ?? null,
-    folder: "gallery",
-    objectId: created.id,
-  })
-
-  if (!imageUrl) {
-    await supabase.from("gallery_items").delete().eq("id", created.id)
-    throw new Error("Debes subir una imagen o indicar una URL.")
-  }
-
-  const { data: finalItem } = await supabase
-    .from("gallery_items")
-    .update({ image_url: imageUrl })
-    .eq("id", created.id)
-    .select("*")
-    .single()
-
-  await recordAdminAuditLog({
-    action: "gallery.create",
-    entityType: "gallery_item",
-    entityId: created.id,
-    afterData: finalItem ?? created,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/galeria")
-  revalidatePath("/galeria")
 }
 
-export async function updateGalleryImage(imageId: string, formData: FormData) {
+export async function updateGalleryImage(
+  imageId: string,
+  _prevState: EditorialFormState,
+  formData: FormData
+): Promise<EditorialFormState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const caption = String(formData.get("caption") ?? "").trim()
   const category = String(formData.get("category") ?? "").trim()
-  const sortOrder = Number(formData.get("sortOrder") ?? 0)
+  const image = getUploadedFile(formData, "image")
 
-  if (!["baile", "tatuaje"].includes(category)) {
-    throw new Error("Categoria invalida.")
+  if (!caption) {
+    return { error: "El nombre es obligatorio." }
+  }
+
+  if (!isValidGalleryCategory(category)) {
+    return { error: "Categoria invalida." }
   }
 
   const supabase = await createServerClient()
-  const { data: before } = await supabase
-    .from("gallery_items")
-    .select("*")
-    .eq("id", imageId)
-    .single()
 
-  if (!before) throw new Error("Imagen no encontrada.")
+  try {
+    const { data: before } = await supabase
+      .from("gallery_items")
+      .select("*")
+      .eq("id", imageId)
+      .single()
 
-  const imageUrl = await resolveImageUrl({
-    file: formData.get("image") as File | null,
-    imageUrl: (formData.get("imageUrl") as string | null) ?? before.image_url,
-    folder: "gallery",
-    objectId: imageId,
-  })
+    if (!before) return { error: "Imagen no encontrada." }
 
-  const { data: after, error } = await supabase
-    .from("gallery_items")
-    .update({
-      caption: caption || null,
-      category,
-      sort_order: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : before.sort_order,
-      image_url: imageUrl ?? before.image_url,
+    if (!before.image_url && !image) {
+      return { error: "La galeria debe conservar una imagen cargada." }
+    }
+
+    let imageUrl = before.image_url
+    if (image) {
+      imageUrl = await uploadEditorialAsset(
+        image,
+        `gallery/${imageId}.${image.name.split(".").pop() ?? "jpg"}`
+      )
+    }
+
+    const { data: after, error } = await supabase
+      .from("gallery_items")
+      .update({
+        caption,
+        category,
+        image_url: imageUrl,
+      })
+      .eq("id", imageId)
+      .select("*")
+      .single()
+
+    if (error || !after) {
+      return { error: "No se pudo actualizar la galeria." }
+    }
+
+    await recordAdminAuditLog({
+      action: "gallery.update",
+      entityType: "gallery_item",
+      entityId: imageId,
+      beforeData: before,
+      afterData: after,
     })
-    .eq("id", imageId)
-    .select("*")
-    .single()
 
-  if (error || !after) {
-    throw new Error("No se pudo actualizar la galeria.")
+    revalidateEditorialPaths()
+    return { success: true }
+  } catch (error) {
+    return { error: toErrorMessage(error) }
   }
-
-  await recordAdminAuditLog({
-    action: "gallery.update",
-    entityType: "gallery_item",
-    entityId: imageId,
-    beforeData: before,
-    afterData: after,
-  })
-
-  revalidatePath("/")
-  revalidatePath("/admin/galeria")
-  revalidatePath("/galeria")
 }
 
 export async function deleteGalleryImage(imageId: string) {
@@ -607,7 +849,5 @@ export async function deleteGalleryImage(imageId: string) {
     beforeData: before ?? null,
   })
 
-  revalidatePath("/")
-  revalidatePath("/admin/galeria")
-  revalidatePath("/galeria")
+  revalidateEditorialPaths()
 }
