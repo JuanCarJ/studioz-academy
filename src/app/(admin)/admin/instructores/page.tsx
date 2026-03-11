@@ -1,7 +1,10 @@
 import { Suspense } from "react"
 import Link from "next/link"
 
-import { getInstructors } from "@/actions/admin/instructors"
+import {
+  getInstructors,
+  getInstructorSpecialtyOptions,
+} from "@/actions/admin/instructors"
 import { InstructorForm } from "@/components/admin/InstructorForm"
 import { AdminTableSkeleton } from "@/components/skeletons/AdminTableSkeleton"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -28,7 +31,6 @@ async function InstructorsList() {
           <TableHead className="w-12">Foto</TableHead>
           <TableHead>Nombre</TableHead>
           <TableHead>Especialidades</TableHead>
-          <TableHead>Experiencia</TableHead>
           <TableHead>Estado</TableHead>
           <TableHead className="w-24">Acciones</TableHead>
         </TableRow>
@@ -36,7 +38,7 @@ async function InstructorsList() {
       <TableBody>
         {instructors.length === 0 && (
           <TableRow>
-            <TableCell colSpan={6} className="text-center text-muted-foreground">
+            <TableCell colSpan={5} className="text-center text-muted-foreground">
               No hay instructores registrados.
             </TableCell>
           </TableRow>
@@ -62,11 +64,6 @@ async function InstructorsList() {
               </div>
             </TableCell>
             <TableCell>
-              {inst.years_experience != null
-                ? `${inst.years_experience} anos`
-                : "—"}
-            </TableCell>
-            <TableCell>
               <Badge variant={inst.is_active ? "default" : "secondary"}>
                 {inst.is_active ? "Activo" : "Inactivo"}
               </Badge>
@@ -86,6 +83,8 @@ async function InstructorsList() {
 }
 
 export default function AdminInstructorsPage() {
+  const specialtyOptionsPromise = getInstructorSpecialtyOptions()
+
   return (
     <section className="space-y-8">
       <div>
@@ -98,7 +97,9 @@ export default function AdminInstructorsPage() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div>
           <h2 className="mb-4 text-lg font-semibold">Nuevo instructor</h2>
-          <InstructorForm />
+          <Suspense fallback={<AdminTableSkeleton />}>
+            <NewInstructorForm specialtyOptionsPromise={specialtyOptionsPromise} />
+          </Suspense>
         </div>
 
         <div>
@@ -110,4 +111,14 @@ export default function AdminInstructorsPage() {
       </div>
     </section>
   )
+}
+
+async function NewInstructorForm({
+  specialtyOptionsPromise,
+}: {
+  specialtyOptionsPromise: ReturnType<typeof getInstructorSpecialtyOptions>
+}) {
+  const specialtyOptions = await specialtyOptionsPromise
+
+  return <InstructorForm specialtyOptions={specialtyOptions} />
 }

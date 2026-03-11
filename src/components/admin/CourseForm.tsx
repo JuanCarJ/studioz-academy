@@ -3,14 +3,17 @@
 import { useActionState, useState } from "react"
 import Image from "next/image"
 
-import { createCourse, updateCourse } from "@/actions/admin/courses"
-import type { CourseActionState } from "@/actions/admin/courses"
+import {
+  createCourse,
+  updateCourse,
+  type CourseActionState,
+  type CourseFieldName,
+} from "@/actions/admin/courses"
+import { CopCurrencyInput } from "@/components/admin/CopCurrencyInput"
 import { CoursePreviewManager } from "@/components/admin/CoursePreviewManager"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -18,6 +21,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  COP_MAX_PESOS,
+  COURSE_DESCRIPTION_MAX_LENGTH,
+  COURSE_SHORT_DESCRIPTION_MAX_LENGTH,
+  COURSE_SHORT_DESCRIPTION_MIN_LENGTH,
+  COURSE_TITLE_MAX_LENGTH,
+  COURSE_TITLE_MIN_LENGTH,
+  getLengthError,
+  parseCopInput,
+  parseWholeNumberInput,
+  validateImageFile,
+} from "@/lib/admin-form-utils"
 import { formatCOP } from "@/lib/utils"
 
 import type { Course, Instructor } from "@/types"
@@ -25,6 +42,140 @@ import type { Course, Instructor } from "@/types"
 interface CourseFormProps {
   course?: Course
   instructors: Pick<Instructor, "id" | "full_name">[]
+}
+
+type CourseFieldErrors = NonNullable<CourseActionState["fieldErrors"]>
+
+const MAX_THUMBNAIL_SIZE = 2 * 1024 * 1024
+const ALLOWED_THUMBNAIL_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+function getClientCourseFieldErrors(input: {
+  title: string
+  shortDescription: string
+  description: string
+  category: string
+  instructorId: string
+  priceValue: string
+  isFree: boolean
+  courseDiscountEnabled: boolean
+  courseDiscountType: "percentage" | "fixed"
+  courseDiscountValue: string
+  thumbnailFile: File | null
+}) {
+  const fieldErrors: CourseFieldErrors = {}
+  const title = input.title.trim().replace(/\s+/g, " ")
+  const shortDescription = input.shortDescription.trim().replace(/\s+/g, " ")
+  const description = input.description.trim().replace(/\s+/g, " ")
+
+  const titleError = getLengthError({
+    value: title,
+    label: "El titulo",
+    required: true,
+    min: COURSE_TITLE_MIN_LENGTH,
+    max: COURSE_TITLE_MAX_LENGTH,
+  })
+  if (titleError) {
+    fieldErrors.title = titleError
+  }
+
+  if (shortDescription) {
+    const shortDescriptionError = getLengthError({
+      value: shortDescription,
+      label: "La descripcion corta",
+      min: COURSE_SHORT_DESCRIPTION_MIN_LENGTH,
+      max: COURSE_SHORT_DESCRIPTION_MAX_LENGTH,
+    })
+    if (shortDescriptionError) {
+      fieldErrors.shortDescription = shortDescriptionError
+    }
+  }
+
+  if (description) {
+    const descriptionError = getLengthError({
+      value: description,
+      label: "La descripcion completa",
+      max: COURSE_DESCRIPTION_MAX_LENGTH,
+    })
+    if (descriptionError) {
+      fieldErrors.description = descriptionError
+    }
+  }
+
+  if (!input.category) {
+    fieldErrors.category = "Selecciona una categoria."
+  }
+
+  if (!input.instructorId) {
+    fieldErrors.instructorId = "Selecciona un instructor."
+  }
+
+  if (!input.isFree) {
+    const parsedPrice = parseCopInput(input.priceValue, {
+      label: "El precio",
+      required: true,
+      minPesos: 1,
+      maxPesos: COP_MAX_PESOS,
+    })
+    if (parsedPrice.error) {
+      fieldErrors.price = parsedPrice.error
+    }
+  }
+
+  const thumbnailError = validateImageFile(input.thumbnailFile, {
+    label: "La portada",
+    allowedTypes: ALLOWED_THUMBNAIL_TYPES,
+    maxSizeBytes: MAX_THUMBNAIL_SIZE,
+  })
+  if (thumbnailError) {
+    fieldErrors.thumbnail = thumbnailError
+  }
+
+  if (input.courseDiscountEnabled && !input.isFree) {
+    if (input.courseDiscountType === "percentage") {
+      const parsedPercentage = parseWholeNumberInput(input.courseDiscountValue, {
+        label: "El descuento porcentual",
+        required: true,
+        min: 1,
+        max: 100,
+      })
+
+      if (parsedPercentage.error) {
+        fieldErrors.courseDiscountValue = parsedPercentage.error
+      }
+    } else {
+      const parsedPrice = parseCopInput(input.priceValue, {
+        label: "El precio",
+        required: true,
+        minPesos: 1,
+        maxPesos: COP_MAX_PESOS,
+      })
+      const parsedDiscount = parseCopInput(input.courseDiscountValue, {
+        label: "El descuento fijo",
+        required: true,
+        minPesos: 1,
+        maxPesos: parsedPrice.pesos ?? COP_MAX_PESOS,
+      })
+
+      if (parsedDiscount.error) {
+        fieldErrors.courseDiscountValue = parsedDiscount.error
+      } else if (
+        typeof parsedPrice.pesos === "number" &&
+        typeof parsedDiscount.pesos === "number" &&
+        parsedDiscount.pesos > parsedPrice.pesos
+      ) {
+        fieldErrors.courseDiscountValue =
+          "El descuento fijo no puede superar el precio lista actual."
+      }
+    }
+  }
+
+  return fieldErrors
+}
+
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null
+
+  return <p className="text-sm text-destructive">{message}</p>
 }
 
 export function CourseForm({ course, instructors }: CourseFormProps) {
@@ -39,23 +190,51 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
     FormData
   >(boundAction, {})
 
-  // Price display: stored as centavos, shown as pesos
-  const priceInPesos = course ? course.price / 100 : ""
-  const [priceValue, setPriceValue] = useState(String(priceInPesos))
+  const [didSubmit, setDidSubmit] = useState(false)
+  const [touchedFields, setTouchedFields] = useState<
+    Partial<Record<CourseFieldName, boolean>>
+  >({})
+  const [dirtyFields, setDirtyFields] = useState<
+    Partial<Record<CourseFieldName, boolean>>
+  >({})
+
+  const [title, setTitle] = useState(course?.title ?? "")
+  const [shortDescription, setShortDescription] = useState(
+    course?.short_description ?? ""
+  )
+  const [description, setDescription] = useState(course?.description ?? "")
+  const [category, setCategory] = useState(course?.category ?? "")
+  const [instructorId, setInstructorId] = useState(course?.instructor_id ?? "")
+  const [priceValue, setPriceValue] = useState(
+    course ? String(Math.round(course.price / 100)) : ""
+  )
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null)
   const [isFreeChecked, setIsFreeChecked] = useState(course?.is_free ?? false)
   const [courseDiscountEnabled, setCourseDiscountEnabled] = useState(
     course?.course_discount_enabled ?? false
   )
   const [courseDiscountType, setCourseDiscountType] = useState<
     "percentage" | "fixed"
-  >(
-    course?.course_discount_type === "fixed" ? "fixed" : "percentage"
-  )
+  >(course?.course_discount_type === "fixed" ? "fixed" : "percentage")
   const [courseDiscountValue, setCourseDiscountValue] = useState(
     course?.course_discount_type === "fixed" && course.course_discount_value
-      ? String(course.course_discount_value / 100)
+      ? String(Math.round(course.course_discount_value / 100))
       : String(course?.course_discount_value ?? 10)
   )
+
+  const clientFieldErrors = getClientCourseFieldErrors({
+    title,
+    shortDescription,
+    description,
+    category,
+    instructorId,
+    priceValue,
+    isFree: isFreeChecked,
+    courseDiscountEnabled,
+    courseDiscountType,
+    courseDiscountValue,
+    thumbnailFile,
+  })
 
   const listPriceInCents = isFreeChecked
     ? 0
@@ -71,22 +250,51 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           )
         : Math.min(listPriceInCents, Math.round(rawDiscountValue * 100))
   const previewFinalPrice = Math.max(0, listPriceInCents - previewDiscountAmount)
-  const isFixedDiscountInvalid =
-    courseDiscountEnabled &&
-    !isFreeChecked &&
-    courseDiscountType === "fixed" &&
-    Math.round(rawDiscountValue * 100) > listPriceInCents
-  const isPercentageDiscountInvalid =
-    courseDiscountEnabled &&
-    !isFreeChecked &&
-    courseDiscountType === "percentage" &&
-    (rawDiscountValue < 1 || rawDiscountValue > 100)
+
+  function markTouched(field: CourseFieldName) {
+    setTouchedFields((current) =>
+      current[field] ? current : { ...current, [field]: true }
+    )
+  }
+
+  function markDirty(field: CourseFieldName) {
+    setDirtyFields((current) =>
+      current[field] ? current : { ...current, [field]: true }
+    )
+  }
+
+  function getFieldError(field: CourseFieldName) {
+    if ((didSubmit || touchedFields[field]) && clientFieldErrors[field]) {
+      return clientFieldErrors[field]
+    }
+
+    return dirtyFields[field] ? undefined : state.fieldErrors?.[field]
+  }
+
+  const hasClientErrors = Object.keys(clientFieldErrors).length > 0
+  const shouldShowClientBanner = didSubmit && hasClientErrors
+  const shouldShowServerBanner =
+    Boolean(state.error) &&
+    (!state.fieldErrors || Object.keys(dirtyFields).length === 0)
 
   return (
-    <form action={formAction} className="max-w-2xl space-y-6">
-      {state.error && (
+    <form
+      action={formAction}
+      className="max-w-2xl space-y-6"
+      onSubmitCapture={(event) => {
+        setDidSubmit(true)
+
+        if (hasClientErrors) {
+          event.preventDefault()
+          return
+        }
+
+        setDirtyFields({})
+      }}
+    >
+      {(shouldShowClientBanner || shouldShowServerBanner) && (
         <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {state.error ?? "Corrige los campos marcados."}
         </div>
       )}
       {state.success && (
@@ -100,9 +308,18 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
         <Input
           id="title"
           name="title"
-          defaultValue={course?.title ?? ""}
+          value={title}
+          onChange={(event) => {
+            setTitle(event.target.value)
+            markDirty("title")
+          }}
+          onBlur={() => markTouched("title")}
+          minLength={COURSE_TITLE_MIN_LENGTH}
+          maxLength={COURSE_TITLE_MAX_LENGTH}
           required
+          aria-invalid={Boolean(getFieldError("title"))}
         />
+        <FieldErrorText message={getFieldError("title")} />
       </div>
 
       <div className="space-y-2">
@@ -110,9 +327,21 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
         <Input
           id="shortDescription"
           name="shortDescription"
-          defaultValue={course?.short_description ?? ""}
-          maxLength={200}
+          value={shortDescription}
+          onChange={(event) => {
+            setShortDescription(event.target.value)
+            markDirty("shortDescription")
+          }}
+          onBlur={() => markTouched("shortDescription")}
+          minLength={COURSE_SHORT_DESCRIPTION_MIN_LENGTH}
+          maxLength={COURSE_SHORT_DESCRIPTION_MAX_LENGTH}
+          placeholder="Resumen corto del curso"
+          aria-invalid={Boolean(getFieldError("shortDescription"))}
         />
+        <p className="text-xs text-muted-foreground">
+          Si la usas, debe tener entre 20 y 200 caracteres.
+        </p>
+        <FieldErrorText message={getFieldError("shortDescription")} />
       </div>
 
       <div className="space-y-2">
@@ -121,15 +350,33 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           id="description"
           name="description"
           rows={5}
-          defaultValue={course?.description ?? ""}
+          value={description}
+          onChange={(event) => {
+            setDescription(event.target.value)
+            markDirty("description")
+          }}
+          onBlur={() => markTouched("description")}
+          maxLength={COURSE_DESCRIPTION_MAX_LENGTH}
+          aria-invalid={Boolean(getFieldError("description"))}
         />
+        <FieldErrorText message={getFieldError("description")} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="category">Categoria *</Label>
-          <Select name="category" defaultValue={course?.category ?? ""}>
-            <SelectTrigger id="category">
+          <Select
+            name="category"
+            value={category}
+            onValueChange={(value) => {
+              setCategory(value)
+              markDirty("category")
+            }}
+          >
+            <SelectTrigger
+              id="category"
+              aria-invalid={Boolean(getFieldError("category"))}
+            >
               <SelectValue placeholder="Seleccionar categoria" />
             </SelectTrigger>
             <SelectContent>
@@ -137,15 +384,23 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               <SelectItem value="tatuaje">Tatuaje</SelectItem>
             </SelectContent>
           </Select>
+          <FieldErrorText message={getFieldError("category")} />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="instructorId">Instructor *</Label>
           <Select
             name="instructorId"
-            defaultValue={course?.instructor_id ?? ""}
+            value={instructorId}
+            onValueChange={(value) => {
+              setInstructorId(value)
+              markDirty("instructorId")
+            }}
           >
-            <SelectTrigger id="instructorId">
+            <SelectTrigger
+              id="instructorId"
+              aria-invalid={Boolean(getFieldError("instructorId"))}
+            >
               <SelectValue placeholder="Seleccionar instructor" />
             </SelectTrigger>
             <SelectContent>
@@ -156,26 +411,30 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               ))}
             </SelectContent>
           </Select>
+          <FieldErrorText message={getFieldError("instructorId")} />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="price">Precio (COP pesos)</Label>
-          <Input
+          <CopCurrencyInput
             id="price"
             name="price"
-            type="number"
-            min={0}
-            step={100}
             value={priceValue}
-            onChange={(event) => setPriceValue(event.target.value)}
-            placeholder="100000"
+            onValueChange={(value) => {
+              setPriceValue(value)
+              markDirty("price")
+            }}
+            onBlur={() => markTouched("price")}
+            placeholder="$20.000"
             disabled={isFreeChecked}
+            aria-invalid={Boolean(getFieldError("price"))}
           />
           <p className="text-xs text-muted-foreground">
-            Ingresa el precio en pesos colombianos (ej: 100000 = $100.000)
+            Ingresa un valor entero en COP. Ejemplo: $20.000
           </p>
+          <FieldErrorText message={getFieldError("price")} />
         </div>
 
         <div className="flex items-end gap-3 pb-1">
@@ -186,6 +445,8 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               checked={isFreeChecked}
               onCheckedChange={(checked) => {
                 setIsFreeChecked(checked)
+                markDirty("price")
+                markDirty("courseDiscountValue")
                 if (checked) {
                   setCourseDiscountEnabled(false)
                 }
@@ -209,7 +470,10 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               id="courseDiscountEnabled"
               name="courseDiscountEnabled"
               checked={courseDiscountEnabled && !isFreeChecked}
-              onCheckedChange={setCourseDiscountEnabled}
+              onCheckedChange={(checked) => {
+                setCourseDiscountEnabled(checked)
+                markDirty("courseDiscountValue")
+              }}
               disabled={isFreeChecked}
             />
             <Label htmlFor="courseDiscountEnabled">Activar promo</Label>
@@ -222,9 +486,19 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
             <Select
               name="courseDiscountType"
               value={courseDiscountType}
-              onValueChange={(value) =>
-                setCourseDiscountType(value === "fixed" ? "fixed" : "percentage")
-              }
+              onValueChange={(value) => {
+                const nextType = value === "fixed" ? "fixed" : "percentage"
+                setCourseDiscountType(nextType)
+                setCourseDiscountValue((current) => {
+                  if (nextType === "percentage") {
+                    const parsed = Number(current || 0)
+                    return parsed >= 1 && parsed <= 100 ? current : "10"
+                  }
+
+                  return current
+                })
+                markDirty("courseDiscountValue")
+              }}
               disabled={!courseDiscountEnabled || isFreeChecked}
             >
               <SelectTrigger id="courseDiscountType">
@@ -239,21 +513,45 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
 
           <div className="space-y-2">
             <Label htmlFor="courseDiscountValue">Valor</Label>
-            <Input
-              id="courseDiscountValue"
-              name="courseDiscountValue"
-              type="number"
-              min={1}
-              max={courseDiscountType === "percentage" ? 100 : undefined}
-              value={courseDiscountValue}
-              onChange={(event) => setCourseDiscountValue(event.target.value)}
-              disabled={!courseDiscountEnabled || isFreeChecked}
-            />
+            {courseDiscountType === "percentage" ? (
+              <Input
+                id="courseDiscountValue"
+                name="courseDiscountValue"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={courseDiscountValue}
+                onChange={(event) => {
+                  setCourseDiscountValue(event.target.value)
+                  markDirty("courseDiscountValue")
+                }}
+                onBlur={() => markTouched("courseDiscountValue")}
+                disabled={!courseDiscountEnabled || isFreeChecked}
+                aria-invalid={Boolean(getFieldError("courseDiscountValue"))}
+              />
+            ) : (
+              <CopCurrencyInput
+                id="courseDiscountValue"
+                name="courseDiscountValue"
+                value={courseDiscountValue}
+                onValueChange={(value) => {
+                  setCourseDiscountValue(value)
+                  markDirty("courseDiscountValue")
+                }}
+                onBlur={() => markTouched("courseDiscountValue")}
+                placeholder="$5.000"
+                disabled={!courseDiscountEnabled || isFreeChecked}
+                aria-invalid={Boolean(getFieldError("courseDiscountValue"))}
+                maxPesos={Number(priceValue || 0) || COP_MAX_PESOS}
+              />
+            )}
             <p className="text-xs text-muted-foreground">
               {courseDiscountType === "percentage"
                 ? "Entre 1 y 100."
-                : "En pesos colombianos. No puede superar el precio lista actual."}
+                : "En pesos colombianos. Ejemplo: $5.000"}
             </p>
+            <FieldErrorText message={getFieldError("courseDiscountValue")} />
           </div>
         </div>
 
@@ -272,17 +570,9 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               </p>
             </div>
           )}
-          {(isFixedDiscountInvalid || isPercentageDiscountInvalid) && (
-            <p className="mt-2 text-sm text-destructive">
-              {isPercentageDiscountInvalid
-                ? "El descuento porcentual debe estar entre 1 y 100."
-                : "El descuento fijo no puede superar el precio lista actual."}
-            </p>
-          )}
         </div>
       </div>
 
-      {/* H-06: Thumbnail image upload */}
       <div className="space-y-2">
         <Label htmlFor="thumbnail">Imagen de portada</Label>
         {course?.thumbnail_url && (
@@ -301,10 +591,17 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           name="thumbnail"
           type="file"
           accept="image/jpeg,image/png,image/webp"
+          aria-invalid={Boolean(getFieldError("thumbnail"))}
+          onChange={(event) => {
+            setThumbnailFile(event.target.files?.[0] ?? null)
+            markDirty("thumbnail")
+          }}
+          onBlur={() => markTouched("thumbnail")}
         />
         <p className="text-xs text-muted-foreground">
           JPG, PNG o WebP. Maximo 2 MB. Resolucion recomendada: 1280x720.
         </p>
+        <FieldErrorText message={getFieldError("thumbnail")} />
       </div>
 
       {isEditing ? (

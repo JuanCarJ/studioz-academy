@@ -413,6 +413,43 @@ export async function ensureBusinessFixtures() {
     sort_order: 50,
   })
 
+  await upsertBy(
+    "instructor_specialty_options",
+    { category: "baile", normalized_name: "salsa" },
+    {
+      name: "Salsa",
+      normalized_name: "salsa",
+      category: "baile",
+    }
+  )
+  await upsertBy(
+    "instructor_specialty_options",
+    { category: "baile", normalized_name: "bachata" },
+    {
+      name: "Bachata",
+      normalized_name: "bachata",
+      category: "baile",
+    }
+  )
+  await upsertBy(
+    "instructor_specialty_options",
+    { category: "tatuaje", normalized_name: "linea fina" },
+    {
+      name: "Linea Fina",
+      normalized_name: "linea fina",
+      category: "tatuaje",
+    }
+  )
+  await upsertBy(
+    "instructor_specialty_options",
+    { category: "tatuaje", normalized_name: "blackwork" },
+    {
+      name: "Blackwork",
+      normalized_name: "blackwork",
+      category: "tatuaje",
+    }
+  )
+
   const danceInstructorId = await upsertBy(
     "instructors",
     { slug: qaFixtures.danceInstructorSlug },
@@ -422,7 +459,6 @@ export async function ensureBusinessFixtures() {
       bio: "Instructor semilla de baile para QA E2E.",
       avatar_url: sampleImage,
       specialties: ["Salsa", "Bachata"],
-      years_experience: 8,
       is_active: true,
     }
   )
@@ -435,8 +471,7 @@ export async function ensureBusinessFixtures() {
       full_name: qaFixtures.tattooInstructorName,
       bio: "Instructor semilla de tatuaje para QA E2E.",
       avatar_url: sampleImage,
-      specialties: ["Linea fina", "Blackwork"],
-      years_experience: 6,
+      specialties: ["Linea Fina", "Blackwork"],
       is_active: true,
     }
   )

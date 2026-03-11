@@ -423,11 +423,6 @@ export default async function CourseDetailPage({ params }: PageProps) {
                       ))}
                     </div>
                   )}
-                  {course.instructor.years_experience != null && (
-                    <p className="text-sm text-muted-foreground">
-                      {course.instructor.years_experience} anos de experiencia
-                    </p>
-                  )}
                   {course.instructor.bio && (
                     <p className="text-sm leading-relaxed text-muted-foreground line-clamp-3">
                       {course.instructor.bio}

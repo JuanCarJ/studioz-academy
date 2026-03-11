@@ -162,10 +162,31 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = NOW();
 
 -- =========================================================
--- 4. instructors  (4 rows)
+-- 4. instructor_specialty_options
 -- =========================================================
 
-INSERT INTO public.instructors (id, slug, full_name, bio, avatar_url, specialties, years_experience, is_active)
+INSERT INTO public.instructor_specialty_options (id, name, normalized_name, category)
+VALUES
+  ('a1000000-0000-0000-0000-000000000001', 'Bachata', 'bachata', 'baile'),
+  ('a1000000-0000-0000-0000-000000000002', 'Salsa', 'salsa', 'baile'),
+  ('a1000000-0000-0000-0000-000000000003', 'Cumbia', 'cumbia', 'baile'),
+  ('a1000000-0000-0000-0000-000000000004', 'Hip-Hop', 'hip-hop', 'baile'),
+  ('a1000000-0000-0000-0000-000000000005', 'Reggaeton', 'reggaeton', 'baile'),
+  ('a1000000-0000-0000-0000-000000000006', 'Contemporaneo', 'contemporaneo', 'baile'),
+  ('a1000000-0000-0000-0000-000000000007', 'Realismo', 'realismo', 'tatuaje'),
+  ('a1000000-0000-0000-0000-000000000008', 'Blackwork', 'blackwork', 'tatuaje'),
+  ('a1000000-0000-0000-0000-000000000009', 'Retrato', 'retrato', 'tatuaje'),
+  ('a1000000-0000-0000-0000-000000000010', 'Geometrico', 'geometrico', 'tatuaje'),
+  ('a1000000-0000-0000-0000-000000000011', 'Fineline', 'fineline', 'tatuaje'),
+  ('a1000000-0000-0000-0000-000000000012', 'Minimalista', 'minimalista', 'tatuaje')
+ON CONFLICT (category, normalized_name) DO UPDATE SET
+  name = EXCLUDED.name;
+
+-- =========================================================
+-- 5. instructors  (4 rows)
+-- =========================================================
+
+INSERT INTO public.instructors (id, slug, full_name, bio, avatar_url, specialties, is_active)
 VALUES
   (
     'a0000000-0000-0000-0000-000000000001',
@@ -173,8 +194,8 @@ VALUES
     'Miguel Angel Torres',
     'Bailarin profesional con mas de 12 anos de experiencia en ritmos latinos. Ha competido internacionalmente en bachata y salsa, y su pasion es ensenar desde lo basico hasta lo avanzado.',
     'https://placehold.co/400x400/E85D04/FFFFFF?text=MT',
-    ARRAY['bachata','salsa','cumbia'],
-    12, TRUE
+    ARRAY['Bachata','Salsa','Cumbia'],
+    TRUE
   ),
   (
     'a0000000-0000-0000-0000-000000000002',
@@ -182,8 +203,8 @@ VALUES
     'Valentina Ospina',
     'Coreografa y bailarina urbana. Especialista en hip-hop, reggaeton y danza contemporanea. Ha trabajado con artistas reconocidos y dirige su propia crew de freestyle.',
     'https://placehold.co/400x400/7B2CBF/FFFFFF?text=VO',
-    ARRAY['hip-hop','reggaeton','contemporaneo'],
-    8, TRUE
+    ARRAY['Hip-Hop','Reggaeton','Contemporaneo'],
+    TRUE
   ),
   (
     'a0000000-0000-0000-0000-000000000003',
@@ -191,8 +212,8 @@ VALUES
     'Diego Hernandez',
     'Tatuador profesional especializado en realismo y blackwork. Mas de 10 anos de experiencia y participante habitual de convenciones de tatuaje en Latinoamerica.',
     'https://placehold.co/400x400/1A1A2E/FFFFFF?text=DH',
-    ARRAY['realismo','blackwork','retrato'],
-    10, TRUE
+    ARRAY['Realismo','Blackwork','Retrato'],
+    TRUE
   ),
   (
     'a0000000-0000-0000-0000-000000000004',
@@ -200,13 +221,13 @@ VALUES
     'Camila Vargas',
     'Artista del tatuaje con enfoque en diseno geometrico, fineline y minimalismo. Su trabajo fusiona matematicas y arte corporal en piezas unicas.',
     'https://placehold.co/400x400/16213E/FFFFFF?text=CV',
-    ARRAY['geometrico','fineline','minimalista'],
-    6, TRUE
+    ARRAY['Geometrico','Fineline','Minimalista'],
+    TRUE
   )
 ON CONFLICT (id) DO NOTHING;
 
 -- =========================================================
--- 5. courses  (7 rows)
+-- 6. courses  (7 rows)
 -- =========================================================
 
 INSERT INTO public.courses (

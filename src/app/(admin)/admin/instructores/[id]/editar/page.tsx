@@ -2,6 +2,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { ChevronLeft } from "lucide-react"
 
+import { getInstructorSpecialtyOptions } from "@/actions/admin/instructors"
 import { createServerClient } from "@/lib/supabase/server"
 import { InstructorForm } from "@/components/admin/InstructorForm"
 
@@ -17,6 +18,7 @@ export default async function EditInstructorPage({
   const { id } = await params
 
   const supabase = await createServerClient()
+  const specialtyOptionsPromise = getInstructorSpecialtyOptions(supabase)
 
   const { data: instructor } = await supabase
     .from("instructors")
@@ -25,6 +27,8 @@ export default async function EditInstructorPage({
     .single()
 
   if (!instructor) redirect("/admin/instructores")
+
+  const specialtyOptions = await specialtyOptionsPromise
 
   return (
     <section className="space-y-8">
@@ -40,7 +44,10 @@ export default async function EditInstructorPage({
         <p className="mt-2 text-muted-foreground">{instructor.full_name}</p>
       </div>
 
-      <InstructorForm instructor={instructor as Instructor} />
+      <InstructorForm
+        instructor={instructor as Instructor}
+        specialtyOptions={specialtyOptions}
+      />
     </section>
   )
 }

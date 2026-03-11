@@ -67,12 +67,6 @@ export default async function InstructorProfilePage({ params }: PageProps) {
           <div>
             <h1 className="text-3xl font-bold">{instructor.full_name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              {instructor.years_experience != null && (
-                <span>
-                  {instructor.years_experience}{" "}
-                  {instructor.years_experience === 1 ? "ano" : "anos"} de experiencia
-                </span>
-              )}
               {instructor.publishedCoursesCount > 0 && (
                 <span>
                   {instructor.publishedCoursesCount}{" "}

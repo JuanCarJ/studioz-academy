@@ -12,6 +12,8 @@ export interface Profile {
 }
 
 // ── Instructors ──────────────────────────────────────────
+export type InstructorSpecialtyCategory = "baile" | "tatuaje"
+
 export interface Instructor {
   id: string
   slug: string
@@ -19,8 +21,16 @@ export interface Instructor {
   bio: string | null
   avatar_url: string | null
   specialties: string[]
-  years_experience: number | null
   is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface InstructorSpecialtyOption {
+  id: string
+  name: string
+  normalized_name: string
+  category: InstructorSpecialtyCategory
   created_at: string
   updated_at: string
 }
@@ -32,7 +42,7 @@ export interface Course {
   slug: string
   description: string | null
   short_description: string | null
-  category: "baile" | "tatuaje"
+  category: InstructorSpecialtyCategory
   price: number
   list_price: number
   current_price: number
@@ -109,7 +119,7 @@ export interface CartItem {
 export interface DiscountRule {
   id: string
   name: string
-  category: "baile" | "tatuaje" | null
+  category: InstructorSpecialtyCategory | null
   combo_kind: "threshold_discount" | "buy_x_get_y"
   min_courses: number
   discount_type: "percentage" | "fixed" | null

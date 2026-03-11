@@ -5,8 +5,30 @@ import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { recordAdminAuditLog } from "@/actions/admin/audit"
+import {
+  COP_MAX_PESOS,
+  getLengthError,
+  normalizeWhitespace,
+  parseCopInput,
+  parseWholeNumberInput,
+} from "@/lib/admin-form-utils"
 
 import type { DiscountRule } from "@/types"
+
+const COMBO_NAME_MAX_LENGTH = 80
+
+export type ComboFieldName =
+  | "name"
+  | "minCourses"
+  | "discountValue"
+  | "buyQuantity"
+  | "freeQuantity"
+
+export interface ComboActionState {
+  error?: string
+  success?: boolean
+  fieldErrors?: Partial<Record<ComboFieldName, string>>
+}
 
 async function verifyAdmin() {
   const user = await getCurrentUser()
@@ -16,88 +38,175 @@ async function verifyAdmin() {
   return user
 }
 
+function buildComboFieldErrorState(
+  fieldErrors: Partial<Record<ComboFieldName, string>>
+): ComboActionState {
+  return {
+    error: "Corrige los campos marcados.",
+    fieldErrors,
+  }
+}
+
 function parseComboFormData(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim()
+  const name = normalizeWhitespace(String(formData.get("name") ?? ""))
   const categoryRaw = String(formData.get("category") ?? "").trim()
   const comboKind = String(formData.get("comboKind") ?? "").trim()
-  const minCourses = Number(formData.get("minCourses") ?? 0)
   const discountType = String(formData.get("discountType") ?? "").trim()
-  const discountValueRaw = Number(formData.get("discountValue") ?? 0)
-  const buyQuantity = Number(formData.get("buyQuantity") ?? 0)
-  const freeQuantity = Number(formData.get("freeQuantity") ?? 0)
+  const minCoursesRaw = String(formData.get("minCourses") ?? "")
+  const discountValueRaw = String(formData.get("discountValue") ?? "")
+  const buyQuantityRaw = String(formData.get("buyQuantity") ?? "")
+  const freeQuantityRaw = String(formData.get("freeQuantity") ?? "")
   const isActive = formData.get("isActive") === "on"
+  const fieldErrors: Partial<Record<ComboFieldName, string>> = {}
 
-  if (!name) {
-    throw new Error("El nombre del combo es obligatorio.")
+  const nameError = getLengthError({
+    value: name,
+    label: "El nombre del combo",
+    required: true,
+    max: COMBO_NAME_MAX_LENGTH,
+  })
+  if (nameError) {
+    fieldErrors.name = nameError
   }
 
   if (!["threshold_discount", "buy_x_get_y"].includes(comboKind)) {
-    throw new Error("Tipo de combo invalido.")
+    return {
+      fieldErrors: {
+        ...fieldErrors,
+        minCourses: "Selecciona un tipo de combo valido.",
+      },
+    }
   }
 
-  if (!Number.isFinite(minCourses) || minCourses < 1) {
-    throw new Error("La cantidad minima debe ser al menos 1.")
-  }
+  const minCourses = parseWholeNumberInput(minCoursesRaw, {
+    label: "La cantidad minima",
+    min: 1,
+    max: 999,
+  })
 
   if (comboKind === "threshold_discount") {
-    if (minCourses < 2) {
-      throw new Error("Los combos por umbral requieren minimo 2 cursos.")
+    if (minCourses.error || minCourses.value === null) {
+      fieldErrors.minCourses =
+        minCourses.error ?? "La cantidad minima debe ser valida."
+    } else if (minCourses.value < 2) {
+      fieldErrors.minCourses = "Los combos por umbral requieren minimo 2 cursos."
     }
 
     if (!["percentage", "fixed"].includes(discountType)) {
-      throw new Error("Tipo de descuento invalido.")
+      fieldErrors.discountValue = "Selecciona un tipo de descuento valido."
+    } else if (discountType === "percentage") {
+      const discountValue = parseWholeNumberInput(discountValueRaw, {
+        label: "El descuento porcentual",
+        required: true,
+        min: 1,
+        max: 100,
+      })
+
+      if (discountValue.error || discountValue.value === null) {
+        fieldErrors.discountValue =
+          discountValue.error ?? "Ingresa un descuento porcentual valido."
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        return { fieldErrors }
+      }
+
+      return {
+        fieldErrors,
+        payload: {
+          name,
+          category:
+            categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
+          combo_kind: "threshold_discount" as const,
+          min_courses: minCourses.value!,
+          discount_type: "percentage" as const,
+          discount_value: discountValue.value!,
+          buy_quantity: null,
+          free_quantity: null,
+          is_active: isActive,
+        },
+      }
     }
 
-    if (!Number.isFinite(discountValueRaw) || discountValueRaw <= 0) {
-      throw new Error("El valor del descuento debe ser mayor a 0.")
+    const discountValue = parseCopInput(discountValueRaw, {
+      label: "El descuento fijo",
+      required: true,
+      minPesos: 1,
+      maxPesos: COP_MAX_PESOS,
+    })
+
+    if (discountValue.error || discountValue.pesos === null) {
+      fieldErrors.discountValue =
+        discountValue.error ?? "Ingresa un descuento fijo valido."
     }
 
-    const discountValue =
-      discountType === "fixed"
-        ? Math.round(discountValueRaw * 100)
-        : Math.round(discountValueRaw)
-
-    if (discountType === "percentage" && (discountValue < 1 || discountValue > 100)) {
-      throw new Error("El descuento porcentual del combo debe estar entre 1 y 100.")
+    if (Object.keys(fieldErrors).length > 0) {
+      return { fieldErrors }
     }
 
     return {
-      name,
-      category:
-        categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
-      combo_kind: "threshold_discount" as const,
-      min_courses: Math.round(minCourses),
-      discount_type: discountType as "percentage" | "fixed",
-      discount_value: Math.round(discountValue),
-      buy_quantity: null,
-      free_quantity: null,
-      is_active: isActive,
-    }
+      fieldErrors,
+        payload: {
+          name,
+          category:
+            categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
+          combo_kind: "threshold_discount" as const,
+          min_courses: minCourses.value!,
+          discount_type: "fixed" as const,
+          discount_value: discountValue.pesos! * 100,
+          buy_quantity: null,
+          free_quantity: null,
+          is_active: isActive,
+        },
+      }
   }
 
-  if (!Number.isFinite(buyQuantity) || buyQuantity < 1) {
-    throw new Error("La cantidad a llevar debe ser al menos 1.")
+  const buyQuantity = parseWholeNumberInput(buyQuantityRaw, {
+    label: "La cantidad a llevar",
+    min: 1,
+    max: 999,
+  })
+  if (buyQuantity.error || buyQuantity.value === null) {
+    fieldErrors.buyQuantity =
+      buyQuantity.error ?? "La cantidad a llevar debe ser valida."
   }
 
-  if (!Number.isFinite(freeQuantity) || freeQuantity < 1) {
-    throw new Error("La cantidad gratis debe ser al menos 1.")
+  const freeQuantity = parseWholeNumberInput(freeQuantityRaw, {
+    label: "La cantidad gratis",
+    min: 1,
+    max: 999,
+  })
+  if (freeQuantity.error || freeQuantity.value === null) {
+    fieldErrors.freeQuantity =
+      freeQuantity.error ?? "La cantidad gratis debe ser valida."
   }
 
-  if (buyQuantity + freeQuantity < 2) {
-    throw new Error("El combo gratis debe involucrar al menos 2 cursos.")
+  if (
+    buyQuantity.value !== null &&
+    freeQuantity.value !== null &&
+    buyQuantity.value + freeQuantity.value < 2
+  ) {
+    fieldErrors.freeQuantity = "El combo gratis debe involucrar al menos 2 cursos."
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return { fieldErrors }
   }
 
   return {
-    name,
-    category:
-      categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
-    combo_kind: "buy_x_get_y" as const,
-    min_courses: Math.round(buyQuantity + freeQuantity),
-    discount_type: null,
-    discount_value: null,
-    buy_quantity: Math.round(buyQuantity),
-    free_quantity: Math.round(freeQuantity),
-    is_active: isActive,
+    fieldErrors,
+    payload: {
+      name,
+      category:
+        categoryRaw === "baile" || categoryRaw === "tatuaje" ? categoryRaw : null,
+      combo_kind: "buy_x_get_y" as const,
+      min_courses: buyQuantity.value! + freeQuantity.value!,
+      discount_type: null,
+      discount_value: null,
+      buy_quantity: buyQuantity.value!,
+      free_quantity: freeQuantity.value!,
+      is_active: isActive,
+    },
   }
 }
 
@@ -119,21 +228,27 @@ export async function getDiscountRules(): Promise<DiscountRule[]> {
   return (data ?? []) as DiscountRule[]
 }
 
-export async function createCombo(formData: FormData) {
+export async function createCombo(
+  _prevState: ComboActionState,
+  formData: FormData
+): Promise<ComboActionState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const supabase = await createServerClient()
-  const payload = parseComboFormData(formData)
+  const parsed = parseComboFormData(formData)
+  if (!parsed.payload) {
+    return buildComboFieldErrorState(parsed.fieldErrors)
+  }
 
   const { data, error } = await supabase
     .from("discount_rules")
-    .insert(payload)
+    .insert(parsed.payload)
     .select("*")
     .single()
 
   if (error) {
-    throw new Error("No se pudo crear el combo.")
+    return { error: "No se pudo crear el combo. Intenta de nuevo." }
   }
 
   await recordAdminAuditLog({
@@ -144,14 +259,22 @@ export async function createCombo(formData: FormData) {
   })
 
   revalidatePath("/admin/combos")
+  return { success: true }
 }
 
-export async function updateCombo(comboId: string, formData: FormData) {
+export async function updateCombo(
+  comboId: string,
+  _prevState: ComboActionState,
+  formData: FormData
+): Promise<ComboActionState> {
   const admin = await verifyAdmin()
-  if (!admin) throw new Error("No autorizado.")
+  if (!admin) return { error: "No autorizado." }
 
   const supabase = await createServerClient()
-  const payload = parseComboFormData(formData)
+  const parsed = parseComboFormData(formData)
+  if (!parsed.payload) {
+    return buildComboFieldErrorState(parsed.fieldErrors)
+  }
 
   const { data: before } = await supabase
     .from("discount_rules")
@@ -161,13 +284,13 @@ export async function updateCombo(comboId: string, formData: FormData) {
 
   const { data, error } = await supabase
     .from("discount_rules")
-    .update(payload)
+    .update(parsed.payload)
     .eq("id", comboId)
     .select("*")
     .single()
 
   if (error) {
-    throw new Error("No se pudo actualizar el combo.")
+    return { error: "No se pudo actualizar el combo. Intenta de nuevo." }
   }
 
   await recordAdminAuditLog({
@@ -179,6 +302,7 @@ export async function updateCombo(comboId: string, formData: FormData) {
   })
 
   revalidatePath("/admin/combos")
+  return { success: true }
 }
 
 export async function deleteCombo(comboId: string) {

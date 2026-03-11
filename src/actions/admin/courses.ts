@@ -14,12 +14,37 @@ import {
 import { env } from "@/lib/env"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { slugify } from "@/lib/utils"
+import {
+  COP_MAX_PESOS,
+  COURSE_DESCRIPTION_MAX_LENGTH,
+  COURSE_SHORT_DESCRIPTION_MAX_LENGTH,
+  COURSE_SHORT_DESCRIPTION_MIN_LENGTH,
+  COURSE_TITLE_MAX_LENGTH,
+  COURSE_TITLE_MIN_LENGTH,
+  getLengthError,
+  normalizeOptionalText,
+  normalizeWhitespace,
+  parseCopInput,
+  parseWholeNumberInput,
+  validateImageFile,
+} from "@/lib/admin-form-utils"
 
 import type { BunnyUploadSession, Course, Instructor } from "@/types"
+
+export type CourseFieldName =
+  | "title"
+  | "shortDescription"
+  | "description"
+  | "category"
+  | "instructorId"
+  | "price"
+  | "courseDiscountValue"
+  | "thumbnail"
 
 export interface CourseActionState {
   error?: string
   success?: boolean
+  fieldErrors?: Partial<Record<CourseFieldName, string>>
 }
 
 export interface CoursePreviewActionState {
@@ -48,9 +73,6 @@ async function uploadThumbnail(
   file: File,
   courseId: string
 ): Promise<string | null> {
-  if (!ALLOWED_TYPES.includes(file.type)) return null
-  if (file.size > MAX_THUMBNAIL_SIZE) return null
-
   const ext = file.name.split(".").pop() ?? "jpg"
   const path = `${courseId}/thumbnail.${ext}`
 
@@ -69,75 +91,186 @@ async function uploadThumbnail(
   return data.publicUrl
 }
 
-function parseCourseDiscountConfig(input: {
-  formData: FormData
-  isFree: boolean
-  priceInCents: number
-}):
-  | {
-      course_discount_enabled: false
-      course_discount_type: null
-      course_discount_value: null
-    }
-  | {
-      course_discount_enabled: true
-      course_discount_type: "percentage" | "fixed"
-      course_discount_value: number
-    }
-  | { error: string } {
-  if (input.isFree) {
-    return {
-      course_discount_enabled: false,
-      course_discount_type: null,
-      course_discount_value: null,
+function buildCourseFieldErrorState(
+  fieldErrors: Partial<Record<CourseFieldName, string>>
+): CourseActionState {
+  return {
+    error: "Corrige los campos marcados.",
+    fieldErrors,
+  }
+}
+
+function validateCourseFormData(formData: FormData) {
+  const title = normalizeWhitespace(String(formData.get("title") ?? ""))
+  const description = normalizeOptionalText(String(formData.get("description") ?? ""))
+  const shortDescription = normalizeOptionalText(
+    String(formData.get("shortDescription") ?? "")
+  )
+  const category = String(formData.get("category") ?? "").trim()
+  const instructorId = String(formData.get("instructorId") ?? "").trim()
+  const priceRaw = String(formData.get("price") ?? "")
+  const isFree = formData.get("isFree") === "on"
+  const isPublished = formData.get("isPublished") === "on"
+  const courseDiscountEnabled =
+    formData.get("courseDiscountEnabled") === "on" && !isFree
+  const courseDiscountType = String(
+    formData.get("courseDiscountType") ?? ""
+  ).trim()
+  const courseDiscountValueRaw = String(
+    formData.get("courseDiscountValue") ?? ""
+  ).trim()
+  const thumbnailCandidate = formData.get("thumbnail")
+  const thumbnailFile =
+    thumbnailCandidate instanceof File && thumbnailCandidate.size > 0
+      ? thumbnailCandidate
+      : null
+
+  const fieldErrors: Partial<Record<CourseFieldName, string>> = {}
+
+  const titleError = getLengthError({
+    value: title,
+    label: "El titulo",
+    required: true,
+    min: COURSE_TITLE_MIN_LENGTH,
+    max: COURSE_TITLE_MAX_LENGTH,
+  })
+  if (titleError) {
+    fieldErrors.title = titleError
+  }
+
+  if (shortDescription) {
+    const shortDescriptionError = getLengthError({
+      value: shortDescription,
+      label: "La descripcion corta",
+      min: COURSE_SHORT_DESCRIPTION_MIN_LENGTH,
+      max: COURSE_SHORT_DESCRIPTION_MAX_LENGTH,
+    })
+    if (shortDescriptionError) {
+      fieldErrors.shortDescription = shortDescriptionError
     }
   }
 
-  const enabled = input.formData.get("courseDiscountEnabled") === "on"
-  if (!enabled) {
-    return {
-      course_discount_enabled: false,
-      course_discount_type: null,
-      course_discount_value: null,
+  if (description) {
+    const descriptionError = getLengthError({
+      value: description,
+      label: "La descripcion completa",
+      max: COURSE_DESCRIPTION_MAX_LENGTH,
+    })
+    if (descriptionError) {
+      fieldErrors.description = descriptionError
     }
   }
 
-  const type = String(input.formData.get("courseDiscountType") ?? "").trim()
-  const valueRaw = Number(input.formData.get("courseDiscountValue") ?? 0)
-
-  if (type !== "percentage" && type !== "fixed") {
-    return { error: "Selecciona un tipo de descuento valido para el curso." }
+  if (!category || !["baile", "tatuaje"].includes(category)) {
+    fieldErrors.category = "Selecciona una categoria valida."
   }
 
-  if (!Number.isFinite(valueRaw) || valueRaw <= 0) {
-    return { error: "El valor del descuento del curso debe ser mayor a 0." }
+  if (!instructorId) {
+    fieldErrors.instructorId = "Selecciona un instructor."
   }
 
-  if (type === "percentage") {
-    const percentage = Math.round(valueRaw)
-    if (percentage < 1 || percentage > 100) {
-      return { error: "El descuento porcentual del curso debe estar entre 1 y 100." }
-    }
+  const parsedPrice = isFree
+    ? { pesos: 0 }
+    : parseCopInput(priceRaw, {
+        label: "El precio",
+        required: true,
+        minPesos: 1,
+        maxPesos: COP_MAX_PESOS,
+      })
 
-    return {
-      course_discount_enabled: true,
-      course_discount_type: "percentage",
-      course_discount_value: percentage,
-    }
+  if (parsedPrice.error) {
+    fieldErrors.price = parsedPrice.error
   }
 
-  const fixedAmount = Math.round(valueRaw * 100)
-  if (fixedAmount > input.priceInCents) {
-    return {
-      error:
-        "El descuento fijo del curso no puede ser mayor al precio lista actual.",
+  const thumbnailError = validateImageFile(thumbnailFile, {
+    label: "La portada",
+    allowedTypes: ALLOWED_TYPES,
+    maxSizeBytes: MAX_THUMBNAIL_SIZE,
+  })
+  if (thumbnailError) {
+    fieldErrors.thumbnail = thumbnailError
+  }
+
+  let discountConfig:
+    | {
+        course_discount_enabled: false
+        course_discount_type: null
+        course_discount_value: null
+      }
+    | {
+        course_discount_enabled: true
+        course_discount_type: "percentage" | "fixed"
+        course_discount_value: number
+      } = {
+    course_discount_enabled: false,
+    course_discount_type: null,
+    course_discount_value: null,
+  }
+
+  if (courseDiscountEnabled) {
+    if (courseDiscountType !== "percentage" && courseDiscountType !== "fixed") {
+      fieldErrors.courseDiscountValue =
+        "Selecciona un tipo de descuento valido."
+    } else if (courseDiscountType === "percentage") {
+      const parsedPercentage = parseWholeNumberInput(courseDiscountValueRaw, {
+        label: "El descuento porcentual",
+        required: true,
+        min: 1,
+        max: 100,
+      })
+
+      if (parsedPercentage.error || parsedPercentage.value === null) {
+        fieldErrors.courseDiscountValue =
+          parsedPercentage.error ??
+          "Ingresa un descuento porcentual valido."
+      } else {
+        discountConfig = {
+          course_discount_enabled: true,
+          course_discount_type: "percentage",
+          course_discount_value: parsedPercentage.value,
+        }
+      }
+    } else {
+      const parsedFixedAmount = parseCopInput(courseDiscountValueRaw, {
+        label: "El descuento fijo",
+        required: true,
+        minPesos: 1,
+        maxPesos: parsedPrice.pesos ?? COP_MAX_PESOS,
+      })
+
+      if (parsedFixedAmount.error || parsedFixedAmount.pesos === null) {
+        fieldErrors.courseDiscountValue =
+          parsedFixedAmount.error ?? "Ingresa un descuento fijo valido."
+      } else if (
+        typeof parsedPrice.pesos === "number" &&
+        parsedFixedAmount.pesos > parsedPrice.pesos
+      ) {
+        fieldErrors.courseDiscountValue =
+          "El descuento fijo no puede superar el precio lista actual."
+      } else {
+        discountConfig = {
+          course_discount_enabled: true,
+          course_discount_type: "fixed",
+          course_discount_value: parsedFixedAmount.pesos * 100,
+        }
+      }
     }
   }
 
   return {
-    course_discount_enabled: true,
-    course_discount_type: "fixed",
-    course_discount_value: fixedAmount,
+    fieldErrors,
+    values: {
+      title,
+      description,
+      shortDescription,
+      category,
+      instructorId,
+      isFree,
+      isPublished,
+      priceInCents: (parsedPrice.pesos ?? 0) * 100,
+      thumbnailFile,
+      discountConfig,
+    },
   }
 }
 
@@ -148,42 +281,38 @@ export async function createCourse(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const title = formData.get("title") as string
-  const description = (formData.get("description") as string) || null
-  const shortDescription = (formData.get("shortDescription") as string) || null
-  const category = formData.get("category") as string
-  const instructorId = formData.get("instructorId") as string
-  const priceRaw = formData.get("price") as string
-  const isFree = formData.get("isFree") === "on"
-
-  if (!title?.trim()) {
-    return { error: "El titulo es obligatorio." }
-  }
-  if (!category || !["baile", "tatuaje"].includes(category)) {
-    return { error: "La categoria debe ser 'baile' o 'tatuaje'." }
-  }
-  if (!instructorId) {
-    return { error: "El instructor es obligatorio." }
+  const validation = validateCourseFormData(formData)
+  if (Object.keys(validation.fieldErrors).length > 0) {
+    return buildCourseFieldErrorState(validation.fieldErrors)
   }
 
-  // Price: in COP pesos from form, stored as centavos
-  const priceInCents = isFree ? 0 : Math.round(Number(priceRaw) * 100)
-  if (!isFree && (isNaN(priceInCents) || priceInCents <= 0)) {
-    return { error: "El precio debe ser mayor a 0 para cursos pagos." }
-  }
-
-  const discountConfig = parseCourseDiscountConfig({
-    formData,
+  const {
+    title,
+    description,
+    shortDescription,
+    category,
+    instructorId,
     isFree,
     priceInCents,
-  })
-  if ("error" in discountConfig) {
-    return { error: discountConfig.error }
-  }
+    thumbnailFile,
+    discountConfig,
+  } = validation.values
 
   const slug = slugify(title)
 
   const supabase = await createServerClient()
+
+  const { data: instructor } = await supabase
+    .from("instructors")
+    .select("id")
+    .eq("id", instructorId)
+    .maybeSingle()
+
+  if (!instructor) {
+    return buildCourseFieldErrorState({
+      instructorId: "Selecciona un instructor valido.",
+    })
+  }
 
   // Ensure unique slug
   const { data: existing } = await supabase
@@ -216,8 +345,7 @@ export async function createCourse(
   }
 
   // H-06: Upload thumbnail if provided
-  const thumbnailFile = formData.get("thumbnail") as File | null
-  if (thumbnailFile && thumbnailFile.size > 0) {
+  if (thumbnailFile) {
     const thumbnailUrl = await uploadThumbnail(thumbnailFile, course.id)
     if (thumbnailUrl) {
       await supabase
@@ -239,40 +367,37 @@ export async function updateCourse(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const title = formData.get("title") as string
-  const description = (formData.get("description") as string) || null
-  const shortDescription = (formData.get("shortDescription") as string) || null
-  const category = formData.get("category") as string
-  const instructorId = formData.get("instructorId") as string
-  const priceRaw = formData.get("price") as string
-  const isFree = formData.get("isFree") === "on"
-  const isPublished = formData.get("isPublished") === "on"
-
-  if (!title?.trim()) {
-    return { error: "El titulo es obligatorio." }
-  }
-  if (!category || !["baile", "tatuaje"].includes(category)) {
-    return { error: "La categoria debe ser 'baile' o 'tatuaje'." }
-  }
-  if (!instructorId) {
-    return { error: "El instructor es obligatorio." }
+  const validation = validateCourseFormData(formData)
+  if (Object.keys(validation.fieldErrors).length > 0) {
+    return buildCourseFieldErrorState(validation.fieldErrors)
   }
 
-  const priceInCents = isFree ? 0 : Math.round(Number(priceRaw) * 100)
-  if (!isFree && (isNaN(priceInCents) || priceInCents <= 0)) {
-    return { error: "El precio debe ser mayor a 0 para cursos pagos." }
-  }
-
-  const discountConfig = parseCourseDiscountConfig({
-    formData,
+  const {
+    title,
+    description,
+    shortDescription,
+    category,
+    instructorId,
     isFree,
+    isPublished,
     priceInCents,
-  })
-  if ("error" in discountConfig) {
-    return { error: discountConfig.error }
-  }
+    thumbnailFile,
+    discountConfig,
+  } = validation.values
 
   const supabase = await createServerClient()
+
+  const { data: instructor } = await supabase
+    .from("instructors")
+    .select("id")
+    .eq("id", instructorId)
+    .maybeSingle()
+
+  if (!instructor) {
+    return buildCourseFieldErrorState({
+      instructorId: "Selecciona un instructor valido.",
+    })
+  }
 
   // Fetch current course to detect title change and publish toggle
   const { data: current } = await supabase
@@ -338,8 +463,7 @@ export async function updateCourse(
   }
 
   // H-06: Upload thumbnail if provided
-  const thumbnailFile = formData.get("thumbnail") as File | null
-  if (thumbnailFile && thumbnailFile.size > 0) {
+  if (thumbnailFile) {
     const thumbnailUrl = await uploadThumbnail(thumbnailFile, courseId)
     if (thumbnailUrl) {
       updateData.thumbnail_url = thumbnailUrl
