@@ -1,19 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useActionState, useState } from "react"
 
-import { formatCOP } from "@/lib/utils"
+import type { ComboActionState, ComboFieldName } from "@/actions/admin/combos"
+import { CopCurrencyInput } from "@/components/admin/CopCurrencyInput"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import {
+  COP_MAX_PESOS,
+  getLengthError,
+  parseCopInput,
+  parseWholeNumberInput,
+} from "@/lib/admin-form-utils"
+import { formatCOP } from "@/lib/utils"
 
 import type { DiscountRule } from "@/types"
 
 const selectClassName =
   "border-input dark:bg-input/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
+const COMBO_NAME_MAX_LENGTH = 80
 
 type ComboKind = "threshold_discount" | "buy_x_get_y"
 type DiscountType = "percentage" | "fixed"
+type ComboFieldErrors = NonNullable<ComboActionState["fieldErrors"]>
 
 function buildPreview(input: {
   comboKind: ComboKind
@@ -38,15 +48,118 @@ function buildPreview(input: {
   return `Al llevar minimo ${Math.max(2, input.minCourses)} cursos ${scope}, se aplica un descuento de ${valueLabel}.`
 }
 
+function getClientComboFieldErrors(input: {
+  name: string
+  comboKind: ComboKind
+  minCourses: string
+  discountType: DiscountType
+  discountValue: string
+  buyQuantity: string
+  freeQuantity: string
+}) {
+  const fieldErrors: ComboFieldErrors = {}
+  const name = input.name.trim().replace(/\s+/g, " ")
+
+  const nameError = getLengthError({
+    value: name,
+    label: "El nombre del combo",
+    required: true,
+    max: COMBO_NAME_MAX_LENGTH,
+  })
+  if (nameError) {
+    fieldErrors.name = nameError
+  }
+
+  if (input.comboKind === "threshold_discount") {
+    const minCourses = parseWholeNumberInput(input.minCourses, {
+      label: "La cantidad minima",
+      min: 2,
+      max: 999,
+      required: true,
+    })
+    if (minCourses.error) {
+      fieldErrors.minCourses = minCourses.error
+    }
+
+    if (input.discountType === "percentage") {
+      const discountValue = parseWholeNumberInput(input.discountValue, {
+        label: "El descuento porcentual",
+        min: 1,
+        max: 100,
+        required: true,
+      })
+      if (discountValue.error) {
+        fieldErrors.discountValue = discountValue.error
+      }
+    } else {
+      const discountValue = parseCopInput(input.discountValue, {
+        label: "El descuento fijo",
+        minPesos: 1,
+        maxPesos: COP_MAX_PESOS,
+        required: true,
+      })
+      if (discountValue.error) {
+        fieldErrors.discountValue = discountValue.error
+      }
+    }
+
+    return fieldErrors
+  }
+
+  const buyQuantity = parseWholeNumberInput(input.buyQuantity, {
+    label: "La cantidad a llevar",
+    min: 1,
+    max: 999,
+    required: true,
+  })
+  if (buyQuantity.error) {
+    fieldErrors.buyQuantity = buyQuantity.error
+  }
+
+  const freeQuantity = parseWholeNumberInput(input.freeQuantity, {
+    label: "La cantidad gratis",
+    min: 1,
+    max: 999,
+    required: true,
+  })
+  if (freeQuantity.error) {
+    fieldErrors.freeQuantity = freeQuantity.error
+  }
+
+  return fieldErrors
+}
+
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null
+
+  return <p className="text-sm text-destructive">{message}</p>
+}
+
 function ComboRuleForm({
   initialRule,
   action,
   submitLabel,
 }: {
   initialRule?: DiscountRule
-  action: (formData: FormData) => void | Promise<void>
+  action: (
+    prevState: ComboActionState,
+    formData: FormData
+  ) => Promise<ComboActionState>
   submitLabel: string
 }) {
+  const [state, formAction, isPending] = useActionState<ComboActionState, FormData>(
+    action,
+    {}
+  )
+  const [didSubmit, setDidSubmit] = useState(false)
+  const [touchedFields, setTouchedFields] = useState<
+    Partial<Record<ComboFieldName, boolean>>
+  >({})
+  const [dirtyFields, setDirtyFields] = useState<
+    Partial<Record<ComboFieldName, boolean>>
+  >({})
+
+  const [name, setName] = useState(initialRule?.name ?? "")
   const [comboKind, setComboKind] = useState<ComboKind>(
     initialRule?.combo_kind ?? "threshold_discount"
   )
@@ -59,7 +172,7 @@ function ComboRuleForm({
   )
   const [discountValue, setDiscountValue] = useState(
     initialRule?.discount_type === "fixed" && initialRule.discount_value
-      ? String(initialRule.discount_value / 100)
+      ? String(Math.round(initialRule.discount_value / 100))
       : String(initialRule?.discount_value ?? 10)
   )
   const [buyQuantity, setBuyQuantity] = useState(
@@ -68,28 +181,98 @@ function ComboRuleForm({
   const [freeQuantity, setFreeQuantity] = useState(
     String(initialRule?.free_quantity ?? 1)
   )
+  const [isActive, setIsActive] = useState(initialRule?.is_active ?? true)
+
+  const clientFieldErrors = getClientComboFieldErrors({
+    name,
+    comboKind,
+    minCourses,
+    discountType,
+    discountValue,
+    buyQuantity,
+    freeQuantity,
+  })
+
+  function markTouched(field: ComboFieldName) {
+    setTouchedFields((current) =>
+      current[field] ? current : { ...current, [field]: true }
+    )
+  }
+
+  function markDirty(field: ComboFieldName) {
+    setDirtyFields((current) =>
+      current[field] ? current : { ...current, [field]: true }
+    )
+  }
+
+  function getFieldError(field: ComboFieldName) {
+    if ((didSubmit || touchedFields[field]) && clientFieldErrors[field]) {
+      return clientFieldErrors[field]
+    }
+
+    return dirtyFields[field] ? undefined : state.fieldErrors?.[field]
+  }
 
   const preview = buildPreview({
     comboKind,
     category,
-    minCourses: Number(minCourses),
+    minCourses: Number(minCourses) || 2,
     discountType,
-    discountValue: Number(discountValue),
-    buyQuantity: Number(buyQuantity),
-    freeQuantity: Number(freeQuantity),
+    discountValue: Number(discountValue) || 0,
+    buyQuantity: Number(buyQuantity) || 1,
+    freeQuantity: Number(freeQuantity) || 1,
   })
+  const hasClientErrors = Object.keys(clientFieldErrors).length > 0
+  const shouldShowClientBanner = didSubmit && hasClientErrors
+  const shouldShowServerBanner =
+    Boolean(state.error) &&
+    (!state.fieldErrors || Object.keys(dirtyFields).length === 0)
 
   return (
     <form
-      action={action}
+      action={formAction}
       className="space-y-4"
       data-testid={initialRule ? `combo-form-${initialRule.id}` : "combo-create-form"}
+      onSubmitCapture={(event) => {
+        setDidSubmit(true)
+
+        if (hasClientErrors) {
+          event.preventDefault()
+          return
+        }
+
+        setDirtyFields({})
+      }}
     >
+      {(shouldShowClientBanner || shouldShowServerBanner) && (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {state.error ?? "Corrige los campos marcados."}
+        </div>
+      )}
+      {state.success && (
+        <div className="rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-700">
+          {initialRule ? "Combo actualizado." : "Combo creado."}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           <label className="text-sm font-medium">Nombre</label>
-          <Input name="name" defaultValue={initialRule?.name ?? ""} required />
+          <Input
+            name="name"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value)
+              markDirty("name")
+            }}
+            onBlur={() => markTouched("name")}
+            maxLength={COMBO_NAME_MAX_LENGTH}
+            required
+            aria-invalid={Boolean(getFieldError("name"))}
+          />
+          <FieldErrorText message={getFieldError("name")} />
         </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium">Categoria</label>
           <select
@@ -111,9 +294,7 @@ function ComboRuleForm({
           name="comboKind"
           className={selectClassName}
           value={comboKind}
-          onChange={(event) =>
-            setComboKind(event.target.value as ComboKind)
-          }
+          onChange={(event) => setComboKind(event.target.value as ComboKind)}
         >
           <option value="threshold_discount">Descuento al llevar X</option>
           <option value="buy_x_get_y">Lleva X y recibe Y gratis</option>
@@ -128,9 +309,17 @@ function ComboRuleForm({
               name="minCourses"
               type="number"
               min="2"
+              max="999"
+              step="1"
               value={minCourses}
-              onChange={(event) => setMinCourses(event.target.value)}
+              onChange={(event) => {
+                setMinCourses(event.target.value)
+                markDirty("minCourses")
+              }}
+              onBlur={() => markTouched("minCourses")}
+              aria-invalid={Boolean(getFieldError("minCourses"))}
             />
+            <FieldErrorText message={getFieldError("minCourses")} />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Tipo</label>
@@ -138,9 +327,19 @@ function ComboRuleForm({
               name="discountType"
               className={selectClassName}
               value={discountType}
-              onChange={(event) =>
-                setDiscountType(event.target.value as DiscountType)
-              }
+              onChange={(event) => {
+                const nextType = event.target.value as DiscountType
+                setDiscountType(nextType)
+                setDiscountValue((current) => {
+                  if (nextType === "percentage") {
+                    const parsed = Number(current || 0)
+                    return parsed >= 1 && parsed <= 100 ? current : "10"
+                  }
+
+                  return current
+                })
+                markDirty("discountValue")
+              }}
             >
               <option value="percentage">Porcentaje</option>
               <option value="fixed">Monto fijo (COP)</option>
@@ -148,14 +347,40 @@ function ComboRuleForm({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Valor</label>
-            <Input
-              name="discountValue"
-              type="number"
-              min="1"
-              max={discountType === "percentage" ? "100" : undefined}
-              value={discountValue}
-              onChange={(event) => setDiscountValue(event.target.value)}
-            />
+            {discountType === "percentage" ? (
+              <Input
+                name="discountValue"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={discountValue}
+                onChange={(event) => {
+                  setDiscountValue(event.target.value)
+                  markDirty("discountValue")
+                }}
+                onBlur={() => markTouched("discountValue")}
+                aria-invalid={Boolean(getFieldError("discountValue"))}
+              />
+            ) : (
+              <CopCurrencyInput
+                name="discountValue"
+                value={discountValue}
+                onValueChange={(value) => {
+                  setDiscountValue(value)
+                  markDirty("discountValue")
+                }}
+                onBlur={() => markTouched("discountValue")}
+                placeholder="$5.000"
+                aria-invalid={Boolean(getFieldError("discountValue"))}
+              />
+            )}
+            <p className="text-xs text-muted-foreground">
+              {discountType === "percentage"
+                ? "Entre 1 y 100."
+                : "Ingresa un monto entero en COP. Ejemplo: $5.000"}
+            </p>
+            <FieldErrorText message={getFieldError("discountValue")} />
           </div>
         </div>
       ) : (
@@ -166,9 +391,17 @@ function ComboRuleForm({
               name="buyQuantity"
               type="number"
               min="1"
+              max="999"
+              step="1"
               value={buyQuantity}
-              onChange={(event) => setBuyQuantity(event.target.value)}
+              onChange={(event) => {
+                setBuyQuantity(event.target.value)
+                markDirty("buyQuantity")
+              }}
+              onBlur={() => markTouched("buyQuantity")}
+              aria-invalid={Boolean(getFieldError("buyQuantity"))}
             />
+            <FieldErrorText message={getFieldError("buyQuantity")} />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Cursos gratis</label>
@@ -176,9 +409,17 @@ function ComboRuleForm({
               name="freeQuantity"
               type="number"
               min="1"
+              max="999"
+              step="1"
               value={freeQuantity}
-              onChange={(event) => setFreeQuantity(event.target.value)}
+              onChange={(event) => {
+                setFreeQuantity(event.target.value)
+                markDirty("freeQuantity")
+              }}
+              onBlur={() => markTouched("freeQuantity")}
+              aria-invalid={Boolean(getFieldError("freeQuantity"))}
             />
+            <FieldErrorText message={getFieldError("freeQuantity")} />
           </div>
         </div>
       )}
@@ -192,13 +433,16 @@ function ComboRuleForm({
         <input
           type="checkbox"
           name="isActive"
-          defaultChecked={initialRule?.is_active ?? true}
+          checked={isActive}
+          onChange={(event) => setIsActive(event.target.checked)}
           className="h-4 w-4"
         />
         Regla activa
       </label>
 
-      <Button type="submit">{submitLabel}</Button>
+      <Button type="submit" disabled={isPending}>
+        {isPending ? "Guardando..." : submitLabel}
+      </Button>
     </form>
   )
 }
@@ -206,11 +450,17 @@ function ComboRuleForm({
 interface ComboManagerProps {
   rules: Array<
     DiscountRule & {
-      updateAction: (formData: FormData) => void | Promise<void>
+      updateAction: (
+        prevState: ComboActionState,
+        formData: FormData
+      ) => Promise<ComboActionState>
       deleteAction: (formData: FormData) => void | Promise<void>
     }
   >
-  createAction: (formData: FormData) => void | Promise<void>
+  createAction: (
+    prevState: ComboActionState,
+    formData: FormData
+  ) => Promise<ComboActionState>
 }
 
 export function ComboManager({

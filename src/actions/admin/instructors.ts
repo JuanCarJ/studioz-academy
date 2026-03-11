@@ -6,6 +6,18 @@ import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { slugify } from "@/lib/utils"
+import {
+  INSTRUCTOR_BIO_MAX_LENGTH,
+  INSTRUCTOR_FULL_NAME_MAX_LENGTH,
+  INSTRUCTOR_FULL_NAME_MIN_LENGTH,
+  INSTRUCTOR_YEARS_EXPERIENCE_MAX,
+  getLengthError,
+  normalizeOptionalText,
+  normalizeWhitespace,
+  parseSpecialtiesInput,
+  parseWholeNumberInput,
+  validateImageFile,
+} from "@/lib/admin-form-utils"
 
 import type { Instructor } from "@/types"
 
@@ -16,9 +28,6 @@ async function uploadInstructorAvatar(
   file: File,
   instructorId: string
 ): Promise<string | null> {
-  if (!ALLOWED_AVATAR_TYPES.includes(file.type)) return null
-  if (file.size > MAX_AVATAR_SIZE) return null
-
   const ext = file.name.split(".").pop() ?? "jpg"
   const path = `instructors/${instructorId}/avatar.${ext}`
 
@@ -38,6 +47,9 @@ async function uploadInstructorAvatar(
 export interface InstructorActionState {
   error?: string
   success?: boolean
+  fieldErrors?: Partial<
+    Record<"fullName" | "bio" | "specialties" | "yearsExperience" | "avatar", string>
+  >
 }
 
 async function verifyAdmin() {
@@ -48,6 +60,84 @@ async function verifyAdmin() {
   return user
 }
 
+function buildInstructorFieldErrorState(
+  fieldErrors: NonNullable<InstructorActionState["fieldErrors"]>
+): InstructorActionState {
+  return {
+    error: "Corrige los campos marcados.",
+    fieldErrors,
+  }
+}
+
+function validateInstructorFormData(formData: FormData) {
+  const fullName = normalizeWhitespace(String(formData.get("fullName") ?? ""))
+  const bio = normalizeOptionalText(String(formData.get("bio") ?? ""))
+  const specialtiesRaw = String(formData.get("specialties") ?? "")
+  const yearsExperienceRaw = String(formData.get("yearsExperience") ?? "")
+  const avatarCandidate = formData.get("avatar")
+  const avatarFile =
+    avatarCandidate instanceof File && avatarCandidate.size > 0
+      ? avatarCandidate
+      : null
+  const fieldErrors: NonNullable<InstructorActionState["fieldErrors"]> = {}
+
+  const fullNameError = getLengthError({
+    value: fullName,
+    label: "El nombre",
+    required: true,
+    min: INSTRUCTOR_FULL_NAME_MIN_LENGTH,
+    max: INSTRUCTOR_FULL_NAME_MAX_LENGTH,
+  })
+  if (fullNameError) {
+    fieldErrors.fullName = fullNameError
+  }
+
+  if (bio) {
+    const bioError = getLengthError({
+      value: bio,
+      label: "La bio",
+      max: INSTRUCTOR_BIO_MAX_LENGTH,
+    })
+    if (bioError) {
+      fieldErrors.bio = bioError
+    }
+  }
+
+  const parsedSpecialties = parseSpecialtiesInput(specialtiesRaw)
+  if (parsedSpecialties.error) {
+    fieldErrors.specialties = parsedSpecialties.error
+  }
+
+  const parsedYearsExperience = parseWholeNumberInput(yearsExperienceRaw, {
+    label: "Los anos de experiencia",
+    min: 0,
+    max: INSTRUCTOR_YEARS_EXPERIENCE_MAX,
+  })
+  if (parsedYearsExperience.error) {
+    fieldErrors.yearsExperience = parsedYearsExperience.error
+  }
+
+  const avatarError = validateImageFile(avatarFile, {
+    label: "La foto",
+    allowedTypes: ALLOWED_AVATAR_TYPES,
+    maxSizeBytes: MAX_AVATAR_SIZE,
+  })
+  if (avatarError) {
+    fieldErrors.avatar = avatarError
+  }
+
+  return {
+    fieldErrors,
+    values: {
+      fullName,
+      bio,
+      specialties: parsedSpecialties.items,
+      yearsExperience: parsedYearsExperience.value,
+      avatarFile,
+    },
+  }
+}
+
 export async function createInstructor(
   _prevState: InstructorActionState,
   formData: FormData
@@ -55,22 +145,14 @@ export async function createInstructor(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const fullName = formData.get("fullName") as string
-  const bio = (formData.get("bio") as string) || null
-  const specialtiesRaw = (formData.get("specialties") as string) || ""
-  const yearsExperience = formData.get("yearsExperience")
-    ? Number(formData.get("yearsExperience"))
-    : null
-
-  if (!fullName?.trim()) {
-    return { error: "El nombre es obligatorio." }
+  const validation = validateInstructorFormData(formData)
+  if (Object.keys(validation.fieldErrors).length > 0) {
+    return buildInstructorFieldErrorState(validation.fieldErrors)
   }
 
+  const { fullName, bio, specialties, yearsExperience, avatarFile } =
+    validation.values
   const slug = slugify(fullName)
-  const specialties = specialtiesRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
 
   const supabase = await createServerClient()
 
@@ -101,8 +183,7 @@ export async function createInstructor(
   }
 
   // Upload avatar if provided
-  const avatarFile = formData.get("avatar") as File | null
-  if (avatarFile && avatarFile.size > 0) {
+  if (avatarFile) {
     const avatarUrl = await uploadInstructorAvatar(avatarFile, instructor.id)
     if (avatarUrl) {
       await supabase
@@ -126,22 +207,14 @@ export async function updateInstructor(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const fullName = formData.get("fullName") as string
-  const bio = (formData.get("bio") as string) || null
-  const specialtiesRaw = (formData.get("specialties") as string) || ""
-  const yearsExperience = formData.get("yearsExperience")
-    ? Number(formData.get("yearsExperience"))
-    : null
-  const isActive = formData.get("isActive") === "on"
-
-  if (!fullName?.trim()) {
-    return { error: "El nombre es obligatorio." }
+  const validation = validateInstructorFormData(formData)
+  if (Object.keys(validation.fieldErrors).length > 0) {
+    return buildInstructorFieldErrorState(validation.fieldErrors)
   }
 
-  const specialties = specialtiesRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const { fullName, bio, specialties, yearsExperience, avatarFile } =
+    validation.values
+  const isActive = formData.get("isActive") === "on"
 
   const supabase = await createServerClient()
 
@@ -154,8 +227,7 @@ export async function updateInstructor(
   }
 
   // Upload avatar if provided
-  const avatarFile = formData.get("avatar") as File | null
-  if (avatarFile && avatarFile.size > 0) {
+  if (avatarFile) {
     const avatarUrl = await uploadInstructorAvatar(avatarFile, instructorId)
     if (avatarUrl) {
       updateData.avatar_url = avatarUrl

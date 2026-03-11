@@ -87,7 +87,12 @@ export default async function HomePage() {
                 <Button asChild size="lg">
                   <Link href="/cursos">Explorar cursos</Link>
                 </Button>
-                <Button asChild size="lg" variant="outline">
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                >
                   <Link href="/servicios">Ver servicios</Link>
                 </Button>
                 <Button asChild size="lg" variant="ghost">
