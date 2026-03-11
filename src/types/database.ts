@@ -520,6 +520,33 @@ export type Database = {
         }
         Relationships: []
       }
+      instructor_specialty_options: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          name: string
+          normalized_name: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          name: string
+          normalized_name: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          name?: string
+          normalized_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       instructors: {
         Row: {
           avatar_url: string | null
@@ -531,7 +558,6 @@ export type Database = {
           slug: string
           specialties: string[]
           updated_at: string
-          years_experience: number | null
         }
         Insert: {
           avatar_url?: string | null
@@ -543,7 +569,6 @@ export type Database = {
           slug: string
           specialties?: string[]
           updated_at?: string
-          years_experience?: number | null
         }
         Update: {
           avatar_url?: string | null
@@ -555,7 +580,6 @@ export type Database = {
           slug?: string
           specialties?: string[]
           updated_at?: string
-          years_experience?: number | null
         }
         Relationships: []
       }

@@ -12,7 +12,8 @@ export const INSTRUCTOR_BIO_MAX_LENGTH = 1000
 export const INSTRUCTOR_SPECIALTIES_MAX_ITEMS = 10
 export const INSTRUCTOR_SPECIALTY_MIN_LENGTH = 2
 export const INSTRUCTOR_SPECIALTY_MAX_LENGTH = 40
-export const INSTRUCTOR_YEARS_EXPERIENCE_MAX = 80
+export const INSTRUCTOR_SPECIALTY_VALUE_SEPARATOR = "::"
+export const INSTRUCTOR_SPECIALTY_CATEGORIES = ["baile", "tatuaje"] as const
 
 const COP_INPUT_ALLOWED_PATTERN = /^[\s$.0-9]+$/
 
@@ -193,33 +194,54 @@ export function parseWholeNumberInput(
   return { value: parsed }
 }
 
-export function parseSpecialtiesInput(rawValue: string | null | undefined) {
-  const items = String(rawValue ?? "")
-    .split(",")
-    .map((item) => normalizeWhitespace(item))
-    .filter(Boolean)
+export function normalizeSpecialtyKey(value: string) {
+  return normalizeWhitespace(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es-CO")
+}
 
-  if (items.length > INSTRUCTOR_SPECIALTIES_MAX_ITEMS) {
-    return {
-      items,
-      error: `Puedes ingresar hasta ${INSTRUCTOR_SPECIALTIES_MAX_ITEMS} especialidades.`,
-    }
-  }
+export function normalizeSpecialtyName(value: string) {
+  const normalized = normalizeSpecialtyKey(value)
 
-  const invalidItem = items.find(
-    (item) =>
-      item.length < INSTRUCTOR_SPECIALTY_MIN_LENGTH ||
-      item.length > INSTRUCTOR_SPECIALTY_MAX_LENGTH
+  return normalized.replace(/(^|[\s/-])([a-záéíóúñü])/g, (match, prefix, char) => {
+    return `${prefix}${char.toLocaleUpperCase("es-CO")}`
+  })
+}
+
+export function getSpecialtyNameError(value: string) {
+  return getLengthError({
+    value,
+    label: "La especialidad",
+    min: INSTRUCTOR_SPECIALTY_MIN_LENGTH,
+    max: INSTRUCTOR_SPECIALTY_MAX_LENGTH,
+  })
+}
+
+export function isInstructorSpecialtyCategory(
+  value: string
+): value is (typeof INSTRUCTOR_SPECIALTY_CATEGORIES)[number] {
+  return INSTRUCTOR_SPECIALTY_CATEGORIES.includes(
+    value as (typeof INSTRUCTOR_SPECIALTY_CATEGORIES)[number]
   )
+}
 
-  if (invalidItem) {
-    return {
-      items,
-      error: `Cada especialidad debe tener entre ${INSTRUCTOR_SPECIALTY_MIN_LENGTH} y ${INSTRUCTOR_SPECIALTY_MAX_LENGTH} caracteres.`,
-    }
+export function buildInstructorSpecialtyValue(
+  category: (typeof INSTRUCTOR_SPECIALTY_CATEGORIES)[number],
+  normalizedName: string
+) {
+  return `${category}${INSTRUCTOR_SPECIALTY_VALUE_SEPARATOR}${normalizedName}`
+}
+
+export function parseInstructorSpecialtyValue(value: string) {
+  const [category, ...nameParts] = value.split(INSTRUCTOR_SPECIALTY_VALUE_SEPARATOR)
+  const normalizedName = nameParts.join(INSTRUCTOR_SPECIALTY_VALUE_SEPARATOR).trim()
+
+  if (!isInstructorSpecialtyCategory(category) || !normalizedName) {
+    return null
   }
 
-  return { items }
+  return { category, normalizedName }
 }
 
 export function validateImageFile(

@@ -566,8 +566,9 @@ test.describe.serial("Business E2E", () => {
 
     await page.getByLabel(/nombre completo/i).fill(instructorName)
     await page.getByLabel(/^bio$/i).fill("Instructor temporal QA E2E.")
-    await page.getByLabel(/especialidades/i).fill("Workshop, Demo")
-    await page.getByLabel(/anos de experiencia/i).fill("4")
+    await page.locator("#newSpecialtyCategory").click()
+    await page.getByRole("option", { name: /^tatuaje$/i }).click()
+    await page.getByLabel(/^nombre$/i).fill("Workshop")
     await page.getByRole("button", { name: /crear instructor/i }).click()
 
     const instructorSlug = slugify(instructorName)

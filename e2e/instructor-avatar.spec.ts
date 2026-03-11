@@ -54,8 +54,8 @@ test.describe.serial("Instructor Avatar", () => {
     // Fill remaining fields
     await page.getByLabel(/nombre completo/i).fill(transientInstructorName)
     await page.getByLabel(/^bio$/i).fill("Instructor QA avatar test.")
-    await page.getByLabel(/especialidades/i).fill("Salsa, Bachata")
-    await page.getByLabel(/anos de experiencia/i).fill("5")
+    await page.getByLabel(/^salsa$/i).click()
+    await page.getByLabel(/^bachata$/i).click()
     await page.getByRole("button", { name: /crear instructor/i }).click()
 
     // Verify created in DB with avatar_url pointing to Supabase storage

@@ -1,6 +1,12 @@
 "use client"
 
-import { ChangeEvent, useActionState, useEffect, useState } from "react"
+import {
+  ChangeEvent,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 
 import {
   createInstructor,
@@ -12,25 +18,37 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import {
   INSTRUCTOR_BIO_MAX_LENGTH,
   INSTRUCTOR_FULL_NAME_MAX_LENGTH,
   INSTRUCTOR_FULL_NAME_MIN_LENGTH,
   INSTRUCTOR_SPECIALTIES_MAX_ITEMS,
-  INSTRUCTOR_SPECIALTY_MAX_LENGTH,
-  INSTRUCTOR_SPECIALTY_MIN_LENGTH,
-  INSTRUCTOR_YEARS_EXPERIENCE_MAX,
+  buildInstructorSpecialtyValue,
   getLengthError,
-  parseSpecialtiesInput,
-  parseWholeNumberInput,
+  getSpecialtyNameError,
+  isInstructorSpecialtyCategory,
+  normalizeSpecialtyKey,
+  normalizeSpecialtyName,
   validateImageFile,
 } from "@/lib/admin-form-utils"
 
-import type { Instructor } from "@/types"
+import type {
+  Instructor,
+  InstructorSpecialtyCategory,
+  InstructorSpecialtyOption,
+} from "@/types"
 
 interface InstructorFormProps {
   instructor?: Instructor
+  specialtyOptions: InstructorSpecialtyOption[]
   onSuccess?: () => void
 }
 
@@ -39,12 +57,30 @@ type InstructorFieldErrors = NonNullable<InstructorActionState["fieldErrors"]>
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"]
+const CATEGORY_LABELS: Record<InstructorSpecialtyCategory, string> = {
+  baile: "Baile",
+  tatuaje: "Tatuaje",
+}
+
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null
+
+  return <p className="text-sm text-destructive">{message}</p>
+}
+
+function getSpecialtyValue(option: Pick<
+  InstructorSpecialtyOption,
+  "category" | "normalized_name"
+>) {
+  return buildInstructorSpecialtyValue(option.category, option.normalized_name)
+}
 
 function getClientInstructorFieldErrors(input: {
   fullName: string
   bio: string
-  specialties: string
-  yearsExperience: string
+  selectedSpecialties: string[]
+  newSpecialtyName: string
+  newSpecialtyCategory: string
   avatarFile: File | null
 }) {
   const fieldErrors: InstructorFieldErrors = {}
@@ -73,18 +109,30 @@ function getClientInstructorFieldErrors(input: {
     }
   }
 
-  const parsedSpecialties = parseSpecialtiesInput(input.specialties)
-  if (parsedSpecialties.error) {
-    fieldErrors.specialties = parsedSpecialties.error
+  const selectedSpecialties = new Set(input.selectedSpecialties)
+  const newSpecialtyName = normalizeSpecialtyName(input.newSpecialtyName)
+
+  if (input.newSpecialtyName.trim()) {
+    const specialtyNameError = getSpecialtyNameError(newSpecialtyName)
+    if (specialtyNameError) {
+      fieldErrors.newSpecialtyName = specialtyNameError
+    }
+
+    if (!isInstructorSpecialtyCategory(input.newSpecialtyCategory)) {
+      fieldErrors.newSpecialtyCategory =
+        "Selecciona la categoria de la nueva especialidad."
+    } else {
+      selectedSpecialties.add(
+        buildInstructorSpecialtyValue(
+          input.newSpecialtyCategory,
+          normalizeSpecialtyKey(input.newSpecialtyName)
+        )
+      )
+    }
   }
 
-  const parsedYearsExperience = parseWholeNumberInput(input.yearsExperience, {
-    label: "Los anos de experiencia",
-    min: 0,
-    max: INSTRUCTOR_YEARS_EXPERIENCE_MAX,
-  })
-  if (parsedYearsExperience.error) {
-    fieldErrors.yearsExperience = parsedYearsExperience.error
+  if (selectedSpecialties.size > INSTRUCTOR_SPECIALTIES_MAX_ITEMS) {
+    fieldErrors.specialties = `Puedes seleccionar hasta ${INSTRUCTOR_SPECIALTIES_MAX_ITEMS} especialidades.`
   }
 
   const avatarError = validateImageFile(input.avatarFile, {
@@ -99,13 +147,11 @@ function getClientInstructorFieldErrors(input: {
   return fieldErrors
 }
 
-function FieldErrorText({ message }: { message?: string }) {
-  if (!message) return null
-
-  return <p className="text-sm text-destructive">{message}</p>
-}
-
-export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
+export function InstructorForm({
+  instructor,
+  specialtyOptions,
+  onSuccess,
+}: InstructorFormProps) {
   const isEditing = !!instructor
 
   const boundAction = isEditing
@@ -132,27 +178,66 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
   const [dirtyFields, setDirtyFields] = useState<
     Partial<Record<InstructorFieldName, boolean>>
   >({})
+  const [localSpecialtyOptions, setLocalSpecialtyOptions] =
+    useState<InstructorSpecialtyOption[]>(specialtyOptions)
 
   const [fullName, setFullName] = useState(instructor?.full_name ?? "")
   const [bio, setBio] = useState(instructor?.bio ?? "")
-  const [specialties, setSpecialties] = useState(
-    instructor?.specialties?.join(", ") ?? ""
-  )
-  const [yearsExperience, setYearsExperience] = useState(
-    instructor?.years_experience?.toString() ?? ""
-  )
+  const [selectedSpecialties, setSelectedSpecialties] = useState(() => {
+    const selectedNames = new Set(instructor?.specialties ?? [])
+
+    return specialtyOptions
+      .filter((option) => selectedNames.has(option.name))
+      .map((option) => getSpecialtyValue(option))
+  })
+  const [newSpecialtyName, setNewSpecialtyName] = useState("")
+  const [newSpecialtyCategory, setNewSpecialtyCategory] = useState("")
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const pendingCreatedSpecialty = useRef<InstructorSpecialtyOption | null>(null)
 
   useEffect(() => {
     if (!previewUrl) return
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
 
+  useEffect(() => {
+    if (!state.success || !pendingCreatedSpecialty.current) return
+
+    const pendingOption = pendingCreatedSpecialty.current
+    pendingCreatedSpecialty.current = null
+
+    setLocalSpecialtyOptions((current) => {
+      const alreadyExists = current.some(
+        (option) =>
+          option.category === pendingOption.category &&
+          option.normalized_name === pendingOption.normalized_name
+      )
+      if (alreadyExists) {
+        return current
+      }
+
+      return [...current, pendingOption].sort((left, right) => {
+        if (left.category !== right.category) {
+          return left.category.localeCompare(right.category)
+        }
+        return left.name.localeCompare(right.name, "es-CO")
+      })
+    })
+
+    const specialtyValue = getSpecialtyValue(pendingOption)
+    setSelectedSpecialties((current) =>
+      current.includes(specialtyValue) ? current : [...current, specialtyValue]
+    )
+    setNewSpecialtyName("")
+    setNewSpecialtyCategory("")
+  }, [state.success])
+
   const clientFieldErrors = getClientInstructorFieldErrors({
     fullName,
     bio,
-    specialties,
-    yearsExperience,
+    selectedSpecialties,
+    newSpecialtyName,
+    newSpecialtyCategory,
     avatarFile,
   })
 
@@ -187,6 +272,53 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
     })
   }
 
+  function toggleSpecialty(value: string, checked: boolean) {
+    setSelectedSpecialties((current) => {
+      if (checked) {
+        return current.includes(value) ? current : [...current, value]
+      }
+
+      return current.filter((item) => item !== value)
+    })
+    markDirty("specialties")
+    markTouched("specialties")
+  }
+
+  function handleNewSpecialtyBlur() {
+    const normalizedName = normalizeSpecialtyName(newSpecialtyName)
+    setNewSpecialtyName(normalizedName)
+    markTouched("newSpecialtyName")
+    markTouched("newSpecialtyCategory")
+
+    if (!normalizedName || !isInstructorSpecialtyCategory(newSpecialtyCategory)) {
+      return
+    }
+
+    const existingOption = localSpecialtyOptions.find(
+      (option) =>
+        option.category === newSpecialtyCategory &&
+        option.normalized_name === normalizeSpecialtyKey(normalizedName)
+    )
+
+    if (!existingOption) return
+
+    const specialtyValue = getSpecialtyValue(existingOption)
+    setSelectedSpecialties((current) =>
+      current.includes(specialtyValue) ? current : [...current, specialtyValue]
+    )
+    markDirty("specialties")
+    markTouched("specialties")
+    setNewSpecialtyName("")
+    setNewSpecialtyCategory("")
+  }
+
+  const groupedOptions = {
+    baile: localSpecialtyOptions.filter((option) => option.category === "baile"),
+    tatuaje: localSpecialtyOptions.filter(
+      (option) => option.category === "tatuaje"
+    ),
+  }
+
   const avatarSrc = previewUrl ?? instructor?.avatar_url ?? undefined
   const hasClientErrors = Object.keys(clientFieldErrors).length > 0
   const shouldShowClientBanner = didSubmit && hasClientErrors
@@ -197,13 +329,41 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
   return (
     <form
       action={formAction}
-      className="space-y-4"
+      className="space-y-6"
       onSubmitCapture={(event) => {
         setDidSubmit(true)
+        pendingCreatedSpecialty.current = null
 
         if (hasClientErrors) {
           event.preventDefault()
           return
+        }
+
+        if (
+          newSpecialtyName.trim() &&
+          isInstructorSpecialtyCategory(newSpecialtyCategory)
+        ) {
+          const normalizedName = normalizeSpecialtyName(newSpecialtyName)
+          const normalizedKey = normalizeSpecialtyKey(normalizedName)
+          const alreadyExists = localSpecialtyOptions.some(
+            (option) =>
+              option.category === newSpecialtyCategory &&
+              option.normalized_name === normalizedKey
+          )
+
+          if (!alreadyExists) {
+            pendingCreatedSpecialty.current = {
+              id: `draft:${buildInstructorSpecialtyValue(
+                newSpecialtyCategory,
+                normalizedKey
+              )}`,
+              name: normalizedName,
+              normalized_name: normalizedKey,
+              category: newSpecialtyCategory,
+              created_at: "",
+              updated_at: "",
+            }
+          }
         }
 
         setDirtyFields({})
@@ -286,47 +446,126 @@ export function InstructorForm({ instructor, onSuccess }: InstructorFormProps) {
         <FieldErrorText message={getFieldError("bio")} />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="specialties">Especialidades (separadas por coma)</Label>
-        <Input
-          id="specialties"
-          name="specialties"
-          placeholder="Salsa, Bachata, Reggaeton"
-          value={specialties}
-          onChange={(event) => {
-            setSpecialties(event.target.value)
-            markDirty("specialties")
-          }}
-          onBlur={() => markTouched("specialties")}
-          aria-invalid={Boolean(getFieldError("specialties"))}
-        />
-        <p className="text-xs text-muted-foreground">
-          Maximo {INSTRUCTOR_SPECIALTIES_MAX_ITEMS} especialidades. Cada una debe
-          tener entre {INSTRUCTOR_SPECIALTY_MIN_LENGTH} y{" "}
-          {INSTRUCTOR_SPECIALTY_MAX_LENGTH} caracteres.
-        </p>
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label>Especialidades</Label>
+          <p className="text-xs text-muted-foreground">
+            Selecciona las disponibles y, si hace falta, crea una nueva con la
+            categoria correcta. Maximo {INSTRUCTOR_SPECIALTIES_MAX_ITEMS}.
+          </p>
+        </div>
+
+        {(Object.keys(groupedOptions) as InstructorSpecialtyCategory[]).map(
+          (category) => (
+            <div key={category} className="rounded-lg border p-4">
+              <p className="text-sm font-medium">{CATEGORY_LABELS[category]}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {groupedOptions[category].length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No hay especialidades registradas en esta categoria.
+                  </p>
+                )}
+                {groupedOptions[category].map((option) => {
+                  const specialtyValue = getSpecialtyValue(option)
+
+                  return (
+                    <label
+                      key={specialtyValue}
+                      className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={selectedSpecialties.includes(specialtyValue)}
+                        onCheckedChange={(checked) =>
+                          toggleSpecialty(specialtyValue, checked === true)
+                        }
+                        aria-label={option.name}
+                      />
+                      <span>{option.name}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        )}
+
+        {selectedSpecialties.map((value) => (
+          <input key={value} type="hidden" name="specialties" value={value} />
+        ))}
+
+        <div className="rounded-lg border border-dashed p-4">
+          <p className="text-sm font-medium">Nueva especialidad</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+            <div className="space-y-2">
+              <Label htmlFor="newSpecialtyCategory">Categoria</Label>
+              <Select
+                value={newSpecialtyCategory}
+                onValueChange={(value) => {
+                  setNewSpecialtyCategory(value)
+                  markDirty("newSpecialtyCategory")
+                }}
+              >
+                <SelectTrigger id="newSpecialtyCategory" className="w-full">
+                  <SelectValue placeholder="Selecciona una categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="baile">Baile</SelectItem>
+                  <SelectItem value="tatuaje">Tatuaje</SelectItem>
+                </SelectContent>
+              </Select>
+              <input
+                type="hidden"
+                name="newSpecialtyCategory"
+                value={newSpecialtyCategory}
+              />
+              <FieldErrorText message={getFieldError("newSpecialtyCategory")} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="newSpecialtyName">Nombre</Label>
+              <Input
+                id="newSpecialtyName"
+                name="newSpecialtyName"
+                placeholder="Ej. Salsa Caleña"
+                value={newSpecialtyName}
+                onChange={(event) => {
+                  setNewSpecialtyName(event.target.value)
+                  markDirty("newSpecialtyName")
+                }}
+                onBlur={handleNewSpecialtyBlur}
+                aria-invalid={Boolean(getFieldError("newSpecialtyName"))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Se guardara con la primera letra en mayuscula de cada palabra.
+              </p>
+              <FieldErrorText message={getFieldError("newSpecialtyName")} />
+            </div>
+          </div>
+        </div>
+
         <FieldErrorText message={getFieldError("specialties")} />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="yearsExperience">Anos de experiencia</Label>
-        <Input
-          id="yearsExperience"
-          name="yearsExperience"
-          type="number"
-          min={0}
-          max={INSTRUCTOR_YEARS_EXPERIENCE_MAX}
-          step={1}
-          value={yearsExperience}
-          onChange={(event) => {
-            setYearsExperience(event.target.value)
-            markDirty("yearsExperience")
-          }}
-          onBlur={() => markTouched("yearsExperience")}
-          aria-invalid={Boolean(getFieldError("yearsExperience"))}
-        />
-        <FieldErrorText message={getFieldError("yearsExperience")} />
-      </div>
+      {selectedSpecialties.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selectedSpecialties.map((value) => {
+            const option = localSpecialtyOptions.find(
+              (item) => getSpecialtyValue(item) === value
+            )
+
+            if (!option) return null
+
+            return (
+              <span
+                key={value}
+                className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground"
+              >
+                {option.name}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {isEditing && (
         <div className="flex items-center gap-2">

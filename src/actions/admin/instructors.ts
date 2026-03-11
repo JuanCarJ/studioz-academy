@@ -10,19 +10,32 @@ import {
   INSTRUCTOR_BIO_MAX_LENGTH,
   INSTRUCTOR_FULL_NAME_MAX_LENGTH,
   INSTRUCTOR_FULL_NAME_MIN_LENGTH,
-  INSTRUCTOR_YEARS_EXPERIENCE_MAX,
+  INSTRUCTOR_SPECIALTIES_MAX_ITEMS,
+  buildInstructorSpecialtyValue,
   getLengthError,
+  getSpecialtyNameError,
+  isInstructorSpecialtyCategory,
   normalizeOptionalText,
+  normalizeSpecialtyKey,
+  normalizeSpecialtyName,
   normalizeWhitespace,
-  parseSpecialtiesInput,
-  parseWholeNumberInput,
+  parseInstructorSpecialtyValue,
   validateImageFile,
 } from "@/lib/admin-form-utils"
 
-import type { Instructor } from "@/types"
+import type {
+  Instructor,
+  InstructorSpecialtyCategory,
+  InstructorSpecialtyOption,
+} from "@/types"
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024 // 2MB
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+type InstructorSpecialtyDraft = Pick<
+  InstructorSpecialtyOption,
+  "name" | "normalized_name" | "category"
+>
 
 async function uploadInstructorAvatar(
   file: File,
@@ -48,7 +61,15 @@ export interface InstructorActionState {
   error?: string
   success?: boolean
   fieldErrors?: Partial<
-    Record<"fullName" | "bio" | "specialties" | "yearsExperience" | "avatar", string>
+    Record<
+      | "fullName"
+      | "bio"
+      | "specialties"
+      | "newSpecialtyName"
+      | "newSpecialtyCategory"
+      | "avatar",
+      string
+    >
   >
 }
 
@@ -69,11 +90,36 @@ function buildInstructorFieldErrorState(
   }
 }
 
-function validateInstructorFormData(formData: FormData) {
+function getSpecialtyMapKey(
+  category: InstructorSpecialtyCategory,
+  normalizedName: string
+) {
+  return buildInstructorSpecialtyValue(category, normalizedName)
+}
+
+function dedupeSpecialties(items: InstructorSpecialtyDraft[]) {
+  const map = new Map<string, InstructorSpecialtyDraft>()
+
+  for (const item of items) {
+    map.set(getSpecialtyMapKey(item.category, item.normalized_name), item)
+  }
+
+  return [...map.values()]
+}
+
+function validateInstructorFormData(
+  formData: FormData,
+  specialtyOptions: InstructorSpecialtyOption[]
+) {
   const fullName = normalizeWhitespace(String(formData.get("fullName") ?? ""))
   const bio = normalizeOptionalText(String(formData.get("bio") ?? ""))
-  const specialtiesRaw = String(formData.get("specialties") ?? "")
-  const yearsExperienceRaw = String(formData.get("yearsExperience") ?? "")
+  const selectedSpecialtyValues = formData
+    .getAll("specialties")
+    .map((value) => String(value))
+  const newSpecialtyNameRaw = String(formData.get("newSpecialtyName") ?? "")
+  const newSpecialtyCategoryRaw = String(
+    formData.get("newSpecialtyCategory") ?? ""
+  ).trim()
   const avatarCandidate = formData.get("avatar")
   const avatarFile =
     avatarCandidate instanceof File && avatarCandidate.size > 0
@@ -103,18 +149,72 @@ function validateInstructorFormData(formData: FormData) {
     }
   }
 
-  const parsedSpecialties = parseSpecialtiesInput(specialtiesRaw)
-  if (parsedSpecialties.error) {
-    fieldErrors.specialties = parsedSpecialties.error
+  const selectedSpecialties: InstructorSpecialtyDraft[] = []
+  let selectedSpecialtiesInvalid = false
+
+  for (const selectedValue of selectedSpecialtyValues) {
+    const parsedValue = parseInstructorSpecialtyValue(selectedValue)
+
+    if (!parsedValue) {
+      selectedSpecialtiesInvalid = true
+      continue
+    }
+
+    const matchedOption = specialtyOptions.find(
+      (option) =>
+        option.category === parsedValue.category &&
+        option.normalized_name === parsedValue.normalizedName
+    )
+
+    if (!matchedOption) {
+      selectedSpecialtiesInvalid = true
+      continue
+    }
+
+    selectedSpecialties.push(matchedOption)
   }
 
-  const parsedYearsExperience = parseWholeNumberInput(yearsExperienceRaw, {
-    label: "Los anos de experiencia",
-    min: 0,
-    max: INSTRUCTOR_YEARS_EXPERIENCE_MAX,
-  })
-  if (parsedYearsExperience.error) {
-    fieldErrors.yearsExperience = parsedYearsExperience.error
+  if (selectedSpecialtiesInvalid) {
+    fieldErrors.specialties = "Selecciona solo especialidades disponibles."
+  }
+
+  const normalizedNewSpecialtyName = normalizeSpecialtyName(newSpecialtyNameRaw)
+  const normalizedNewSpecialtyKey = normalizeSpecialtyKey(newSpecialtyNameRaw)
+
+  let newSpecialtyDraft: InstructorSpecialtyDraft | null = null
+
+  if (newSpecialtyNameRaw.trim()) {
+    const specialtyNameError = getSpecialtyNameError(normalizedNewSpecialtyName)
+    if (specialtyNameError) {
+      fieldErrors.newSpecialtyName = specialtyNameError
+    }
+
+    if (!isInstructorSpecialtyCategory(newSpecialtyCategoryRaw)) {
+      fieldErrors.newSpecialtyCategory =
+        "Selecciona la categoria de la nueva especialidad."
+    } else if (!specialtyNameError) {
+      const existingOption = specialtyOptions.find(
+        (option) =>
+          option.category === newSpecialtyCategoryRaw &&
+          option.normalized_name === normalizedNewSpecialtyKey
+      )
+
+      newSpecialtyDraft = existingOption ?? {
+        name: normalizedNewSpecialtyName,
+        normalized_name: normalizedNewSpecialtyKey,
+        category: newSpecialtyCategoryRaw,
+      }
+    }
+  }
+
+  const specialties = dedupeSpecialties(
+    newSpecialtyDraft
+      ? [...selectedSpecialties, newSpecialtyDraft]
+      : selectedSpecialties
+  )
+
+  if (specialties.length > INSTRUCTOR_SPECIALTIES_MAX_ITEMS) {
+    fieldErrors.specialties = `Puedes seleccionar hasta ${INSTRUCTOR_SPECIALTIES_MAX_ITEMS} especialidades.`
   }
 
   const avatarError = validateImageFile(avatarFile, {
@@ -131,11 +231,57 @@ function validateInstructorFormData(formData: FormData) {
     values: {
       fullName,
       bio,
-      specialties: parsedSpecialties.items,
-      yearsExperience: parsedYearsExperience.value,
+      specialties,
+      newSpecialtyDraft:
+        newSpecialtyDraft &&
+        !specialtyOptions.some(
+          (option) =>
+            option.category === newSpecialtyDraft.category &&
+            option.normalized_name === newSpecialtyDraft.normalized_name
+        )
+          ? newSpecialtyDraft
+          : null,
       avatarFile,
     },
   }
+}
+
+async function upsertSpecialtyOption(
+  specialty: InstructorSpecialtyDraft
+): Promise<InstructorSpecialtyOption | null> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase
+    .from("instructor_specialty_options")
+    .upsert(specialty, { onConflict: "category,normalized_name" })
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return null
+  }
+
+  return data as InstructorSpecialtyOption
+}
+
+async function persistSpecialties(
+  specialties: InstructorSpecialtyDraft[],
+  newSpecialtyDraft: InstructorSpecialtyDraft | null
+) {
+  if (!newSpecialtyDraft) {
+    return specialties.map((specialty) => specialty.name)
+  }
+
+  const upsertedSpecialty = await upsertSpecialtyOption(newSpecialtyDraft)
+  if (!upsertedSpecialty) {
+    return null
+  }
+
+  return specialties.map((specialty) =>
+    specialty.category === upsertedSpecialty.category &&
+    specialty.normalized_name === upsertedSpecialty.normalized_name
+      ? upsertedSpecialty.name
+      : specialty.name
+  )
 }
 
 export async function createInstructor(
@@ -145,18 +291,25 @@ export async function createInstructor(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const validation = validateInstructorFormData(formData)
+  const supabase = await createServerClient()
+  const specialtyOptions = await getInstructorSpecialtyOptions(supabase)
+  const validation = validateInstructorFormData(formData, specialtyOptions)
   if (Object.keys(validation.fieldErrors).length > 0) {
     return buildInstructorFieldErrorState(validation.fieldErrors)
   }
 
-  const { fullName, bio, specialties, yearsExperience, avatarFile } =
+  const { fullName, bio, specialties, newSpecialtyDraft, avatarFile } =
     validation.values
+  const specialtyNames = await persistSpecialties(specialties, newSpecialtyDraft)
+
+  if (!specialtyNames) {
+    return {
+      error: "No se pudo guardar la nueva especialidad. Intenta de nuevo.",
+    }
+  }
+
   const slug = slugify(fullName)
 
-  const supabase = await createServerClient()
-
-  // Ensure unique slug
   const { data: existing } = await supabase
     .from("instructors")
     .select("id")
@@ -171,8 +324,7 @@ export async function createInstructor(
       full_name: fullName.trim(),
       slug: finalSlug,
       bio,
-      specialties,
-      years_experience: yearsExperience,
+      specialties: specialtyNames,
       is_active: true,
     })
     .select("id")
@@ -182,7 +334,6 @@ export async function createInstructor(
     return { error: "No se pudo crear el instructor. Intenta de nuevo." }
   }
 
-  // Upload avatar if provided
   if (avatarFile) {
     const avatarUrl = await uploadInstructorAvatar(avatarFile, instructor.id)
     if (avatarUrl) {
@@ -207,26 +358,31 @@ export async function updateInstructor(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  const validation = validateInstructorFormData(formData)
+  const supabase = await createServerClient()
+  const specialtyOptions = await getInstructorSpecialtyOptions(supabase)
+  const validation = validateInstructorFormData(formData, specialtyOptions)
   if (Object.keys(validation.fieldErrors).length > 0) {
     return buildInstructorFieldErrorState(validation.fieldErrors)
   }
 
-  const { fullName, bio, specialties, yearsExperience, avatarFile } =
+  const { fullName, bio, specialties, newSpecialtyDraft, avatarFile } =
     validation.values
   const isActive = formData.get("isActive") === "on"
+  const specialtyNames = await persistSpecialties(specialties, newSpecialtyDraft)
 
-  const supabase = await createServerClient()
+  if (!specialtyNames) {
+    return {
+      error: "No se pudo guardar la nueva especialidad. Intenta de nuevo.",
+    }
+  }
 
   const updateData: Record<string, unknown> = {
     full_name: fullName.trim(),
     bio,
-    specialties,
-    years_experience: yearsExperience,
+    specialties: specialtyNames,
     is_active: isActive,
   }
 
-  // Upload avatar if provided
   if (avatarFile) {
     const avatarUrl = await uploadInstructorAvatar(avatarFile, instructorId)
     if (avatarUrl) {
@@ -259,4 +415,19 @@ export async function getInstructors(): Promise<Instructor[]> {
 
   if (error) return []
   return (data ?? []) as Instructor[]
+}
+
+export async function getInstructorSpecialtyOptions(
+  client?: Awaited<ReturnType<typeof createServerClient>>
+): Promise<InstructorSpecialtyOption[]> {
+  const supabase = client ?? (await createServerClient())
+
+  const { data, error } = await supabase
+    .from("instructor_specialty_options")
+    .select("*")
+    .order("category")
+    .order("name")
+
+  if (error) return []
+  return (data ?? []) as InstructorSpecialtyOption[]
 }
