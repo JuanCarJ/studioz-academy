@@ -7,6 +7,7 @@ import { Suspense } from "react"
 
 import { register, loginWithGoogle } from "@/actions/auth"
 import type { AuthActionState } from "@/actions/auth"
+import { resolveAuthIntent } from "@/lib/auth-intent"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,15 +19,24 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function RegisterForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
-  const addToCart = searchParams.get("addToCart")
+  const authIntent = resolveAuthIntent({
+    redirectTo,
+    intent: searchParams.get("intent"),
+    courseId: searchParams.get("courseId"),
+    addToCart: searchParams.get("addToCart"),
+  })
   const loginParams = new URLSearchParams()
 
   if (redirectTo) {
     loginParams.set("redirect", redirectTo)
   }
 
-  if (addToCart) {
-    loginParams.set("addToCart", addToCart)
+  if (authIntent) {
+    loginParams.set("intent", authIntent.kind)
+    loginParams.set("courseId", authIntent.courseId)
+    if (authIntent.kind === "add_to_cart") {
+      loginParams.set("addToCart", authIntent.courseId)
+    }
   }
 
   const loginHref = loginParams.size > 0
@@ -53,8 +63,14 @@ function RegisterForm() {
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
           )}
-          {addToCart && (
-            <input type="hidden" name="addToCart" value={addToCart} />
+          {authIntent && (
+            <>
+              <input type="hidden" name="intent" value={authIntent.kind} />
+              <input type="hidden" name="courseId" value={authIntent.courseId} />
+              {authIntent.kind === "add_to_cart" && (
+                <input type="hidden" name="addToCart" value={authIntent.courseId} />
+              )}
+            </>
           )}
           <Button
             variant="outline"
@@ -100,8 +116,14 @@ function RegisterForm() {
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
           )}
-          {addToCart && (
-            <input type="hidden" name="addToCart" value={addToCart} />
+          {authIntent && (
+            <>
+              <input type="hidden" name="intent" value={authIntent.kind} />
+              <input type="hidden" name="courseId" value={authIntent.courseId} />
+              {authIntent.kind === "add_to_cart" && (
+                <input type="hidden" name="addToCart" value={authIntent.courseId} />
+              )}
+            </>
           )}
 
           <div className="space-y-2">

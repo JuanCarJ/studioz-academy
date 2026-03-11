@@ -6,6 +6,7 @@ import Link from "next/link"
 
 import { addToCart } from "@/actions/cart"
 import { enrollFree } from "@/actions/enrollments"
+import { buildCourseAuthPath, type AuthIntentKind } from "@/lib/auth-intent"
 import { getCartErrorMessage } from "@/lib/cart"
 import { Button } from "@/components/ui/button"
 import { formatCOP } from "@/lib/utils"
@@ -53,27 +54,46 @@ export function CourseActions({
   const btnSize = compact ? "default" : "lg"
   const btnClass = compact ? "" : "w-full"
 
-  function requireAuth(options?: { includeAddToCart?: boolean }) {
-    const params = new URLSearchParams({ redirect: `/cursos/${slug}` })
+  function requireAuth(intentKind?: AuthIntentKind) {
+    router.push(
+      buildCourseAuthPath({
+        slug,
+        intent: intentKind
+          ? {
+              kind: intentKind,
+              courseId,
+            }
+          : undefined,
+      })
+    )
+  }
 
-    if (options?.includeAddToCart) {
-      params.set("addToCart", courseId)
-    }
+  function shouldRefreshAfterAddToCartError(error: string | undefined) {
+    return error === "COURSE_IS_FREE" || error === "COURSE_UNAVAILABLE"
+  }
 
-    router.push(`/login?${params.toString()}`)
+  function shouldRefreshAfterEnrollError(error: string | undefined) {
+    return (
+      error === "Curso no encontrado." ||
+      error === "Este curso no esta disponible." ||
+      error === "Este curso no es gratuito."
+    )
   }
 
   function handleAddToCart() {
-    if (!isAuthenticated) return requireAuth({ includeAddToCart: true })
+    if (!isAuthenticated) return requireAuth("add_to_cart")
 
     setError(null)
     startTransition(async () => {
       const result = await addToCart(courseId)
       if (result && "error" in result) {
         if (result.error === "AUTH_REQUIRED") {
-          return requireAuth({ includeAddToCart: true })
+          return requireAuth("add_to_cart")
         }
         setError(getCartErrorMessage(result.error as string))
+        if (shouldRefreshAfterAddToCartError(result.error)) {
+          router.refresh()
+        }
       } else {
         router.refresh()
       }
@@ -81,14 +101,17 @@ export function CourseActions({
   }
 
   function handleEnrollFree() {
-    if (!isAuthenticated) return requireAuth()
+    if (!isAuthenticated) return requireAuth("enroll_free")
 
     setError(null)
     startTransition(async () => {
       const result = await enrollFree(courseId)
       if (result && "error" in result) {
-        if (result.error === "AUTH_REQUIRED") return requireAuth()
+        if (result.error === "AUTH_REQUIRED") return requireAuth("enroll_free")
         setError(result.error as string)
+        if (shouldRefreshAfterEnrollError(result.error)) {
+          router.refresh()
+        }
       } else {
         router.push(`/dashboard/cursos/${slug}`)
       }
@@ -117,7 +140,11 @@ export function CourseActions({
   if (compact) {
     return (
       <div className="flex items-center gap-3">
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="text-sm text-destructive" aria-live="polite">
+            {error}
+          </p>
+        )}
         {(!isFree || isPromotionalFree) && (
           <div className="flex flex-col items-end whitespace-nowrap">
             {listPrice && listPrice > price && (
@@ -151,9 +178,11 @@ export function CourseActions({
   }
 
   return (
-    <div className="space-y-3">
+      <div className="space-y-3">
       {error && (
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="text-sm text-destructive" aria-live="polite">
+          {error}
+        </p>
       )}
 
       {isFree ? (

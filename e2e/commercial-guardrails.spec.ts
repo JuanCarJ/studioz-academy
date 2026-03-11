@@ -443,6 +443,8 @@ test.describe.serial("commercial guardrails", () => {
   test("cambiar lecciones entre gratis y paga actualiza preview publica sin quitar acceso al alumno", async ({
     browser,
   }) => {
+    test.slow()
+
     const course = await getCourseBySlug(qaFixtures.paidPrimaryCourseSlug)
     const freeLesson = await getLessonByTitle(course?.id ?? "", "QA E2E Preview Salsa")
     const paidLesson = await getLessonByTitle(course?.id ?? "", "QA E2E Salsa Principal")

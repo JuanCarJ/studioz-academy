@@ -52,16 +52,16 @@ export function CourseCard({
   const isFree = course.is_free || course.current_price <= 0
 
   return (
-    <article className="group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-lg">
+    <article className="group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-lg focus-within:ring-2 focus-within:ring-ring/50 focus-within:ring-offset-2">
       {/* Stretched link — covers entire card */}
       <Link
         href={`/cursos/${course.slug}`}
-        className="absolute inset-0 z-0"
-        aria-label={course.title}
+        className="absolute inset-0 z-10 rounded-lg focus-visible:outline-none"
+        aria-label={`Ver detalle de ${course.title}`}
       />
 
       {/* Thumbnail */}
-      <div className="relative aspect-video overflow-hidden bg-muted">
+      <div className="pointer-events-none relative aspect-video overflow-hidden bg-muted">
         {course.thumbnail_url ? (
           <Image
             src={course.thumbnail_url}
@@ -100,7 +100,7 @@ export function CourseCard({
       </div>
 
       {/* Content */}
-      <div className="p-4">
+      <div className="pointer-events-none p-4">
         <Badge variant="secondary" className="mb-2 text-xs">
           {course.category === "baile" ? "Baile" : "Tatuaje"}
         </Badge>
@@ -172,9 +172,10 @@ export function CourseCard({
           </div>
 
           {showQuickAction && (
-            <div className="relative z-10">
+            <div className="pointer-events-auto relative z-20">
               <CourseCardAction
                 courseId={course.id}
+                courseTitle={course.title}
                 slug={course.slug}
                 isFree={isFree}
                 isInCart={isInCart!}

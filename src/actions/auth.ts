@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
-import { isValidCsrfToken } from "@/lib/security/csrf"
 import {
-  addCourseToCartForUser,
-  resolvePostAddToCartRedirect,
-} from "@/lib/cart"
+  buildOAuthNextPath,
+  getSafeRedirectPath,
+  parseAuthIntentFromFormData,
+  stripAuthIntentParams,
+} from "@/lib/auth-intent"
+import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
+import { isValidCsrfToken } from "@/lib/security/csrf"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 
@@ -19,50 +22,6 @@ export interface AuthActionState {
 
 const INVALID_CSRF_MESSAGE =
   "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
-
-function getSafeRedirectPath(redirectTo: string | null): string | null {
-  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
-    return null
-  }
-
-  return redirectTo
-}
-
-function parseAddToCartId(
-  formData: FormData,
-  redirectTo: string | null
-): string | null {
-  const addToCartFromForm = formData.get("addToCart")
-  if (typeof addToCartFromForm === "string" && addToCartFromForm.trim()) {
-    return addToCartFromForm.trim()
-  }
-
-  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
-    return null
-  }
-
-  const redirectUrl = new URL(redirectTo, "http://localhost")
-  const addToCartFromRedirect = redirectUrl.searchParams.get("addToCart")
-  return addToCartFromRedirect?.trim() || null
-}
-
-function buildOAuthNextPath(formData: FormData): string {
-  const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
-  const addToCartId =
-    typeof formData.get("addToCart") === "string"
-      ? (formData.get("addToCart") as string).trim()
-      : ""
-
-  const nextPath = redirectTo ?? "/dashboard"
-  if (!addToCartId) {
-    return nextPath
-  }
-
-  const nextUrl = new URL(nextPath, "http://localhost")
-  nextUrl.searchParams.set("addToCart", addToCartId)
-
-  return `${nextUrl.pathname}${nextUrl.search}`
-}
 
 /**
  * Clear Supabase auth-token cookies (base + chunks) to prevent stale
@@ -131,24 +90,21 @@ export async function register(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const addToCartId = parseAddToCartId(formData, redirectTo)
-  if (addToCartId && user) {
-    const addToCartResult = await addCourseToCartForUser({
-      supabase,
-      userId: user.id,
-      courseId: addToCartId,
-    })
+  const authIntent = parseAuthIntentFromFormData(formData, redirectTo)
+  if (authIntent && user) {
     redirect(
-      resolvePostAddToCartRedirect({
-        result: addToCartResult,
-        redirectTo,
+      await resolvePostAuthIntentRedirect({
+        supabase,
+        userId: user.id,
+        intent: authIntent,
         fallbackPath: "/dashboard",
       })
     )
   }
 
-  if (redirectTo) {
-    redirect(redirectTo)
+  const sanitizedRedirect = stripAuthIntentParams(redirectTo)
+  if (sanitizedRedirect) {
+    redirect(sanitizedRedirect)
   }
 
   redirect("/dashboard")
@@ -196,25 +152,21 @@ export async function login(
 
     revalidatePath("/", "layout")
 
-    const addToCartId = parseAddToCartId(formData, redirectTo)
-    if (addToCartId) {
-      const addToCartResult = await addCourseToCartForUser({
-        supabase,
-        userId: user.id,
-        courseId: addToCartId,
-      })
-
+    const authIntent = parseAuthIntentFromFormData(formData, redirectTo)
+    if (authIntent) {
       redirect(
-        resolvePostAddToCartRedirect({
-          result: addToCartResult,
-          redirectTo,
+        await resolvePostAuthIntentRedirect({
+          supabase,
+          userId: user.id,
+          intent: authIntent,
           fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
         })
       )
     }
 
-    if (redirectTo) {
-      redirect(redirectTo)
+    const sanitizedRedirect = stripAuthIntentParams(redirectTo)
+    if (sanitizedRedirect) {
+      redirect(sanitizedRedirect)
     }
 
     redirect(profile?.role === "admin" ? "/admin" : "/dashboard")

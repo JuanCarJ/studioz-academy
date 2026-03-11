@@ -7,6 +7,7 @@ import { Suspense } from "react"
 
 import { login, loginWithGoogle } from "@/actions/auth"
 import type { AuthActionState } from "@/actions/auth"
+import { resolveAuthIntent } from "@/lib/auth-intent"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,16 +18,25 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
-  const addToCart = searchParams.get("addToCart")
   const message = searchParams.get("message")
+  const authIntent = resolveAuthIntent({
+    redirectTo,
+    intent: searchParams.get("intent"),
+    courseId: searchParams.get("courseId"),
+    addToCart: searchParams.get("addToCart"),
+  })
   const registerParams = new URLSearchParams()
 
   if (redirectTo) {
     registerParams.set("redirect", redirectTo)
   }
 
-  if (addToCart) {
-    registerParams.set("addToCart", addToCart)
+  if (authIntent) {
+    registerParams.set("intent", authIntent.kind)
+    registerParams.set("courseId", authIntent.courseId)
+    if (authIntent.kind === "add_to_cart") {
+      registerParams.set("addToCart", authIntent.courseId)
+    }
   }
 
   const registerHref = registerParams.size > 0
@@ -59,8 +69,14 @@ function LoginForm() {
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
           )}
-          {addToCart && (
-            <input type="hidden" name="addToCart" value={addToCart} />
+          {authIntent && (
+            <>
+              <input type="hidden" name="intent" value={authIntent.kind} />
+              <input type="hidden" name="courseId" value={authIntent.courseId} />
+              {authIntent.kind === "add_to_cart" && (
+                <input type="hidden" name="addToCart" value={authIntent.courseId} />
+              )}
+            </>
           )}
           <Button
             variant="outline"
@@ -106,8 +122,14 @@ function LoginForm() {
           {redirectTo && (
             <input type="hidden" name="redirect" value={redirectTo} />
           )}
-          {addToCart && (
-            <input type="hidden" name="addToCart" value={addToCart} />
+          {authIntent && (
+            <>
+              <input type="hidden" name="intent" value={authIntent.kind} />
+              <input type="hidden" name="courseId" value={authIntent.courseId} />
+              {authIntent.kind === "add_to_cart" && (
+                <input type="hidden" name="addToCart" value={authIntent.courseId} />
+              )}
+            </>
           )}
           <input type="hidden" name="csrfToken" value={csrfToken} />
 

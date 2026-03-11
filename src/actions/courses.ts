@@ -2,6 +2,7 @@
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { resolveCoursePreview } from "@/lib/bunny"
+import { getCartItemsForUser } from "@/lib/cart"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
@@ -262,11 +263,11 @@ export async function getCatalogUserState(): Promise<{
   }
 
   const supabase = await createServerClient()
-  const [cartResult, enrollmentResult] = await Promise.all([
-    supabase
-      .from("cart_items")
-      .select("course_id")
-      .eq("user_id", user.id),
+  const [cartItems, enrollmentResult] = await Promise.all([
+    getCartItemsForUser({
+      supabase,
+      userId: user.id,
+    }),
     supabase
       .from("enrollments")
       .select("course_id")
@@ -274,7 +275,7 @@ export async function getCatalogUserState(): Promise<{
   ])
 
   return {
-    cartCourseIds: (cartResult.data ?? []).map((r) => r.course_id),
+    cartCourseIds: cartItems.map((item) => item.course_id),
     enrolledCourseIds: (enrollmentResult.data ?? []).map((r) => r.course_id),
     isAuthenticated: true,
   }
