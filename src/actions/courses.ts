@@ -251,6 +251,35 @@ export async function getCourseBySlug(
   } as CourseDetail
 }
 
+export async function getCatalogUserState(): Promise<{
+  cartCourseIds: string[]
+  enrolledCourseIds: string[]
+  isAuthenticated: boolean
+}> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return { cartCourseIds: [], enrolledCourseIds: [], isAuthenticated: false }
+  }
+
+  const supabase = await createServerClient()
+  const [cartResult, enrollmentResult] = await Promise.all([
+    supabase
+      .from("cart_items")
+      .select("course_id")
+      .eq("user_id", user.id),
+    supabase
+      .from("enrollments")
+      .select("course_id")
+      .eq("user_id", user.id),
+  ])
+
+  return {
+    cartCourseIds: (cartResult.data ?? []).map((r) => r.course_id),
+    enrolledCourseIds: (enrollmentResult.data ?? []).map((r) => r.course_id),
+    isAuthenticated: true,
+  }
+}
+
 export async function getRelatedCourses(
   courseId: string,
   category: string,
