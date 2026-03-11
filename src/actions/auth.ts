@@ -30,7 +30,7 @@ export interface AuthActionState {
 }
 
 const INVALID_CSRF_MESSAGE =
-  "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
+  "La solicitud venció. Recarga la página e inténtalo de nuevo."
 
 export async function register(
   _prevState: AuthActionState,
@@ -48,15 +48,15 @@ export async function register(
   const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
 
   if (!email || !password || !fullName) {
-    return { error: "Todos los campos obligatorios deben ser completados." }
+    return { error: "Completa los campos obligatorios." }
   }
 
   if (acceptsPrivacy !== "on") {
-    return { error: "Debes aceptar la politica de privacidad para continuar." }
+    return { error: "Debes aceptar la política de privacidad." }
   }
 
   if (password.length < 8) {
-    return { error: "La contrasena debe tener al menos 8 caracteres." }
+    return { error: "La contraseña debe tener al menos 8 caracteres." }
   }
 
   const fullNameError = validateFullName(fullName)
@@ -126,7 +126,7 @@ export async function login(
   const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
 
   if (!email || !password) {
-    return { error: "Email y contrasena son obligatorios." }
+    return { error: "Correo y contraseña son obligatorios." }
   }
 
   await clearSupabaseAuthTokenCookies()
@@ -158,7 +158,7 @@ export async function login(
       await supabase.auth.signOut()
       await clearSupabaseAuthTokenCookies()
       return {
-        error: "No pudimos iniciar sesion. Intenta de nuevo o contacta soporte.",
+        error: "No pudimos iniciar sesión. Inténtalo de nuevo.",
       }
     }
 
@@ -238,7 +238,7 @@ export async function resetPassword(
   const email = formData.get("email") as string
 
   if (!email) {
-    return { error: "El email es obligatorio." }
+    return { error: "El correo es obligatorio." }
   }
 
   await supabase.auth.resetPasswordForEmail(email, {
@@ -263,21 +263,21 @@ export async function updatePassword(
   const confirmPassword = formData.get("confirmPassword") as string
 
   if (!password || !confirmPassword) {
-    return { error: "Ambos campos son obligatorios." }
+    return { error: "Completa ambos campos." }
   }
 
   if (password !== confirmPassword) {
-    return { error: "Las contrasenas no coinciden." }
+    return { error: "Las contraseñas no coinciden." }
   }
 
   if (password.length < 8) {
-    return { error: "La contrasena debe tener al menos 8 caracteres." }
+    return { error: "La contraseña debe tener al menos 8 caracteres." }
   }
 
   const { error } = await supabase.auth.updateUser({ password })
 
   if (error) {
-    return { error: "No se pudo actualizar la contrasena. Intenta de nuevo." }
+    return { error: "No se pudo actualizar la contraseña. Inténtalo de nuevo." }
   }
 
   revalidatePath("/", "layout")

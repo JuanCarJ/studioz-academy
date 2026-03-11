@@ -22,7 +22,7 @@ export async function updateProfile(
   formData: FormData
 ): Promise<ProfileActionState> {
   const user = await getCurrentUser()
-  if (!user) return { error: "Debes iniciar sesion." }
+  if (!user) return { error: "Debes iniciar sesión." }
 
   const fullName = normalizeFullName((formData.get("fullName") as string) ?? "")
   const phone = (formData.get("phone") as string) || null
@@ -61,7 +61,7 @@ export async function updateProfile(
       .upload(path, avatarFile, { upsert: true, contentType: avatarFile.type })
 
     if (uploadError) {
-      return { error: "No se pudo subir la imagen. Intenta de nuevo." }
+      return { error: "No se pudo subir la imagen. Inténtalo de nuevo." }
     }
 
     const { data: urlData } = adminSupabase.storage
@@ -91,7 +91,7 @@ export async function updateProfile(
  */
 export async function requestAccountDeletion(): Promise<ProfileActionState> {
   const user = await getCurrentUser()
-  if (!user) return { error: "Debes iniciar sesion." }
+  if (!user) return { error: "Debes iniciar sesión." }
 
   const supabase = await createServerClient()
   const adminSupabase = createServiceRoleClient()
@@ -101,14 +101,13 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
   })
 
   if (rpcError) {
-    return { error: "No se pudo procesar la eliminacion. Contacta soporte." }
+    return { error: "No se pudo procesar la eliminación. Contacta soporte." }
   }
 
   const { error: deleteAuthError } = await adminSupabase.auth.admin.deleteUser(user.id, true)
   if (deleteAuthError) {
     return {
-      error:
-        "No se pudo completar la eliminacion de la cuenta. Intenta de nuevo o contacta soporte.",
+      error: "No se pudo eliminar la cuenta. Inténtalo de nuevo o contacta soporte.",
     }
   }
 

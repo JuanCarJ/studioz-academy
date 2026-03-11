@@ -49,7 +49,7 @@ test.describe.serial("auth regressions", () => {
 
     await expect(
       page.getByText(
-        /no se pudo crear la cuenta\. si ya te registraste antes, inicia sesion o recupera tu contrasena\./i
+        /no se pudo crear la cuenta\. si ya tienes una, inicia sesión o recupera tu contraseña\./i
       )
     ).toBeVisible()
     await expect(page).toHaveURL(/\/registro/)
@@ -143,9 +143,9 @@ test.describe.serial("auth regressions", () => {
 
   test("login muestra errores explicitos de OAuth callback", async ({ page }) => {
     await page.goto("/login?error=oauth")
-    await expect(page.getByText(/no se pudo iniciar el acceso con google/i)).toBeVisible()
+    await expect(page.getByText(/no se pudo acceder con google/i)).toBeVisible()
 
     await page.goto("/login?error=callback")
-    await expect(page.getByText(/no se pudo completar el acceso con google/i)).toBeVisible()
+    await expect(page.getByText(/no se pudo acceder con google/i)).toBeVisible()
   })
 })

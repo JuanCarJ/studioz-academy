@@ -56,7 +56,7 @@ function LoginForm() {
       <CardContent className="pt-6">
         {message === "password-updated" && (
           <div className="mb-4 rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
-            Contrasena actualizada. Inicia sesion con tu nueva contrasena.
+            Contraseña actualizada. Inicia sesión con tu nueva contraseña.
           </div>
         )}
 
