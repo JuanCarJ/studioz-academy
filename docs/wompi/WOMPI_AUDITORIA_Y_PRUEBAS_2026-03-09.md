@@ -1,6 +1,23 @@
 # Auditoria Wompi y pruebas E2E
 
-Fecha: 2026-03-09
+Fecha original: 2026-03-09
+Actualizado: 2026-03-10
+
+## Update 2026-03-10
+
+Cambios de estado relevantes desde la fecha original:
+
+- el checkout ya convive con promociones por curso y combos de carrito;
+- las ordenes conservan snapshots completos de pricing, items y lineas de descuento;
+- si una compra termina en `total = 0`, ya no se envia a Wompi;
+- las compras promocionales de total cero se aprueban internamente con `payment_method = "promo"`;
+- esas compras igual generan orden, matricula y email de confirmacion;
+- el spec de Checkout Web fue endurecido para restaurar fixtures antes de cada caso y no depender del orden de la suite.
+
+Esto significa que, a nivel operativo actual:
+
+- Wompi solo participa cuando el total final a cobrar es mayor a cero;
+- los cursos `100% OFF` y los carritos totalmente bonificados quedan fuera de pasarela por definicion.
 
 ## Objetivo
 

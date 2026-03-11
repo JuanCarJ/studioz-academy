@@ -7,6 +7,7 @@ import Link from "next/link"
 import { addToCart } from "@/actions/cart"
 import { enrollFree } from "@/actions/enrollments"
 import { buildCourseAuthPath, type AuthIntentKind } from "@/lib/auth-intent"
+import { dispatchCartCountUpdated } from "@/lib/cart-events"
 import { getCartErrorMessage } from "@/lib/cart"
 import { Button } from "@/components/ui/button"
 import { formatCOP } from "@/lib/utils"
@@ -90,11 +91,17 @@ export function CourseActions({
         if (result.error === "AUTH_REQUIRED") {
           return requireAuth("add_to_cart")
         }
+        if (typeof result.cartCount === "number") {
+          dispatchCartCountUpdated(result.cartCount)
+        }
         setError(getCartErrorMessage(result.error as string))
         if (shouldRefreshAfterAddToCartError(result.error)) {
           router.refresh()
         }
       } else {
+        if (typeof result.cartCount === "number") {
+          dispatchCartCountUpdated(result.cartCount)
+        }
         router.refresh()
       }
     })
@@ -132,7 +139,7 @@ export function CourseActions({
   if (isInCart) {
     return (
       <Button size={btnSize} variant="secondary" className={btnClass} asChild>
-        <Link href="/carrito">Ya en tu carrito</Link>
+        <Link href="/carrito" prefetch={false}>Ya en tu carrito</Link>
       </Button>
     )
   }

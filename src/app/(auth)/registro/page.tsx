@@ -8,6 +8,7 @@ import { Suspense } from "react"
 import { register, loginWithGoogle } from "@/actions/auth"
 import type { AuthActionState } from "@/actions/auth"
 import { resolveAuthIntent } from "@/lib/auth-intent"
+import { getAuthPageErrorMessage } from "@/lib/auth/messages"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -19,6 +20,7 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function RegisterForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
+  const errorMessage = getAuthPageErrorMessage(searchParams.get("error"))
   const authIntent = resolveAuthIntent({
     redirectTo,
     intent: searchParams.get("intent"),
@@ -55,6 +57,12 @@ function RegisterForm() {
         {csrfError && (
           <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {csrfError}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {errorMessage}
           </div>
         )}
 
@@ -134,6 +142,7 @@ function RegisterForm() {
               type="text"
               placeholder="Tu nombre"
               required
+              maxLength={80}
               autoComplete="name"
             />
           </div>

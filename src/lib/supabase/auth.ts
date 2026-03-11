@@ -1,5 +1,7 @@
 import { cache } from "react"
 
+import { resolveAccountStatusByUserId } from "@/lib/auth/account"
+
 import { createServerClient } from "./server"
 
 export const getCurrentUser = cache(async () => {
@@ -8,6 +10,11 @@ export const getCurrentUser = cache(async () => {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return null
+
+  const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+  if (accountStatus.state !== "active") {
+    return null
+  }
 
   const { data: profile } = await supabase
     .from("profiles")

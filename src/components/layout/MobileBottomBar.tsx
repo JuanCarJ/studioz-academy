@@ -51,7 +51,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
     isAuthenticated
       ? { href: "/dashboard", label: "Aprendizaje", icon: BookOpen, prefetch: false }
       : { href: "/registro", label: "Registrarse", icon: UserPlus },
-    { href: "/carrito", label: "Carrito", icon: ShoppingCart },
+    { href: "/carrito", label: "Carrito", icon: ShoppingCart, prefetch: false },
   ]
 
   return (

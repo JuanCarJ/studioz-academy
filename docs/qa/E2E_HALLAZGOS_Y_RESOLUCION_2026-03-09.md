@@ -1,6 +1,39 @@
 # E2E Hallazgos y resolucion
 
-Fecha: 2026-03-09
+Fecha original: 2026-03-09
+Actualizado: 2026-03-10
+
+## Update 2026-03-10
+
+Desde la fecha original de este documento, la cobertura E2E ya incorpora y valida tambien:
+
+- promociones por curso;
+- combos `threshold_discount` y `buy_x_get_y`;
+- carrito con desglose estricto de pricing;
+- cursos `100% OFF` con matricula interna sin Wompi;
+- snapshots de pricing en orden, items y lineas;
+- endurecimiento de fixtures comerciales para evitar dependencia del orden de la suite;
+- estabilizacion de session recovery, editorial media y checkout Wompi web.
+
+Suites relevantes agregadas o ampliadas:
+
+- `e2e/promotions-pricing.spec.ts`
+- `e2e/commercial-guardrails.spec.ts`
+- `e2e/wompi-checkout-web.spec.ts`
+- `e2e/editorial-media.spec.ts`
+- `e2e/user-session-recovery.spec.ts`
+
+La lectura correcta de este documento hoy es:
+
+- los hallazgos originales siguen siendo validos como historial;
+- el estado comercial y de pricing ya es mas amplio que el documentado el 2026-03-09;
+- el detalle vigente del producto quedo consolidado en el `README.md` del repo.
+
+## Casos de prueba vigentes
+
+La matriz vigente de casos QA quedo consolidada en un solo documento:
+
+- `docs/qa/CASOS_DE_PRUEBA_QA.md`
 
 ## Objetivo
 

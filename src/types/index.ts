@@ -48,6 +48,8 @@ export interface Course {
   preview_bunny_video_id: string | null
   preview_bunny_library_id: string | null
   preview_status: "none" | "legacy" | "processing" | "ready" | "error"
+  preview_last_checked_at: string | null
+  preview_last_state_changed_at: string | null
   pending_preview_bunny_video_id: string | null
   pending_preview_bunny_library_id: string | null
   pending_preview_status: "none" | "processing" | "ready" | "error"
@@ -73,6 +75,8 @@ export interface Lesson {
   bunny_video_id: string
   bunny_library_id: string
   bunny_status: "processing" | "ready" | "error"
+  bunny_last_checked_at: string | null
+  bunny_last_state_changed_at: string | null
   pending_bunny_video_id: string | null
   pending_bunny_library_id: string | null
   pending_bunny_status: "none" | "processing" | "ready" | "error"

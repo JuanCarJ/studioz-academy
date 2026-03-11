@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { ChevronLeft } from "lucide-react"
 
+import { ensureCourseMediaFresh } from "@/lib/bunny"
 import { createServerClient } from "@/lib/supabase/server"
 import { decorateCourseWithPricing } from "@/lib/pricing"
 import { getInstructors } from "@/actions/admin/instructors"
@@ -50,6 +51,8 @@ export default async function EditCoursePage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+
+  await ensureCourseMediaFresh(id, { source: "admin_page" })
 
   const supabase = await createServerClient()
 

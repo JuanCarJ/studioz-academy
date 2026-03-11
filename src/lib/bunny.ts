@@ -1,4 +1,5 @@
 import { createHash } from "crypto"
+import { revalidatePath } from "next/cache"
 
 import { env } from "@/lib/env"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -8,6 +9,9 @@ import type { BunnyUploadSession, Course, Lesson } from "@/types"
 const BUNNY_API_BASE_URL = "https://video.bunnycdn.com"
 const BUNNY_TUS_ENDPOINT = `${BUNNY_API_BASE_URL}/tusupload`
 const DEFAULT_TUS_SESSION_TTL_SECONDS = 60 * 60
+const DEFAULT_BUNNY_CHECK_THROTTLE_MS = 30_000
+const PROCESSING_WARNING_THRESHOLD_MS = 30 * 60_000
+const STALE_CHECK_WARNING_THRESHOLD_MS = 2 * 60_000
 
 interface BunnyVideoCreateResponse {
   guid: string
@@ -38,6 +42,19 @@ export interface BunnyReconcileResult {
   touchedCourses: Array<{ id: string; slug: string }>
 }
 
+export type BunnyFreshnessSource =
+  | "admin_page"
+  | "public_page"
+  | "dashboard_page"
+  | "lesson_playback"
+  | "webhook"
+  | "cron"
+
+export interface EnsureCourseMediaFreshOptions {
+  source: BunnyFreshnessSource
+  throttleMs?: number
+}
+
 interface CoursePreviewRow {
   id: string
   slug: string
@@ -45,6 +62,8 @@ interface CoursePreviewRow {
   preview_bunny_video_id: string | null
   preview_bunny_library_id: string | null
   preview_status: "none" | "legacy" | "processing" | "ready" | "error"
+  preview_last_checked_at: string | null
+  preview_last_state_changed_at: string | null
   pending_preview_bunny_video_id: string | null
   pending_preview_bunny_library_id: string | null
   pending_preview_status: "none" | "processing" | "ready" | "error"
@@ -57,12 +76,21 @@ interface LessonMediaRow {
   bunny_video_id: string
   bunny_library_id: string
   bunny_status: "processing" | "ready" | "error"
+  bunny_last_checked_at: string | null
+  bunny_last_state_changed_at: string | null
   pending_bunny_video_id: string | null
   pending_bunny_library_id: string | null
   pending_bunny_status: "none" | "processing" | "ready" | "error"
   video_upload_error: string | null
   duration_seconds: number
   courses: { id: string; slug: string } | { id: string; slug: string }[]
+}
+
+interface BunnyRemoteState {
+  state: BunnyProcessingState
+  length: number
+  message: string | null
+  requestFailed: boolean
 }
 
 function buildBunnyApiUrl(pathname: string): string {
@@ -317,34 +345,125 @@ export function resolveCoursePreview(
   }
 }
 
-async function readRemoteBunnyState(videoId: string): Promise<{
-  state: BunnyProcessingState
-  length: number
-  message: string | null
-}> {
-  try {
-    const remote = await getVideoStatusOrNull(videoId)
-    if (!remote) {
-      return {
-        state: "missing",
-        length: 0,
-        message: "El video ya no existe en Bunny.",
-      }
-    }
-
-    const state = resolveBunnyStatusCode(remote.status)
-    return {
-      state,
-      length: remote.length,
-      message: getLessonStateMessage(state, null),
-    }
-  } catch {
-    return {
-      state: "error",
-      length: 0,
-      message: "No se pudo consultar el estado del video en Bunny.",
-    }
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message
   }
+
+  return "Unknown error"
+}
+
+function logBunnyMedia(
+  level: "info" | "warn" | "error",
+  event: string,
+  payload: Record<string, unknown>
+) {
+  console[level]("[bunny-media]", { event, ...payload })
+}
+
+function parseTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null
+
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function getElapsedMs(value: string | null | undefined, nowMs: number): number | null {
+  const timestamp = parseTimestamp(value)
+  if (timestamp == null) return null
+  return Math.max(0, nowMs - timestamp)
+}
+
+function shouldSkipRemoteCheck(input: {
+  hasRelevantMedia: boolean
+  lastCheckedAt: string | null
+  throttleMs: number
+  force: boolean
+}): boolean {
+  if (!input.hasRelevantMedia || input.force) {
+    return false
+  }
+
+  const elapsedMs = getElapsedMs(input.lastCheckedAt, Date.now())
+  return elapsedMs != null && elapsedMs < input.throttleMs
+}
+
+function shouldWarnForStaleChecks(input: {
+  lastCheckedAt: string | null
+  throttleMs: number
+  force: boolean
+}) {
+  if (input.force) return false
+
+  const elapsedMs = getElapsedMs(input.lastCheckedAt, Date.now())
+  if (elapsedMs == null) return false
+
+  return elapsedMs >= Math.max(STALE_CHECK_WARNING_THRESHOLD_MS, input.throttleMs * 2)
+}
+
+function isCoursePreviewCheckRelevant(course: CoursePreviewRow): boolean {
+  return (
+    !!course.pending_preview_bunny_video_id ||
+    (!!course.preview_bunny_video_id && course.preview_status !== "ready")
+  )
+}
+
+function isLessonCheckRelevant(lesson: LessonMediaRow): boolean {
+  return !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
+}
+
+function warnIfProcessingLooksStuck(input: {
+  kind: "preview" | "lesson"
+  courseId: string
+  slug: string
+  videoId: string | null
+  stateChangedAt: string | null
+  source: BunnyFreshnessSource
+}) {
+  const elapsedMs = getElapsedMs(input.stateChangedAt, Date.now())
+  if (elapsedMs == null || elapsedMs < PROCESSING_WARNING_THRESHOLD_MS) {
+    return
+  }
+
+  logBunnyMedia("warn", "processing_stuck", {
+    source: input.source,
+    kind: input.kind,
+    courseId: input.courseId,
+    slug: input.slug,
+    videoId: input.videoId,
+    processingForMs: elapsedMs,
+  })
+}
+
+function warnIfChecksAreStale(input: {
+  kind: "preview" | "lesson"
+  courseId: string
+  slug: string
+  lastCheckedAt: string | null
+  source: BunnyFreshnessSource
+  throttleMs: number
+  force: boolean
+}) {
+  if (
+    !shouldWarnForStaleChecks({
+      lastCheckedAt: input.lastCheckedAt,
+      throttleMs: input.throttleMs,
+      force: input.force,
+    })
+  ) {
+    return
+  }
+
+  const elapsedMs = getElapsedMs(input.lastCheckedAt, Date.now())
+  logBunnyMedia("warn", "last_check_stale", {
+    source: input.source,
+    kind: input.kind,
+    courseId: input.courseId,
+    slug: input.slug,
+    lastCheckedAt: input.lastCheckedAt,
+    lastCheckedAgoMs: elapsedMs,
+    expectedSlaMs: Math.max(STALE_CHECK_WARNING_THRESHOLD_MS, input.throttleMs * 2),
+  })
 }
 
 function addTouchedCourse(
@@ -355,11 +474,69 @@ function addTouchedCourse(
   touchedCourses.set(courseId, { id: courseId, slug })
 }
 
+export function revalidateTouchedCoursePaths(
+  touchedCourses: Array<{ id: string; slug: string }>
+) {
+  if (touchedCourses.length === 0) {
+    return
+  }
+
+  revalidatePath("/admin/cursos")
+  revalidatePath("/cursos")
+
+  for (const course of touchedCourses) {
+    revalidatePath(`/admin/cursos/${course.id}/editar`)
+    revalidatePath(`/cursos/${course.slug}`)
+    revalidatePath(`/dashboard/cursos/${course.slug}`)
+  }
+}
+
+async function readRemoteBunnyState(videoId: string): Promise<BunnyRemoteState> {
+  try {
+    const remote = await getVideoStatusOrNull(videoId)
+    if (!remote) {
+      return {
+        state: "missing",
+        length: 0,
+        message: "El video ya no existe en Bunny.",
+        requestFailed: false,
+      }
+    }
+
+    const state = resolveBunnyStatusCode(remote.status)
+    return {
+      state,
+      length: remote.length,
+      message: getLessonStateMessage(state, null),
+      requestFailed: false,
+    }
+  } catch (error) {
+    logBunnyMedia("error", "remote_check_failed", {
+      videoId,
+      error: getErrorMessage(error),
+    })
+
+    return {
+      state: "error",
+      length: 0,
+      message: "No se pudo consultar el estado del video en Bunny.",
+      requestFailed: true,
+    }
+  }
+}
+
 export async function reconcilePendingBunnyAssets(options?: {
   courseId?: string
+  source?: BunnyFreshnessSource
+  throttleMs?: number
+  force?: boolean
 }): Promise<BunnyReconcileResult> {
   const supabase = createServiceRoleClient()
   const touchedCourses = new Map<string, { id: string; slug: string }>()
+  const source = options?.source ?? "cron"
+  const throttleMs = Math.max(1_000, options?.throttleMs ?? DEFAULT_BUNNY_CHECK_THROTTLE_MS)
+  const force = options?.force ?? (source === "cron" || source === "webhook")
+  const nowIso = new Date().toISOString()
   let previewUpdates = 0
   let lessonUpdates = 0
   let errors = 0
@@ -374,6 +551,8 @@ export async function reconcilePendingBunnyAssets(options?: {
         "preview_bunny_video_id",
         "preview_bunny_library_id",
         "preview_status",
+        "preview_last_checked_at",
+        "preview_last_state_changed_at",
         "pending_preview_bunny_video_id",
         "pending_preview_bunny_library_id",
         "pending_preview_status",
@@ -393,29 +572,79 @@ export async function reconcilePendingBunnyAssets(options?: {
   const courses = ((courseRows ?? []) as unknown) as CoursePreviewRow[]
 
   for (const course of courses) {
-    const updates: Record<string, unknown> = {}
+    warnIfChecksAreStale({
+      kind: "preview",
+      courseId: course.id,
+      slug: course.slug,
+      lastCheckedAt: course.preview_last_checked_at,
+      source,
+      throttleMs,
+      force,
+    })
+
+    if (course.pending_preview_status === "processing") {
+      warnIfProcessingLooksStuck({
+        kind: "preview",
+        courseId: course.id,
+        slug: course.slug,
+        videoId:
+          course.pending_preview_bunny_video_id ?? course.preview_bunny_video_id,
+        stateChangedAt: course.preview_last_state_changed_at,
+        source,
+      })
+    } else if (course.preview_status === "processing") {
+      warnIfProcessingLooksStuck({
+        kind: "preview",
+        courseId: course.id,
+        slug: course.slug,
+        videoId: course.preview_bunny_video_id,
+        stateChangedAt: course.preview_last_state_changed_at,
+        source,
+      })
+    }
 
     if (
       course.pending_preview_bunny_video_id &&
       course.pending_preview_bunny_library_id
     ) {
+      if (
+        shouldSkipRemoteCheck({
+          hasRelevantMedia: true,
+          lastCheckedAt: course.preview_last_checked_at,
+          throttleMs,
+          force,
+        })
+      ) {
+        continue
+      }
+
       const pendingState = await readRemoteBunnyState(
         course.pending_preview_bunny_video_id
       )
+      const updateData: Record<string, unknown> = {
+        preview_last_checked_at: nowIso,
+      }
+
+      if (pendingState.requestFailed) {
+        await supabase.from("courses").update(updateData).eq("id", course.id)
+        errors++
+        continue
+      }
 
       if (pendingState.state === "ready") {
         const oldVideoId = course.preview_bunny_video_id
 
-        updates.preview_bunny_video_id = course.pending_preview_bunny_video_id
-        updates.preview_bunny_library_id = course.pending_preview_bunny_library_id
-        updates.preview_status = "ready"
-        updates.preview_video_url = null
-        updates.pending_preview_bunny_video_id = null
-        updates.pending_preview_bunny_library_id = null
-        updates.pending_preview_status = "none"
-        updates.preview_upload_error = null
+        updateData.preview_bunny_video_id = course.pending_preview_bunny_video_id
+        updateData.preview_bunny_library_id = course.pending_preview_bunny_library_id
+        updateData.preview_status = "ready"
+        updateData.preview_video_url = null
+        updateData.pending_preview_bunny_video_id = null
+        updateData.pending_preview_bunny_library_id = null
+        updateData.pending_preview_status = "none"
+        updateData.preview_upload_error = null
+        updateData.preview_last_state_changed_at = nowIso
 
-        await supabase.from("courses").update(updates).eq("id", course.id)
+        await supabase.from("courses").update(updateData).eq("id", course.id)
 
         if (oldVideoId && oldVideoId !== course.pending_preview_bunny_video_id) {
           await deleteBunnyVideo(oldVideoId).catch(() => undefined)
@@ -427,40 +656,77 @@ export async function reconcilePendingBunnyAssets(options?: {
       }
 
       if (pendingState.state === "processing") {
-        if (
-          course.pending_preview_status !== "processing" ||
-          course.preview_upload_error
-        ) {
-          await supabase
-            .from("courses")
-            .update({
-              pending_preview_status: "processing",
-              preview_upload_error: null,
-            })
-            .eq("id", course.id)
+        let shouldTouch = false
+
+        if (course.pending_preview_status !== "processing") {
+          updateData.pending_preview_status = "processing"
+          updateData.preview_last_state_changed_at = nowIso
+          shouldTouch = true
+        }
+
+        if (course.preview_upload_error) {
+          updateData.preview_upload_error = null
+          shouldTouch = true
+        }
+
+        await supabase.from("courses").update(updateData).eq("id", course.id)
+
+        if (shouldTouch) {
           previewUpdates++
           addTouchedCourse(touchedCourses, course.id, course.slug)
         }
         continue
       }
 
-      await supabase
-        .from("courses")
-        .update({
-          pending_preview_status: "error",
-          preview_upload_error:
-            pendingState.message ??
-            "No se pudo procesar la nueva vista previa en Bunny.",
-        })
-        .eq("id", course.id)
-      previewUpdates++
+      let shouldTouch = false
+
+      if (course.pending_preview_status !== "error") {
+        updateData.pending_preview_status = "error"
+        updateData.preview_last_state_changed_at = nowIso
+        shouldTouch = true
+      }
+
+      const nextMessage =
+        pendingState.message ??
+        "No se pudo procesar la nueva vista previa en Bunny."
+      if (course.preview_upload_error !== nextMessage) {
+        updateData.preview_upload_error = nextMessage
+        shouldTouch = true
+      }
+
+      await supabase.from("courses").update(updateData).eq("id", course.id)
+
+      if (shouldTouch) {
+        previewUpdates++
+        addTouchedCourse(touchedCourses, course.id, course.slug)
+      }
       errors++
-      addTouchedCourse(touchedCourses, course.id, course.slug)
       continue
     }
 
     if (course.preview_bunny_video_id) {
+      if (
+        shouldSkipRemoteCheck({
+          hasRelevantMedia: isCoursePreviewCheckRelevant(course),
+          lastCheckedAt: course.preview_last_checked_at,
+          throttleMs,
+          force,
+        })
+      ) {
+        continue
+      }
+
       const activeState = await readRemoteBunnyState(course.preview_bunny_video_id)
+      const updateData: Record<string, unknown> = {
+        preview_last_checked_at: nowIso,
+      }
+
+      if (activeState.requestFailed) {
+        await supabase.from("courses").update(updateData).eq("id", course.id)
+        errors++
+        continue
+      }
+
       const nextStatus =
         activeState.state === "ready"
           ? "ready"
@@ -468,23 +734,28 @@ export async function reconcilePendingBunnyAssets(options?: {
             ? "processing"
             : "error"
 
-      if (
-        course.preview_status !== nextStatus ||
-        (nextStatus === "ready" && course.preview_upload_error) ||
-        (nextStatus === "error" &&
-          course.preview_upload_error !== activeState.message)
-      ) {
-        await supabase
-          .from("courses")
-          .update({
-            preview_status: nextStatus,
-            preview_upload_error:
-              nextStatus === "error" ? activeState.message : null,
-          })
-          .eq("id", course.id)
+      let shouldTouch = false
+
+      if (course.preview_status !== nextStatus) {
+        updateData.preview_status = nextStatus
+        updateData.preview_last_state_changed_at = nowIso
+        shouldTouch = true
+      }
+
+      const nextMessage = nextStatus === "error" ? activeState.message : null
+      if (course.preview_upload_error !== nextMessage) {
+        updateData.preview_upload_error = nextMessage
+        shouldTouch = true
+      }
+
+      await supabase.from("courses").update(updateData).eq("id", course.id)
+
+      if (shouldTouch) {
         previewUpdates++
         if (nextStatus === "error") errors++
         addTouchedCourse(touchedCourses, course.id, course.slug)
+      } else if (nextStatus === "error") {
+        errors++
       }
       continue
     }
@@ -492,7 +763,10 @@ export async function reconcilePendingBunnyAssets(options?: {
     if (course.preview_video_url && course.preview_status !== "legacy") {
       await supabase
         .from("courses")
-        .update({ preview_status: "legacy" })
+        .update({
+          preview_status: "legacy",
+          preview_last_state_changed_at: nowIso,
+        })
         .eq("id", course.id)
       previewUpdates++
       addTouchedCourse(touchedCourses, course.id, course.slug)
@@ -509,6 +783,7 @@ export async function reconcilePendingBunnyAssets(options?: {
         .update({
           preview_status: "none",
           preview_upload_error: null,
+          preview_last_state_changed_at: nowIso,
         })
         .eq("id", course.id)
       previewUpdates++
@@ -526,6 +801,8 @@ export async function reconcilePendingBunnyAssets(options?: {
         "bunny_video_id",
         "bunny_library_id",
         "bunny_status",
+        "bunny_last_checked_at",
+        "bunny_last_state_changed_at",
         "pending_bunny_video_id",
         "pending_bunny_library_id",
         "pending_bunny_status",
@@ -556,12 +833,66 @@ export async function reconcilePendingBunnyAssets(options?: {
       continue
     }
 
+    warnIfChecksAreStale({
+      kind: "lesson",
+      courseId: lesson.course_id,
+      slug: courseSlug,
+      lastCheckedAt: lesson.bunny_last_checked_at,
+      source,
+      throttleMs,
+      force,
+    })
+
+    if (
+      lesson.pending_bunny_video_id &&
+      lesson.pending_bunny_status === "processing"
+    ) {
+      warnIfProcessingLooksStuck({
+        kind: "lesson",
+        courseId: lesson.course_id,
+        slug: courseSlug,
+        videoId: lesson.pending_bunny_video_id,
+        stateChangedAt: lesson.bunny_last_state_changed_at,
+        source,
+      })
+    } else if (lesson.bunny_status === "processing") {
+      warnIfProcessingLooksStuck({
+        kind: "lesson",
+        courseId: lesson.course_id,
+        slug: courseSlug,
+        videoId: lesson.bunny_video_id,
+        stateChangedAt: lesson.bunny_last_state_changed_at,
+        source,
+      })
+    }
+
     if (lesson.pending_bunny_video_id && lesson.pending_bunny_library_id) {
+      if (
+        shouldSkipRemoteCheck({
+          hasRelevantMedia: true,
+          lastCheckedAt: lesson.bunny_last_checked_at,
+          throttleMs,
+          force,
+        })
+      ) {
+        continue
+      }
+
       const pendingState = await readRemoteBunnyState(lesson.pending_bunny_video_id)
+      const updateData: Record<string, unknown> = {
+        bunny_last_checked_at: nowIso,
+      }
+
+      if (pendingState.requestFailed) {
+        await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+        errors++
+        continue
+      }
 
       if (pendingState.state === "ready") {
         const oldVideoId = lesson.bunny_video_id
-        const updateData: Record<string, unknown> = {
+        const promotionData: Record<string, unknown> = {
+          ...updateData,
           bunny_video_id: lesson.pending_bunny_video_id,
           bunny_library_id: lesson.pending_bunny_library_id,
           bunny_status: "ready",
@@ -569,13 +900,14 @@ export async function reconcilePendingBunnyAssets(options?: {
           pending_bunny_library_id: null,
           pending_bunny_status: "none",
           video_upload_error: null,
+          bunny_last_state_changed_at: nowIso,
         }
 
         if (pendingState.length > 0) {
-          updateData.duration_seconds = Math.round(pendingState.length)
+          promotionData.duration_seconds = Math.round(pendingState.length)
         }
 
-        await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+        await supabase.from("lessons").update(promotionData).eq("id", lesson.id)
 
         if (oldVideoId && oldVideoId !== lesson.pending_bunny_video_id) {
           await deleteBunnyVideo(oldVideoId).catch(() => undefined)
@@ -587,39 +919,76 @@ export async function reconcilePendingBunnyAssets(options?: {
       }
 
       if (pendingState.state === "processing") {
-        if (
-          lesson.pending_bunny_status !== "processing" ||
-          lesson.video_upload_error
-        ) {
-          await supabase
-            .from("lessons")
-            .update({
-              pending_bunny_status: "processing",
-              video_upload_error: null,
-            })
-            .eq("id", lesson.id)
+        let shouldTouch = false
+
+        if (lesson.pending_bunny_status !== "processing") {
+          updateData.pending_bunny_status = "processing"
+          updateData.bunny_last_state_changed_at = nowIso
+          shouldTouch = true
+        }
+
+        if (lesson.video_upload_error) {
+          updateData.video_upload_error = null
+          shouldTouch = true
+        }
+
+        await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+
+        if (shouldTouch) {
           lessonUpdates++
           addTouchedCourse(touchedCourses, lesson.course_id, courseSlug)
         }
         continue
       }
 
-      await supabase
-        .from("lessons")
-        .update({
-          pending_bunny_status: "error",
-          video_upload_error:
-            pendingState.message ??
-            "No se pudo procesar el nuevo video de esta leccion en Bunny.",
-        })
-        .eq("id", lesson.id)
-      lessonUpdates++
+      let shouldTouch = false
+
+      if (lesson.pending_bunny_status !== "error") {
+        updateData.pending_bunny_status = "error"
+        updateData.bunny_last_state_changed_at = nowIso
+        shouldTouch = true
+      }
+
+      const nextMessage =
+        pendingState.message ??
+        "No se pudo procesar el nuevo video de esta leccion en Bunny."
+      if (lesson.video_upload_error !== nextMessage) {
+        updateData.video_upload_error = nextMessage
+        shouldTouch = true
+      }
+
+      await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+
+      if (shouldTouch) {
+        lessonUpdates++
+        addTouchedCourse(touchedCourses, lesson.course_id, courseSlug)
+      }
       errors++
-      addTouchedCourse(touchedCourses, lesson.course_id, courseSlug)
+      continue
+    }
+
+    if (
+      shouldSkipRemoteCheck({
+        hasRelevantMedia: isLessonCheckRelevant(lesson),
+        lastCheckedAt: lesson.bunny_last_checked_at,
+        throttleMs,
+        force,
+      })
+    ) {
       continue
     }
 
     const activeState = await readRemoteBunnyState(lesson.bunny_video_id)
+    const updateData: Record<string, unknown> = {
+      bunny_last_checked_at: nowIso,
+    }
+
+    if (activeState.requestFailed) {
+      await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+      errors++
+      continue
+    }
+
     const nextStatus =
       activeState.state === "ready"
         ? "ready"
@@ -627,24 +996,17 @@ export async function reconcilePendingBunnyAssets(options?: {
           ? "processing"
           : "error"
 
-    const updateData: Record<string, unknown> = {}
     let shouldUpdate = false
 
     if (lesson.bunny_status !== nextStatus) {
       updateData.bunny_status = nextStatus
+      updateData.bunny_last_state_changed_at = nowIso
       shouldUpdate = true
     }
 
-    if (nextStatus === "ready" && lesson.video_upload_error) {
-      updateData.video_upload_error = null
-      shouldUpdate = true
-    }
-
-    if (
-      nextStatus === "error" &&
-      lesson.video_upload_error !== activeState.message
-    ) {
-      updateData.video_upload_error = activeState.message
+    const nextMessage = nextStatus === "error" ? activeState.message : null
+    if (lesson.video_upload_error !== nextMessage) {
+      updateData.video_upload_error = nextMessage
       shouldUpdate = true
     }
 
@@ -657,11 +1019,14 @@ export async function reconcilePendingBunnyAssets(options?: {
       shouldUpdate = true
     }
 
+    await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+
     if (shouldUpdate) {
-      await supabase.from("lessons").update(updateData).eq("id", lesson.id)
       lessonUpdates++
       if (nextStatus === "error") errors++
       addTouchedCourse(touchedCourses, lesson.course_id, courseSlug)
+    } else if (nextStatus === "error") {
+      errors++
     }
   }
 
@@ -672,6 +1037,31 @@ export async function reconcilePendingBunnyAssets(options?: {
     errors,
     touchedCourses: [...touchedCourses.values()],
   }
+}
+
+export async function ensureCourseMediaFresh(
+  courseId: string,
+  options: EnsureCourseMediaFreshOptions
+): Promise<BunnyReconcileResult> {
+  const result = await reconcilePendingBunnyAssets({
+    courseId,
+    source: options.source,
+    throttleMs: options.throttleMs,
+    force: false,
+  })
+
+  if (result.reconciled > 0 || result.errors > 0) {
+    logBunnyMedia("info", "course_media_freshness_checked", {
+      courseId,
+      source: options.source,
+      reconciled: result.reconciled,
+      previewUpdates: result.previewUpdates,
+      lessonUpdates: result.lessonUpdates,
+      errors: result.errors,
+    })
+  }
+
+  return result
 }
 
 export async function reconcileBunnyVideoWebhook(
@@ -717,7 +1107,11 @@ export async function reconcileBunnyVideoWebhook(
 
   const results = await Promise.all(
     [...affectedCourseIds].map((courseId) =>
-      reconcilePendingBunnyAssets({ courseId })
+      reconcilePendingBunnyAssets({
+        courseId,
+        source: "webhook",
+        force: true,
+      })
     )
   )
 

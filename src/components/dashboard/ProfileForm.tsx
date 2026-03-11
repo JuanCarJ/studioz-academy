@@ -117,6 +117,7 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
             name="fullName"
             defaultValue={defaultValues.fullName}
             required
+            maxLength={80}
           />
         </div>
 

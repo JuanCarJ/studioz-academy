@@ -1,24 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { revalidatePath } from "next/cache"
 
-import { reconcilePendingBunnyAssets } from "@/lib/bunny"
-
-function revalidateTouchedCoursePaths(
-  touchedCourses: Array<{ id: string; slug: string }>
-) {
-  if (touchedCourses.length === 0) {
-    return
-  }
-
-  revalidatePath("/admin/cursos")
-  revalidatePath("/cursos")
-
-  for (const course of touchedCourses) {
-    revalidatePath(`/admin/cursos/${course.id}/editar`)
-    revalidatePath(`/cursos/${course.slug}`)
-    revalidatePath(`/dashboard/cursos/${course.slug}`)
-  }
-}
+import {
+  reconcilePendingBunnyAssets,
+  revalidateTouchedCoursePaths,
+} from "@/lib/bunny"
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization")
@@ -28,8 +13,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const result = await reconcilePendingBunnyAssets()
+  const result = await reconcilePendingBunnyAssets({
+    source: "cron",
+    force: true,
+  })
   revalidateTouchedCoursePaths(result.touchedCourses)
+
+  console.info("[bunny-media]", {
+    event: "cron_reconcile_completed",
+    source: "cron",
+    reconciled: result.reconciled,
+    previewUpdates: result.previewUpdates,
+    lessonUpdates: result.lessonUpdates,
+    errors: result.errors,
+    touchedCourseIds: result.touchedCourses.map((course) => course.id),
+  })
 
   return NextResponse.json({
     ok: true,

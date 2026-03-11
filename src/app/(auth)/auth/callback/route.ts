@@ -2,6 +2,7 @@ import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 
+import { resolveAccountStatusByUserId } from "@/lib/auth/account"
 import { resolveAuthIntent, stripAuthIntentParams } from "@/lib/auth-intent"
 import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
@@ -44,11 +45,29 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser()
 
   if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single()
+    const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+
+    if (accountStatus.state === "deleted") {
+      await supabase.auth.signOut()
+      const response = NextResponse.redirect(`${origin}/login?error=account-deleted`)
+      for (const cookie of cookieStore.getAll()) {
+        if (isSupabaseAuthTokenCookieName(cookie.name)) {
+          response.cookies.delete(cookie.name)
+        }
+      }
+      return response
+    }
+
+    if (accountStatus.state === "missing_profile") {
+      await supabase.auth.signOut()
+      const response = NextResponse.redirect(`${origin}/login?error=callback`)
+      for (const cookie of cookieStore.getAll()) {
+        if (isSupabaseAuthTokenCookieName(cookie.name)) {
+          response.cookies.delete(cookie.name)
+        }
+      }
+      return response
+    }
 
     const nextUrl = new URL(next, origin)
     const authIntent = resolveAuthIntent({
@@ -62,10 +81,10 @@ export async function GET(request: Request) {
       next = await resolvePostAuthIntentRedirect({
         supabase,
         userId: user.id,
-        fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
+        fallbackPath: accountStatus.role === "admin" ? "/admin" : "/dashboard",
         intent: authIntent,
       })
-    } else if (profile?.role === "admin" && !providedNext) {
+    } else if (accountStatus.role === "admin" && !providedNext) {
       next = "/admin"
     } else {
       next = stripAuthIntentParams(next) ?? next

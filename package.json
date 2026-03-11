@@ -15,6 +15,7 @@
     "test:wompi:checkout": "PLAYWRIGHT_USE_EXISTING_SERVER=0 playwright test e2e/wompi-checkout-web.spec.ts --project=desktop-chromium",
     "test:wompi:sandbox": "PLAYWRIGHT_USE_EXISTING_SERVER=1 playwright test e2e/wompi-sandbox.spec.ts --project=desktop-chromium",
     "test:wompi:capabilities": "PLAYWRIGHT_USE_EXISTING_SERVER=1 playwright test e2e/wompi-capabilities.spec.ts --project=desktop-chromium",
+    "auth:cleanup-deleted-users": "node scripts/auth/cleanup-deleted-users.mjs",
     "qa:seed": "node scripts/qa/seed-staging.mjs",
     "qa:reset": "node scripts/qa/reset-staging.mjs",
     "wompi:webhook:url": "node scripts/wompi/print-webhook-url.mjs"

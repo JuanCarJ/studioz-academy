@@ -8,6 +8,7 @@ import { Check, Loader2, ShoppingCart } from "lucide-react"
 import { addToCart } from "@/actions/cart"
 import { enrollFree } from "@/actions/enrollments"
 import { buildCourseAuthPath } from "@/lib/auth-intent"
+import { dispatchCartCountUpdated } from "@/lib/cart-events"
 import { getCartErrorMessage } from "@/lib/cart"
 import { Button } from "@/components/ui/button"
 
@@ -79,6 +80,9 @@ export function CourseCardAction({
           }
           case "ALREADY_IN_CART":
             setLocalIsInCart(true)
+            if (typeof result.cartCount === "number") {
+              dispatchCartCountUpdated(result.cartCount)
+            }
             return
           case "ALREADY_ENROLLED":
             router.push(`/dashboard/cursos/${slug}`)
@@ -94,6 +98,9 @@ export function CourseCardAction({
         }
       } else {
         setLocalIsInCart(true)
+        if (typeof result.cartCount === "number") {
+          dispatchCartCountUpdated(result.cartCount)
+        }
         router.refresh()
       }
     })
@@ -135,7 +142,7 @@ export function CourseCardAction({
         asChild
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        <Link href={`/dashboard/cursos/${slug}`}>Ir al curso</Link>
+        <Link href={`/dashboard/cursos/${slug}`} prefetch={false}>Ir al curso</Link>
       </Button>
     )
   }

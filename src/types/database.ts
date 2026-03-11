@@ -234,6 +234,8 @@ export type Database = {
           pending_preview_bunny_library_id: string | null
           pending_preview_bunny_video_id: string | null
           pending_preview_status: string
+          preview_last_checked_at: string | null
+          preview_last_state_changed_at: string | null
           preview_bunny_library_id: string | null
           preview_bunny_video_id: string | null
           preview_status: string
@@ -264,6 +266,8 @@ export type Database = {
           pending_preview_bunny_library_id?: string | null
           pending_preview_bunny_video_id?: string | null
           pending_preview_status?: string
+          preview_last_checked_at?: string | null
+          preview_last_state_changed_at?: string | null
           preview_bunny_library_id?: string | null
           preview_bunny_video_id?: string | null
           preview_status?: string
@@ -294,6 +298,8 @@ export type Database = {
           pending_preview_bunny_library_id?: string | null
           pending_preview_bunny_video_id?: string | null
           pending_preview_status?: string
+          preview_last_checked_at?: string | null
+          preview_last_state_changed_at?: string | null
           preview_bunny_library_id?: string | null
           preview_bunny_video_id?: string | null
           preview_status?: string
@@ -598,6 +604,8 @@ export type Database = {
       lessons: {
         Row: {
           bunny_status: string
+          bunny_last_checked_at: string | null
+          bunny_last_state_changed_at: string | null
           bunny_library_id: string
           bunny_video_id: string
           course_id: string
@@ -616,6 +624,8 @@ export type Database = {
         }
         Insert: {
           bunny_status?: string
+          bunny_last_checked_at?: string | null
+          bunny_last_state_changed_at?: string | null
           bunny_library_id: string
           bunny_video_id: string
           course_id: string
@@ -634,6 +644,8 @@ export type Database = {
         }
         Update: {
           bunny_status?: string
+          bunny_last_checked_at?: string | null
+          bunny_last_state_changed_at?: string | null
           bunny_library_id?: string
           bunny_video_id?: string
           course_id?: string
