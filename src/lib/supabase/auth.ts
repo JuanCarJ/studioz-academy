@@ -1,14 +1,15 @@
 import { cache } from "react"
+import { cookies } from "next/headers"
 
 import { resolveAccountStatusByUserId } from "@/lib/auth/account"
+import { getSupabaseUserWithRecovery } from "@/lib/supabase/session-recovery"
 
 import { createServerClient } from "./server"
 
 export const getCurrentUser = cache(async () => {
   const supabase = await createServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const cookieStore = await cookies()
+  const user = await getSupabaseUserWithRecovery(supabase, cookieStore)
   if (!user) return null
 
   const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)

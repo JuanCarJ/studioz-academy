@@ -28,6 +28,7 @@ import {
 } from "./support/db"
 
 const runId = Date.now().toString(36)
+const runAlphaId = runId.replace(/\d/g, "").toUpperCase() || "QA"
 const reviewTextInitial = `QA E2E review inicial ${runId}`
 const reviewTextUpdated = `QA E2E review actualizada ${runId}`
 const contactSubject = `QA E2E contact ${runId}`
@@ -265,7 +266,7 @@ test.describe.serial("Business E2E", () => {
   })
 
   test("actualiza perfil y muestra historial de compras", async ({ page }) => {
-    const updatedName = `QA Student Studio Z ${runId}`
+    const updatedName = `QA Student Studio Z ${runAlphaId}`
     const updatedPhone = "3001234567"
 
     await loginAsUser(page)
@@ -566,9 +567,7 @@ test.describe.serial("Business E2E", () => {
 
     await page.getByLabel(/nombre completo/i).fill(instructorName)
     await page.getByLabel(/^bio$/i).fill("Instructor temporal QA E2E.")
-    await page.locator("#newSpecialtyCategory").click()
-    await page.getByRole("option", { name: /^tatuaje$/i }).click()
-    await page.getByLabel(/^nombre$/i).fill("Workshop")
+    await page.getByRole("checkbox", { name: /^workshop$/i }).click()
     await page.getByRole("button", { name: /crear instructor/i }).click()
 
     const instructorSlug = slugify(instructorName)
