@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { stripAuthIntentParams } from "@/lib/auth-intent"
 import { calculatePricing, decorateCourseWithPricing } from "@/lib/pricing"
 
 import type { DiscountRule, Instructor, PricingLine } from "@/types"
@@ -369,25 +370,13 @@ export async function resolveCartStateForUser(input: {
   }
 }
 
-export function stripAddToCartParam(path: string | null): string | null {
-  if (!path || !path.startsWith("/") || path.startsWith("//")) {
-    return null
-  }
-
-  const url = new URL(path, "http://localhost")
-  url.searchParams.delete("addToCart")
-
-  const nextPath = `${url.pathname}${url.search}`
-  return nextPath || "/"
-}
-
 export function resolvePostAddToCartRedirect(input: {
   result: AddCourseToCartResult
   redirectTo: string | null
   fallbackPath: string
 }): string {
   const sanitizedRedirect =
-    stripAddToCartParam(input.redirectTo) ?? input.fallbackPath
+    stripAuthIntentParams(input.redirectTo) ?? input.fallbackPath
 
   if (input.result.success || input.result.code === "ALREADY_IN_CART") {
     return "/carrito"

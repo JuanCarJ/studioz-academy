@@ -9,6 +9,7 @@ import {
   clearUserCart,
   e2eSupabase,
   ensureBusinessFixtures,
+  getCartItemsForEmail,
   getCourseBySlug,
   getEnrollment,
   getInstructorBySlug,
@@ -64,6 +65,18 @@ async function cleanupPromotionFixtures() {
   await e2eSupabase.from("discount_rules").delete().ilike("name", "QA E2E Buy2Get1 %")
   await e2eSupabase.from("discount_rules").delete().ilike("name", "QA E2E Combo 100 %")
   await cleanupCoursesBySlugPrefix("qa-e2e-promo-temp-")
+}
+
+async function addCourseToCartAndWait(input: {
+  page: Parameters<typeof loginAsUser>[0]
+  slug: string
+  expectedCartSize: number
+}) {
+  await input.page.goto(`/cursos/${input.slug}`)
+  await input.page.getByRole("button", { name: /agregar al carrito/i }).click()
+  await expect
+    .poll(async () => (await getCartItemsForEmail(qaCredentials.userEmail)).length)
+    .toBe(input.expectedCartSize)
 }
 
 test.describe.serial("promotions pricing", () => {
@@ -226,14 +239,21 @@ test.describe.serial("promotions pricing", () => {
 
       await loginAsUser(page)
 
-      for (const slug of [
-        qaFixtures.cartCourseOneSlug,
-        qaFixtures.cartCourseTwoSlug,
-        tempCourseSlug,
-      ]) {
-        await page.goto(`/cursos/${slug}`)
-        await page.getByRole("button", { name: /agregar al carrito/i }).click()
-      }
+      await addCourseToCartAndWait({
+        page,
+        slug: qaFixtures.cartCourseOneSlug,
+        expectedCartSize: 1,
+      })
+      await addCourseToCartAndWait({
+        page,
+        slug: qaFixtures.cartCourseTwoSlug,
+        expectedCartSize: 2,
+      })
+      await addCourseToCartAndWait({
+        page,
+        slug: tempCourseSlug,
+        expectedCartSize: 3,
+      })
 
       await page.goto("/carrito")
       await expect(page.getByText("Gratis por promo")).toHaveCount(1)
@@ -300,10 +320,16 @@ test.describe.serial("promotions pricing", () => {
       comboRuleId = comboRule.id
 
       await loginAsUser(page)
-      for (const slug of [qaFixtures.cartCourseOneSlug, qaFixtures.cartCourseTwoSlug]) {
-        await page.goto(`/cursos/${slug}`)
-        await page.getByRole("button", { name: /agregar al carrito/i }).click()
-      }
+      await addCourseToCartAndWait({
+        page,
+        slug: qaFixtures.cartCourseOneSlug,
+        expectedCartSize: 1,
+      })
+      await addCourseToCartAndWait({
+        page,
+        slug: qaFixtures.cartCourseTwoSlug,
+        expectedCartSize: 2,
+      })
 
       await page.goto("/carrito")
       await expect(page.getByRole("button", { name: /finalizar inscripcion/i })).toBeVisible()

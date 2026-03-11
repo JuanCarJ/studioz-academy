@@ -7,6 +7,7 @@ import { Play } from "lucide-react"
 
 import { addToCart } from "@/actions/cart"
 import { getSignedVideoUrl } from "@/actions/lessons"
+import { buildCourseAuthPath } from "@/lib/auth-intent"
 import { getCartErrorMessage } from "@/lib/cart"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
@@ -70,13 +71,17 @@ export function FreeLessonPlayer({
     !isEnrolled
 
   function requireAuth(options?: { includeAddToCart?: boolean }) {
-    const params = new URLSearchParams({ redirect: `/cursos/${slug}` })
-
-    if (options?.includeAddToCart) {
-      params.set("addToCart", courseId)
-    }
-
-    router.push(`/login?${params.toString()}`)
+    router.push(
+      buildCourseAuthPath({
+        slug,
+        intent: options?.includeAddToCart
+          ? {
+              kind: "add_to_cart",
+              courseId,
+            }
+          : undefined,
+      })
+    )
   }
 
   function loadLesson(lessonId: string) {

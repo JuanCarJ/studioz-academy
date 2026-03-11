@@ -2,7 +2,7 @@ import { Suspense } from "react"
 
 import type { Metadata } from "next"
 
-import { getCourses, getInstructorsForFilter } from "@/actions/courses"
+import { getCourses, getCatalogUserState, getInstructorsForFilter } from "@/actions/courses"
 import { CatalogFilters } from "@/components/courses/CatalogFilters"
 import { CourseGrid } from "@/components/courses/CourseGrid"
 import { CoursesSkeleton } from "@/components/skeletons/CoursesSkeleton"
@@ -47,14 +47,24 @@ async function CourseResults({
     instructor?: string
   }
 }) {
-  const courses = await getCourses({
-    category: filters.category,
-    search: filters.search,
-    sort: (filters.sort as "newest" | "price_asc" | "price_desc") ?? "newest",
-    instructor: filters.instructor,
-  })
+  const [courses, userState] = await Promise.all([
+    getCourses({
+      category: filters.category,
+      search: filters.search,
+      sort: (filters.sort as "newest" | "price_asc" | "price_desc") ?? "newest",
+      instructor: filters.instructor,
+    }),
+    getCatalogUserState(),
+  ])
 
-  return <CourseGrid courses={courses} />
+  return (
+    <CourseGrid
+      courses={courses}
+      cartCourseIds={userState.cartCourseIds}
+      enrolledCourseIds={userState.enrolledCourseIds}
+      isAuthenticated={userState.isAuthenticated}
+    />
+  )
 }
 
 export default async function CourseCatalogPage({ searchParams }: PageProps) {

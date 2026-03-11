@@ -2,6 +2,7 @@
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { resolveCoursePreview } from "@/lib/bunny"
+import { getCartItemsForUser } from "@/lib/cart"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"
@@ -249,6 +250,35 @@ export async function getCourseBySlug(
     resolvedPreview: resolveCoursePreview(course as unknown as Course),
     enrollmentProgress,
   } as CourseDetail
+}
+
+export async function getCatalogUserState(): Promise<{
+  cartCourseIds: string[]
+  enrolledCourseIds: string[]
+  isAuthenticated: boolean
+}> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return { cartCourseIds: [], enrolledCourseIds: [], isAuthenticated: false }
+  }
+
+  const supabase = await createServerClient()
+  const [cartItems, enrollmentResult] = await Promise.all([
+    getCartItemsForUser({
+      supabase,
+      userId: user.id,
+    }),
+    supabase
+      .from("enrollments")
+      .select("course_id")
+      .eq("user_id", user.id),
+  ])
+
+  return {
+    cartCourseIds: cartItems.map((item) => item.course_id),
+    enrolledCourseIds: (enrollmentResult.data ?? []).map((r) => r.course_id),
+    isAuthenticated: true,
+  }
 }
 
 export async function getRelatedCourses(

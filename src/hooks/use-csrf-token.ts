@@ -27,7 +27,6 @@ export function useCsrfToken() {
 
     if (storedToken) {
       setCsrfToken(storedToken)
-      setIsLoading(false)
     }
 
     async function initCsrfToken() {

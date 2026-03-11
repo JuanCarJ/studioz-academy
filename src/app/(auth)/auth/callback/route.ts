@@ -2,10 +2,8 @@ import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 
-import {
-  addCourseToCartForUser,
-  resolvePostAddToCartRedirect,
-} from "@/lib/cart"
+import { resolveAuthIntent, stripAuthIntentParams } from "@/lib/auth-intent"
+import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 
@@ -53,21 +51,24 @@ export async function GET(request: Request) {
       .single()
 
     const nextUrl = new URL(next, origin)
-    const addToCartId = nextUrl.searchParams.get("addToCart")
+    const authIntent = resolveAuthIntent({
+      redirectTo: `${nextUrl.pathname}${nextUrl.search}`,
+      intent: nextUrl.searchParams.get("intent"),
+      courseId: nextUrl.searchParams.get("courseId"),
+      addToCart: nextUrl.searchParams.get("addToCart"),
+    })
 
-    if (addToCartId) {
-      const addToCartResult = await addCourseToCartForUser({
+    if (authIntent) {
+      next = await resolvePostAuthIntentRedirect({
         supabase,
         userId: user.id,
-        courseId: addToCartId,
-      })
-      next = resolvePostAddToCartRedirect({
-        result: addToCartResult,
-        redirectTo: next,
         fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
+        intent: authIntent,
       })
     } else if (profile?.role === "admin" && !providedNext) {
       next = "/admin"
+    } else {
+      next = stripAuthIntentParams(next) ?? next
     }
   }
 

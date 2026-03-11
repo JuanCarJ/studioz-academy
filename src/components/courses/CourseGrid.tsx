@@ -25,9 +25,17 @@ interface CourseGridProps {
     instructor?: Pick<Instructor, "id" | "full_name">
     isNew?: boolean
   })[]
+  cartCourseIds?: string[]
+  enrolledCourseIds?: string[]
+  isAuthenticated?: boolean
 }
 
-export function CourseGrid({ courses }: CourseGridProps) {
+export function CourseGrid({
+  courses,
+  cartCourseIds,
+  enrolledCourseIds,
+  isAuthenticated,
+}: CourseGridProps) {
   if (courses.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
@@ -48,10 +56,19 @@ export function CourseGrid({ courses }: CourseGridProps) {
     )
   }
 
+  const cartSet = cartCourseIds ? new Set(cartCourseIds) : undefined
+  const enrolledSet = enrolledCourseIds ? new Set(enrolledCourseIds) : undefined
+
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {courses.map((course) => (
-        <CourseCard key={course.id} course={course} />
+        <CourseCard
+          key={course.id}
+          course={course}
+          isInCart={cartSet ? cartSet.has(course.id) : undefined}
+          isEnrolled={enrolledSet ? enrolledSet.has(course.id) : undefined}
+          isAuthenticated={isAuthenticated}
+        />
       ))}
     </div>
   )

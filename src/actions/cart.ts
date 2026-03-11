@@ -51,6 +51,7 @@ export async function addToCart(
   }
 
   revalidatePath("/carrito")
+  revalidatePath("/cursos")
   revalidatePath("/", "layout")
   return { success: true }
 }
@@ -74,6 +75,7 @@ export async function removeFromCart(
   }
 
   revalidatePath("/carrito")
+  revalidatePath("/cursos")
   revalidatePath("/", "layout")
   return { success: true }
 }
