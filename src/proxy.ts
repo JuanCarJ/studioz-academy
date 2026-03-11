@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+import { resolveAccountStatusByUserId } from "@/lib/auth/account"
+
 const publicRoutes = [
   "/",
   "/cursos",
@@ -183,19 +185,33 @@ export async function proxy(request: NextRequest) {
   // createServerClient and getUser()
   const user = await getUserWithRecovery(request, supabase)
 
+  let accountStatus:
+    | Awaited<ReturnType<typeof resolveAccountStatusByUserId>>
+    | null = null
+
+  if (user) {
+    accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+
+    if (accountStatus.state === "deleted") {
+      await supabase.auth.signOut()
+      const loginUrl = new URL("/login", request.url)
+      loginUrl.searchParams.set("error", "account-deleted")
+      return redirectWithSupabaseCookies(loginUrl, supabaseResponse)
+    }
+
+    if (accountStatus.state === "missing_profile") {
+      await supabase.auth.signOut()
+      return redirectWithSupabaseCookies(new URL("/login", request.url), supabaseResponse)
+    }
+  }
+
   // Public routes: always accessible (session already refreshed above)
   if (isPublicRoute(path)) return supabaseResponse
 
   // Auth routes: redirect if already logged in
   if (isAuthRoute(path)) {
     if (user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single()
-
-      const dest = profile?.role === "admin" ? "/admin" : "/dashboard"
+      const dest = accountStatus?.role === "admin" ? "/admin" : "/dashboard"
       return redirectWithSupabaseCookies(
         new URL(dest, request.url),
         supabaseResponse
@@ -213,13 +229,7 @@ export async function proxy(request: NextRequest) {
 
   // Admin routes: require admin role
   if (path.startsWith("/admin")) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single()
-
-    if (profile?.role !== "admin") {
+    if (accountStatus?.role !== "admin") {
       return redirectWithSupabaseCookies(
         new URL("/dashboard", request.url),
         supabaseResponse

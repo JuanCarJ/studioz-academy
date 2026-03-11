@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
+import { normalizeFullName, validateFullName } from "@/lib/auth/account"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
+import { clearSupabaseAuthTokenCookies } from "@/lib/supabase/cookies"
 
 export interface ProfileActionState {
   error?: string
@@ -22,18 +24,19 @@ export async function updateProfile(
   const user = await getCurrentUser()
   if (!user) return { error: "Debes iniciar sesion." }
 
-  const fullName = formData.get("fullName") as string
+  const fullName = normalizeFullName((formData.get("fullName") as string) ?? "")
   const phone = (formData.get("phone") as string) || null
   const emailNotifications = formData.get("emailNotifications") === "on"
 
-  if (!fullName?.trim()) {
-    return { error: "El nombre es obligatorio." }
+  const fullNameError = validateFullName(fullName)
+  if (fullNameError) {
+    return { error: fullNameError }
   }
 
   const supabase = await createServerClient()
 
   const updateData: Record<string, unknown> = {
-    full_name: fullName.trim(),
+    full_name: fullName,
     phone,
     email_notifications: emailNotifications,
   }
@@ -91,6 +94,7 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
   if (!user) return { error: "Debes iniciar sesion." }
 
   const supabase = await createServerClient()
+  const adminSupabase = createServiceRoleClient()
 
   const { error: rpcError } = await supabase.rpc("anonymize_user_data", {
     target_user_id: user.id,
@@ -100,8 +104,16 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
     return { error: "No se pudo procesar la eliminacion. Contacta soporte." }
   }
 
-  // Sign out the user
+  const { error: deleteAuthError } = await adminSupabase.auth.admin.deleteUser(user.id, true)
+  if (deleteAuthError) {
+    return {
+      error:
+        "No se pudo completar la eliminacion de la cuenta. Intenta de nuevo o contacta soporte.",
+    }
+  }
+
   await supabase.auth.signOut()
+  await clearSupabaseAuthTokenCookies()
 
   revalidatePath("/", "layout")
   redirect("/")

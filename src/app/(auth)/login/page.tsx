@@ -8,6 +8,7 @@ import { Suspense } from "react"
 import { login, loginWithGoogle } from "@/actions/auth"
 import type { AuthActionState } from "@/actions/auth"
 import { resolveAuthIntent } from "@/lib/auth-intent"
+import { getAuthPageErrorMessage } from "@/lib/auth/messages"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -18,6 +19,7 @@ import { useCsrfToken } from "@/hooks/use-csrf-token"
 function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
+  const errorMessage = getAuthPageErrorMessage(searchParams.get("error"))
   const message = searchParams.get("message")
   const authIntent = resolveAuthIntent({
     redirectTo,
@@ -61,6 +63,12 @@ function LoginForm() {
         {csrfError && (
           <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {csrfError}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {errorMessage}
           </div>
         )}
 

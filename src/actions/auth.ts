@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import {
@@ -10,9 +9,19 @@ import {
   parseAuthIntentFromFormData,
   stripAuthIntentParams,
 } from "@/lib/auth-intent"
+import {
+  normalizeEmail,
+  normalizeFullName,
+  resolveAccountStatusByUserId,
+  validateFullName,
+} from "@/lib/auth/account"
+import {
+  buildInvalidCredentialsError,
+  SAFE_SIGNUP_RETRY_MESSAGE,
+} from "@/lib/auth/messages"
 import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
 import { isValidCsrfToken } from "@/lib/security/csrf"
-import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
+import { clearSupabaseAuthTokenCookies } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
 
 export interface AuthActionState {
@@ -23,19 +32,6 @@ export interface AuthActionState {
 const INVALID_CSRF_MESSAGE =
   "Solicitud invalida por seguridad. Recarga la pagina e intenta de nuevo."
 
-/**
- * Clear Supabase auth-token cookies (base + chunks) to prevent stale
- * cookie parts from a previous session interfering with the new one.
- */
-async function clearStaleAuthTokenCookies() {
-  const cookieStore = await cookies()
-  for (const cookie of cookieStore.getAll()) {
-    if (isSupabaseAuthTokenCookieName(cookie.name)) {
-      cookieStore.delete(cookie.name)
-    }
-  }
-}
-
 export async function register(
   _prevState: AuthActionState,
   formData: FormData
@@ -44,9 +40,9 @@ export async function register(
     return { error: INVALID_CSRF_MESSAGE }
   }
 
-  const email = formData.get("email") as string
+  const email = normalizeEmail((formData.get("email") as string) ?? "")
   const password = formData.get("password") as string
-  const fullName = formData.get("fullName") as string
+  const fullName = normalizeFullName((formData.get("fullName") as string) ?? "")
   const phone = (formData.get("phone") as string) || undefined
   const acceptsPrivacy = formData.get("acceptsPrivacy")
   const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
@@ -63,10 +59,15 @@ export async function register(
     return { error: "La contrasena debe tener al menos 8 caracteres." }
   }
 
-  await clearStaleAuthTokenCookies()
+  const fullNameError = validateFullName(fullName)
+  if (fullNameError) {
+    return { error: fullNameError }
+  }
+
+  await clearSupabaseAuthTokenCookies()
   const supabase = await createServerClient()
 
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -78,11 +79,13 @@ export async function register(
   })
 
   if (error) {
-    // Generic error to avoid leaking user existence
-    if (error.message.includes("already registered")) {
-      return { error: "No se pudo completar el registro. Verifica tus datos e intenta de nuevo." }
-    }
-    return { error: "No se pudo completar el registro. Intenta de nuevo." }
+    return { error: SAFE_SIGNUP_RETRY_MESSAGE }
+  }
+
+  const isAmbiguousSignup =
+    Array.isArray(data.user?.identities) && data.user.identities.length === 0
+  if (!data.user || isAmbiguousSignup) {
+    return { error: SAFE_SIGNUP_RETRY_MESSAGE }
   }
 
   revalidatePath("/", "layout")
@@ -118,7 +121,7 @@ export async function login(
     return { error: INVALID_CSRF_MESSAGE }
   }
 
-  const email = formData.get("email") as string
+  const email = normalizeEmail((formData.get("email") as string) ?? "")
   const password = formData.get("password") as string
   const redirectTo = getSafeRedirectPath(formData.get("redirect") as string | null)
 
@@ -126,7 +129,7 @@ export async function login(
     return { error: "Email y contrasena son obligatorios." }
   }
 
-  await clearStaleAuthTokenCookies()
+  await clearSupabaseAuthTokenCookies()
   const supabase = await createServerClient()
 
   const { error } = await supabase.auth.signInWithPassword({
@@ -135,20 +138,29 @@ export async function login(
   })
 
   if (error) {
-    return { error: "Email o contrasena incorrectos." }
+    return buildInvalidCredentialsError()
   }
 
-  // Determine redirect based on role
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single()
+    const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+
+    if (accountStatus.state === "deleted") {
+      await supabase.auth.signOut()
+      await clearSupabaseAuthTokenCookies()
+      redirect("/login?error=account-deleted")
+    }
+
+    if (accountStatus.state === "missing_profile") {
+      await supabase.auth.signOut()
+      await clearSupabaseAuthTokenCookies()
+      return {
+        error: "No pudimos iniciar sesion. Intenta de nuevo o contacta soporte.",
+      }
+    }
 
     revalidatePath("/", "layout")
 
@@ -159,7 +171,7 @@ export async function login(
           supabase,
           userId: user.id,
           intent: authIntent,
-          fallbackPath: profile?.role === "admin" ? "/admin" : "/dashboard",
+          fallbackPath: accountStatus.role === "admin" ? "/admin" : "/dashboard",
         })
       )
     }
@@ -169,11 +181,11 @@ export async function login(
       redirect(sanitizedRedirect)
     }
 
-    redirect(profile?.role === "admin" ? "/admin" : "/dashboard")
+    redirect(accountStatus.role === "admin" ? "/admin" : "/dashboard")
   }
 
   revalidatePath("/", "layout")
-  redirect("/dashboard")
+  return buildInvalidCredentialsError()
 }
 
 export async function loginWithGoogle(formData: FormData) {
@@ -207,7 +219,7 @@ export async function logout(formData: FormData) {
 
   const supabase = await createServerClient()
   await supabase.auth.signOut()
-  await clearStaleAuthTokenCookies()
+  await clearSupabaseAuthTokenCookies()
 
   revalidatePath("/", "layout")
   redirect("/")

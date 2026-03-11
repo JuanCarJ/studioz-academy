@@ -210,6 +210,54 @@ async function ensureUser(input: {
   return userId
 }
 
+export async function ensureAuthUser(input: {
+  email: string
+  password: string
+  role?: "admin" | "user"
+  fullName: string
+}) {
+  return ensureUser({
+    ...input,
+    role: input.role ?? "user",
+  })
+}
+
+export async function deleteAuthUserByEmail(email: string) {
+  const { data: userList, error } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 200,
+  })
+
+  if (error) throw error
+
+  const authUser = userList.users.find((user) => user.email === email)
+  if (!authUser) return
+
+  const { error: deleteError } = await supabase.auth.admin.deleteUser(authUser.id)
+  if (deleteError) throw deleteError
+}
+
+export async function markProfileAsDeleted(email: string) {
+  const profile = await getProfileByEmail(email)
+  if (!profile) {
+    throw new Error(`Profile not found for ${email}`)
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      full_name: "Usuario eliminado",
+      phone: null,
+      avatar_url: null,
+      deleted_at: new Date().toISOString(),
+    })
+    .eq("id", profile.authUser.id)
+
+  if (error) throw error
+
+  return profile.authUser.id
+}
+
 async function deleteRowsByIds(table: string, ids: string[]) {
   if (ids.length === 0) return
   const { error } = await supabase.from(table).delete().in("id", ids)
