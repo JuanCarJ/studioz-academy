@@ -1,11 +1,12 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
-
+import {
+  ensureCourseMediaFresh,
+  revalidateTouchedCoursePaths,
+} from "@/lib/bunny"
 import { decorateCourseWithPricing } from "@/lib/pricing"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { reconcilePendingBunnyAssets } from "@/lib/bunny"
 
 import type { Course, Lesson } from "@/types"
 
@@ -24,23 +25,6 @@ async function verifyAdmin() {
   return user
 }
 
-function revalidateTouchedCoursePaths(
-  touchedCourses: Array<{ id: string; slug: string }>
-) {
-  if (touchedCourses.length === 0) {
-    return
-  }
-
-  revalidatePath("/admin/cursos")
-  revalidatePath("/cursos")
-
-  for (const course of touchedCourses) {
-    revalidatePath(`/admin/cursos/${course.id}/editar`)
-    revalidatePath(`/cursos/${course.slug}`)
-    revalidatePath(`/dashboard/cursos/${course.slug}`)
-  }
-}
-
 export async function refreshCourseMediaStatus(
   courseId: string
 ): Promise<CourseMediaStatusResponse> {
@@ -49,7 +33,9 @@ export async function refreshCourseMediaStatus(
     return { error: "No autorizado." }
   }
 
-  const result = await reconcilePendingBunnyAssets({ courseId })
+  const result = await ensureCourseMediaFresh(courseId, {
+    source: "admin_page",
+  })
   revalidateTouchedCoursePaths(result.touchedCourses)
 
   const supabase = createServiceRoleClient()

@@ -48,14 +48,17 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
   useEffect(() => {
     if (!shouldPoll) return
 
-    const intervalId = window.setInterval(() => {
+    const refreshNow = () => {
       startTransition(async () => {
         const result = await refreshCourseMediaStatus(currentCourse.id)
         if (result.course) {
           setCurrentCourse(result.course)
         }
       })
-    }, 10_000)
+    }
+
+    refreshNow()
+    const intervalId = window.setInterval(refreshNow, 10_000)
 
     return () => {
       window.clearInterval(intervalId)

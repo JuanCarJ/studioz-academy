@@ -426,6 +426,7 @@ export async function commitCoursePreviewUpload(
   const shouldKeepCurrentPreview =
     !!course.preview_video_url ||
     (!!course.preview_bunny_video_id && course.preview_status === "ready")
+  const now = new Date().toISOString()
 
   const updateData = shouldKeepCurrentPreview
     ? {
@@ -433,6 +434,8 @@ export async function commitCoursePreviewUpload(
         pending_preview_bunny_library_id: libraryId,
         pending_preview_status: "processing",
         preview_upload_error: null,
+        preview_last_checked_at: null,
+        preview_last_state_changed_at: now,
       }
     : {
         preview_bunny_video_id: videoId,
@@ -442,6 +445,8 @@ export async function commitCoursePreviewUpload(
         pending_preview_bunny_library_id: null,
         pending_preview_status: "none",
         preview_upload_error: null,
+        preview_last_checked_at: null,
+        preview_last_state_changed_at: now,
       }
 
   const { error } = await supabase
@@ -482,6 +487,8 @@ export async function discardCoursePreviewUpload(
 
   const updateData: Record<string, unknown> = {
     preview_upload_error: "No se pudo completar la subida del archivo.",
+    preview_last_checked_at: null,
+    preview_last_state_changed_at: new Date().toISOString(),
   }
 
   if (course.pending_preview_bunny_video_id === videoId) {

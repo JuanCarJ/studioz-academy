@@ -91,6 +91,7 @@ export async function createLesson(
 
   const libraryId = env.BUNNY_LIBRARY_ID()
   const adminSupabase = createServiceRoleClient()
+  const now = new Date().toISOString()
 
   // Determine next sort_order
   const { data: lastLesson } = await adminSupabase
@@ -111,6 +112,8 @@ export async function createLesson(
     bunny_video_id: videoId,
     bunny_library_id: libraryId,
     bunny_status: "processing",
+    bunny_last_checked_at: null,
+    bunny_last_state_changed_at: now,
     pending_bunny_status: "none",
     video_upload_error: null,
     duration_seconds: 0,
@@ -265,6 +268,7 @@ export async function commitLessonVideoReplacement(
   if (!lesson) return { error: "Leccion no encontrada." }
 
   const libraryId = env.BUNNY_LIBRARY_ID()
+  const now = new Date().toISOString()
 
   const updateData =
     lesson.bunny_video_id && lesson.bunny_status === "ready"
@@ -272,12 +276,16 @@ export async function commitLessonVideoReplacement(
           pending_bunny_video_id: newVideoId,
           pending_bunny_library_id: libraryId,
           pending_bunny_status: "processing",
+          bunny_last_checked_at: null,
+          bunny_last_state_changed_at: now,
           video_upload_error: null,
         }
       : {
           bunny_video_id: newVideoId,
           bunny_library_id: libraryId,
           bunny_status: "processing",
+          bunny_last_checked_at: null,
+          bunny_last_state_changed_at: now,
           pending_bunny_video_id: null,
           pending_bunny_library_id: null,
           pending_bunny_status: "none",
@@ -318,6 +326,8 @@ export async function markLessonUploadFailed(
     .from("lessons")
     .update({
       bunny_status: "error",
+      bunny_last_checked_at: null,
+      bunny_last_state_changed_at: new Date().toISOString(),
       video_upload_error: "No se pudo completar la subida del archivo.",
     })
     .eq("id", lessonId)

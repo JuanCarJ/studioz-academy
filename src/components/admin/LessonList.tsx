@@ -57,14 +57,17 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
   useEffect(() => {
     if (!shouldPoll) return
 
-    const intervalId = window.setInterval(() => {
+    const refreshNow = () => {
       startTransition(async () => {
         const result = await refreshCourseMediaStatus(courseId)
         if (result.lessons) {
           setLessons(result.lessons)
         }
       })
-    }, 10_000)
+    }
+
+    refreshNow()
+    const intervalId = window.setInterval(refreshNow, 10_000)
 
     return () => {
       window.clearInterval(intervalId)

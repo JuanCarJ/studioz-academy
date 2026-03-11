@@ -1,7 +1,7 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
-import { resolveCoursePreview } from "@/lib/bunny"
+import { ensureCourseMediaFresh, resolveCoursePreview } from "@/lib/bunny"
 import { getCartItemsForUser } from "@/lib/cart"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -168,14 +168,40 @@ export async function getCourseBySlug(
 ): Promise<CourseDetail | null> {
   const publicClient = createServiceRoleClient()
 
-  const { data: course, error } = await publicClient
-    .from("courses")
-    .select("*, instructors(*), lessons(*)")
-    .eq("slug", slug)
-    .eq("is_published", true)
-    .single()
+  const courseQuery = () =>
+    publicClient
+      .from("courses")
+      .select("*, instructors(*), lessons(*)")
+      .eq("slug", slug)
+      .eq("is_published", true)
+      .single()
 
-  if (error || !course) return null
+  const { data: initialCourse, error } = await courseQuery()
+
+  if (error || !initialCourse) return null
+
+  const initialLessons = (initialCourse.lessons ?? []) as Lesson[]
+  const shouldEnsureFreshMedia =
+    !!initialCourse.pending_preview_bunny_video_id ||
+    (!!initialCourse.preview_bunny_video_id &&
+      initialCourse.preview_status !== "ready") ||
+    initialLessons.some(
+      (lesson) => !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
+    )
+
+  let course = initialCourse
+  if (shouldEnsureFreshMedia) {
+    const freshnessResult = await ensureCourseMediaFresh(initialCourse.id, {
+      source: "public_page",
+    })
+
+    if (freshnessResult.touchedCourses.some((item) => item.id === initialCourse.id)) {
+      const { data: refreshedCourse, error: refreshedError } = await courseQuery()
+      if (!refreshedError && refreshedCourse) {
+        course = refreshedCourse
+      }
+    }
+  }
 
   const instructor = Array.isArray(course.instructors)
     ? course.instructors[0]

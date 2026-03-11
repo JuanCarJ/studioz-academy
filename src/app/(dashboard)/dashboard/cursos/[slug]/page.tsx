@@ -5,7 +5,11 @@ import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
-import { generateSignedUrl, resolveLessonAssetState } from "@/lib/bunny"
+import {
+  ensureCourseMediaFresh,
+  generateSignedUrl,
+  resolveLessonAssetState,
+} from "@/lib/bunny"
 import { PlayerView } from "@/components/courses/PlayerView"
 import { ReviewSection } from "@/components/courses/ReviewSection"
 
@@ -22,15 +26,38 @@ export default async function CoursePlayerPage({
   if (!user) redirect("/login")
 
   const supabase = await createServerClient()
+  const courseQuery = () =>
+    supabase
+      .from("courses")
+      .select("id, title, slug, rating_avg, reviews_count, lessons(*), instructors(id, full_name, slug, avatar_url, specialties)")
+      .eq("slug", slug)
+      .single()
 
   // Fetch course + lessons + instructor
-  const { data: course } = await supabase
-    .from("courses")
-    .select("id, title, slug, rating_avg, reviews_count, lessons(*), instructors(id, full_name, slug, avatar_url, specialties)")
-    .eq("slug", slug)
-    .single()
+  const { data: initialCourse } = await courseQuery()
+
+  let course = initialCourse
 
   if (!course) redirect("/cursos")
+  const courseId = course.id
+
+  const initialLessons = (course.lessons ?? []) as Lesson[]
+  const shouldEnsureFreshMedia = initialLessons.some(
+    (lesson) => !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
+  )
+
+  if (shouldEnsureFreshMedia) {
+    const freshnessResult = await ensureCourseMediaFresh(courseId, {
+      source: "dashboard_page",
+    })
+
+    if (freshnessResult.touchedCourses.some((item) => item.id === courseId)) {
+      const { data: refreshedCourse } = await courseQuery()
+      if (refreshedCourse) {
+        course = refreshedCourse
+      }
+    }
+  }
 
   // Verify enrollment
   const { data: enrollment } = await supabase

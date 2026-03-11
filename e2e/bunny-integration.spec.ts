@@ -14,6 +14,7 @@ import {
 } from "./support/bunny"
 import {
   cleanupCoursesBySlugPrefix,
+  e2eSupabase,
   ensureBusinessFixtures,
   getCourseById,
   getCourseBySlug,
@@ -279,6 +280,11 @@ test.describe.serial("Bunny real integration", () => {
     createdVideoIds.add(nextPreviewId)
 
     expect(nextPreviewId).not.toBe(previousPreviewId)
+    expect(
+      await getCourseById(requireValue(courseId, "course id")).then(
+        (course) => course?.preview_last_checked_at ?? null
+      )
+    ).toBeNull()
 
     const previewFrameBeforePromotion = await openPublicPreview(page)
     const previewSrcBeforePromotion = requireValue(
@@ -286,6 +292,27 @@ test.describe.serial("Bunny real integration", () => {
       "preview iframe before promotion"
     )
     expect(previewSrcBeforePromotion).toContain(previousPreviewId)
+
+    let firstPreviewCheckAt: string | null = null
+    await expect
+      .poll(
+        async () => {
+          firstPreviewCheckAt = await getCourseById(
+            requireValue(courseId, "course id")
+          ).then((course) => course?.preview_last_checked_at ?? null)
+          return firstPreviewCheckAt
+        },
+        { timeout: 30_000 }
+      )
+      .not.toBeNull()
+
+    await openPublicPreview(page)
+    const secondPreviewCheckAt = await getCourseById(
+      requireValue(courseId, "course id")
+    ).then((course) => course?.preview_last_checked_at ?? null)
+    expect(secondPreviewCheckAt).toBe(
+      requireValue(firstPreviewCheckAt, "preview first check timestamp")
+    )
 
     await waitForPreviewPromotion(page, nextPreviewId)
     activePreviewVideoId = nextPreviewId
@@ -300,6 +327,52 @@ test.describe.serial("Bunny real integration", () => {
     await expect
       .poll(async () => getBunnyVideo(previousPreviewId), { timeout: 60_000 })
       .toBeNull()
+  })
+
+  test("public detail autocorrige un preview marcado como processing cuando Bunny ya termino", async ({
+    page,
+  }) => {
+    const currentPreviewId = requireValue(
+      activePreviewVideoId,
+      "active preview video id"
+    )
+    const currentCourseId = requireValue(courseId, "course id")
+
+    const { error: stalePreviewError } = await e2eSupabase
+      .from("courses")
+      .update({
+        preview_status: "processing",
+        preview_last_checked_at: null,
+        preview_last_state_changed_at: new Date(
+          Date.now() - 5 * 60_000
+        ).toISOString(),
+        preview_upload_error: null,
+      })
+      .eq("id", currentCourseId)
+
+    expect(stalePreviewError).toBeNull()
+
+    const previewFrame = await openPublicPreview(page)
+    const previewSrc = requireValue(
+      await previewFrame.getAttribute("src"),
+      "public preview iframe src after stale preview correction"
+    )
+    expect(previewSrc).toContain(currentPreviewId)
+
+    await expect
+      .poll(
+        async () => {
+          const course = await getCourseById(currentCourseId)
+          return {
+            previewStatus: course?.preview_status ?? null,
+            previewLastCheckedAt: course?.preview_last_checked_at ?? null,
+          }
+        },
+        { timeout: 30_000 }
+      )
+      .toMatchObject({
+        previewStatus: "ready",
+      })
   })
 
   test("creates a free lesson with a real Bunny upload and reflects processing state", async ({
@@ -359,6 +432,52 @@ test.describe.serial("Bunny real integration", () => {
     const readyDialog = page.getByRole("dialog", { name: new RegExp(lessonTitle, "i") })
     const lessonFrame = readyDialog.locator("iframe")
     await expect(lessonFrame).toBeVisible()
+  })
+
+  test("free lesson dialog autocorrige una leccion marcada como processing cuando Bunny ya termino", async ({
+    page,
+  }) => {
+    const currentCourseId = requireValue(courseId, "course id")
+
+    const lesson = requireValue(
+      await getLessonByTitle(currentCourseId, lessonTitle),
+      "ready lesson before stale processing replay"
+    )
+
+    const { error: staleLessonError } = await e2eSupabase
+      .from("lessons")
+      .update({
+        bunny_status: "processing",
+        bunny_last_checked_at: null,
+        bunny_last_state_changed_at: new Date(
+          Date.now() - 5 * 60_000
+        ).toISOString(),
+        video_upload_error: null,
+      })
+      .eq("id", lesson.id)
+
+    expect(staleLessonError).toBeNull()
+
+    await page.goto(`/cursos/${courseSlug}`)
+    await page.getByRole("button", { name: new RegExp(lessonTitle, "i") }).click()
+    const lessonDialog = page.getByRole("dialog", { name: new RegExp(lessonTitle, "i") })
+    const lessonFrame = lessonDialog.locator("iframe")
+    await expect(lessonFrame).toBeVisible({ timeout: 30_000 })
+
+    await expect
+      .poll(
+        async () => {
+          const refreshedLesson = await getLessonByTitle(currentCourseId, lessonTitle)
+          return {
+            bunnyStatus: refreshedLesson?.bunny_status ?? null,
+            bunnyLastCheckedAt: refreshedLesson?.bunny_last_checked_at ?? null,
+          }
+        },
+        { timeout: 30_000 }
+      )
+      .toMatchObject({
+        bunnyStatus: "ready",
+      })
   })
 
   test("replaces the lesson video while keeping the previous video active until promotion", async ({

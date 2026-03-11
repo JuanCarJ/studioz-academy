@@ -1,7 +1,7 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
-import { resolveLessonAssetState } from "@/lib/bunny"
+import { ensureCourseMediaFresh, resolveLessonAssetState } from "@/lib/bunny"
 import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -17,19 +17,21 @@ export async function getSignedVideoUrl(
   lessonId: string
 ): Promise<{ url: string; error?: string; state?: string }> {
   const adminClient = createServiceRoleClient()
+  const fetchLesson = () =>
+    adminClient
+      .from("lessons")
+      .select(
+        "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, slug)"
+      )
+      .eq("id", lessonId)
+      .single()
 
   // Fetch lesson with course
-  const { data: lesson } = await adminClient
-    .from("lessons")
-    .select(
-      "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, slug)"
-    )
-    .eq("id", lessonId)
-    .single()
+  let { data: lesson } = await fetchLesson()
 
   if (!lesson) return { url: "", error: "Leccion no encontrada." }
 
-  const course = Array.isArray(lesson.courses)
+  let course = Array.isArray(lesson.courses)
     ? lesson.courses[0]
     : lesson.courses
 
@@ -37,7 +39,20 @@ export async function getSignedVideoUrl(
     return { url: "", error: "Curso no disponible." }
   }
 
-  const playbackState = resolveLessonAssetState(lesson)
+  let playbackState = resolveLessonAssetState(lesson)
+  if (!playbackState.isPlayable) {
+    await ensureCourseMediaFresh(lesson.course_id, {
+      source: "lesson_playback",
+    })
+
+    const { data: refreshedLesson } = await fetchLesson()
+    if (refreshedLesson) {
+      lesson = refreshedLesson
+      course = Array.isArray(lesson.courses) ? lesson.courses[0] : lesson.courses
+      playbackState = resolveLessonAssetState(lesson)
+    }
+  }
+
   if (!playbackState.isPlayable) {
     return {
       url: "",
