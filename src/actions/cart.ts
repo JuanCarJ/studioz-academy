@@ -17,6 +17,7 @@ export type { AddCourseToCartErrorCode } from "@/lib/cart"
 export interface CartActionResult {
   error?: string
   success?: boolean
+  cartCount?: number
 }
 
 export interface CartStateResult {
@@ -45,15 +46,19 @@ export async function addToCart(
   })
 
   if (!result.success) {
+    const cartCount =
+      result.code === "ALREADY_IN_CART" ? await getPublishedCartCountForUser(user.id) : undefined
+
     return {
       error: result.code === "ADD_FAILED" ? "No se pudo agregar al carrito." : result.code,
+      cartCount,
     }
   }
 
   revalidatePath("/carrito")
   revalidatePath("/cursos")
   revalidatePath("/", "layout")
-  return { success: true }
+  return { success: true, cartCount: await getPublishedCartCountForUser(user.id) }
 }
 
 export async function removeFromCart(
@@ -77,7 +82,7 @@ export async function removeFromCart(
   revalidatePath("/carrito")
   revalidatePath("/cursos")
   revalidatePath("/", "layout")
-  return { success: true }
+  return { success: true, cartCount: await getPublishedCartCountForUser(user.id) }
 }
 
 export async function getCart() {
@@ -130,11 +135,19 @@ export async function getCartCount(): Promise<number> {
   const user = await getCurrentUser()
   if (!user) return 0
 
-  const supabase = await createServerClient()
-  const items = await getCartItemsForUser({
-    supabase,
-    userId: user.id,
-  })
+  return getPublishedCartCountForUser(user.id)
+}
 
-  return items.length
+async function getPublishedCartCountForUser(userId: string): Promise<number> {
+  const supabase = await createServerClient()
+  const { count } = await supabase
+    .from("cart_items")
+    .select("id, courses!inner(is_published)", {
+      count: "exact",
+      head: true,
+    })
+    .eq("user_id", userId)
+    .eq("courses.is_published", true)
+
+  return count ?? 0
 }

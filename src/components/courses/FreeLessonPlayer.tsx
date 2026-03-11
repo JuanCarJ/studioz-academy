@@ -8,6 +8,7 @@ import { Play } from "lucide-react"
 import { addToCart } from "@/actions/cart"
 import { getSignedVideoUrl } from "@/actions/lessons"
 import { buildCourseAuthPath } from "@/lib/auth-intent"
+import { dispatchCartCountUpdated } from "@/lib/cart-events"
 import { getCartErrorMessage } from "@/lib/cart"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
@@ -127,6 +128,9 @@ export function FreeLessonPlayer({
 
       if (result.error === "ALREADY_IN_CART") {
         setCartState(true)
+        if (typeof result.cartCount === "number") {
+          dispatchCartCountUpdated(result.cartCount)
+        }
         router.refresh()
         return
       }
@@ -142,6 +146,9 @@ export function FreeLessonPlayer({
       }
 
       setCartState(true)
+      if (typeof result.cartCount === "number") {
+        dispatchCartCountUpdated(result.cartCount)
+      }
       router.refresh()
     })
   }

@@ -1,8 +1,10 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { User, LogOut, LayoutDashboard, Shield, ShoppingBag, BookOpen } from "lucide-react"
 
+import { subscribeToCartCountUpdated } from "@/lib/cart-events"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LogoutForm } from "@/components/layout/LogoutForm"
@@ -26,6 +28,18 @@ interface NavAuthSectionProps {
 }
 
 export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
+  const [localCartCount, setLocalCartCount] = useState(cartCount)
+
+  useEffect(() => {
+    setLocalCartCount(cartCount)
+  }, [cartCount])
+
+  useEffect(() => {
+    return subscribeToCartCountUpdated((nextCount) => {
+      setLocalCartCount(nextCount)
+    })
+  }, [])
+
   if (!user) {
     return (
       <div className="flex items-center gap-2">
@@ -60,7 +74,7 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
           Mis Compras
         </Link>
       </Button>
-      <CartIcon itemCount={cartCount} />
+      <CartIcon itemCount={localCartCount} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
