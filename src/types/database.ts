@@ -1226,6 +1226,14 @@ export type Database = {
           total_count: number
         }[]
       }
+      replace_course_home_featured_position: {
+        Args: {
+          replace_existing?: boolean
+          target_course_id: string
+          target_position: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

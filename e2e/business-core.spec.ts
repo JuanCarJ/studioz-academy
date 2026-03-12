@@ -10,7 +10,9 @@ import {
   getAuditLogsByAction,
   getCartItemsForEmail,
   getContactMessagesBySubject,
+  getCourseById,
   getCourseBySlug,
+  getCourseByHomeFeaturedPosition,
   getCourseProgress,
   getDiscountRuleByName,
   getEnrollment,
@@ -602,6 +604,85 @@ test.describe.serial("Business E2E", () => {
     await expect
       .poll(async () => getCourseBySlug(slugify(courseTitle)).then((course) => course?.is_published ?? false))
       .toBe(true)
+
+    const heroOccupantBeforeReplacement = await getCourseByHomeFeaturedPosition(1)
+    expect(heroOccupantBeforeReplacement?.id).toBeTruthy()
+
+    await page.locator("#homeFeaturedPosition").click()
+    await page.getByRole("option", { name: /hero \(1\)/i }).click()
+    await expect(
+      page.getByText(
+        new RegExp(
+          `Hero \\(1\\) esta ocupado por\\s+${escapeRegExp(heroOccupantBeforeReplacement!.title)}`,
+          "i"
+        )
+      )
+    ).toBeVisible()
+    await page.getByRole("button", { name: /guardar cambios/i }).click()
+    await expect(
+      page.getByText(/confirma el reemplazo para ocupar esa posicion en el home/i)
+    ).toBeVisible()
+    await page.getByRole("checkbox", { name: /reemplazar este destacado al guardar/i }).click()
+    await page.getByRole("button", { name: /guardar cambios/i }).click()
+    await expect(page.getByText(/este curso ya ocupa hero \(1\)/i)).toBeVisible()
+
+    const createdCourse = await getCourseBySlug(slugify(courseTitle))
+    expect(createdCourse?.id).toBeTruthy()
+
+    await expect
+      .poll(async () =>
+        getCourseBySlug(slugify(courseTitle)).then(
+          (course) => course?.home_featured_position ?? null
+        )
+      )
+      .toBe(1)
+
+    await expect
+      .poll(async () =>
+        getCourseById(heroOccupantBeforeReplacement!.id).then(
+          (course) => course?.home_featured_position ?? null
+        )
+      )
+      .toBe(null)
+
+    const competingCourse = await getCourseBySlug(qaFixtures.paidPrimaryCourseSlug)
+    expect(competingCourse?.id).toBeTruthy()
+
+    await page.goto(`/admin/cursos/${competingCourse!.id}/editar`)
+    await page.locator("#homeFeaturedPosition").click()
+    await page.getByRole("option", { name: /hero \(1\)/i }).click()
+    await expect(
+      page.getByText(
+        new RegExp(`Hero \\(1\\) esta ocupado por\\s+${escapeRegExp(courseTitle)}`, "i")
+      )
+    ).toBeVisible()
+
+    await page.getByRole("button", { name: /guardar cambios/i }).click()
+    await expect(
+      page.getByText(/confirma el reemplazo para ocupar esa posicion en el home/i)
+    ).toBeVisible()
+
+    await page.getByRole("checkbox", {
+      name: /reemplazar este destacado al guardar/i,
+    }).click()
+    await page.getByRole("button", { name: /guardar cambios/i }).click()
+    await expect(page.getByText(/este curso ya ocupa hero \(1\)/i)).toBeVisible()
+
+    await expect
+      .poll(async () =>
+        getCourseBySlug(qaFixtures.paidPrimaryCourseSlug).then(
+          (course) => course?.home_featured_position ?? null
+        )
+      )
+      .toBe(1)
+
+    await expect
+      .poll(async () =>
+        getCourseBySlug(slugify(courseTitle)).then(
+          (course) => course?.home_featured_position ?? null
+        )
+      )
+      .toBe(null)
 
     await page.goto(`/cursos?search=${encodeURIComponent(courseTitle)}`)
     await expect(page.getByText(courseTitle)).toBeVisible()

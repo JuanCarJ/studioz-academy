@@ -5,10 +5,12 @@ import Image from "next/image"
 
 import {
   createCourse,
+  type HomeFeaturedAssignment,
   updateCourse,
   type CourseActionState,
   type CourseFieldName,
 } from "@/actions/admin/courses"
+import { Checkbox } from "@/components/ui/checkbox"
 import { CopCurrencyInput } from "@/components/admin/CopCurrencyInput"
 import { CoursePreviewManager } from "@/components/admin/CoursePreviewManager"
 import { Button } from "@/components/ui/button"
@@ -42,6 +44,7 @@ import type { Course, Instructor } from "@/types"
 interface CourseFormProps {
   course?: Course
   instructors: Pick<Instructor, "id" | "full_name">[]
+  homeFeaturedAssignments?: HomeFeaturedAssignment[]
 }
 
 type CourseFieldErrors = NonNullable<CourseActionState["fieldErrors"]>
@@ -56,6 +59,8 @@ function getClientCourseFieldErrors(input: {
   category: string
   instructorId: string
   homeFeaturedPosition: string
+  replaceHomeFeatured: boolean
+  selectedOccupiedTitle?: string
   priceValue: string
   isFree: boolean
   isPublished: boolean
@@ -117,6 +122,11 @@ function getClientCourseFieldErrors(input: {
   ) {
     fieldErrors.homeFeaturedPosition =
       "Selecciona una posicion valida para home."
+  }
+
+  if (input.isPublished && input.selectedOccupiedTitle && !input.replaceHomeFeatured) {
+    fieldErrors.homeFeaturedPosition =
+      "Confirma el reemplazo para ocupar esa posicion en el home."
   }
 
   if (!input.isFree) {
@@ -188,7 +198,11 @@ function FieldErrorText({ message }: { message?: string }) {
   return <p className="text-sm text-destructive">{message}</p>
 }
 
-export function CourseForm({ course, instructors }: CourseFormProps) {
+export function CourseForm({
+  course,
+  instructors,
+  homeFeaturedAssignments = [],
+}: CourseFormProps) {
   const isEditing = !!course
 
   const boundAction = isEditing
@@ -218,6 +232,7 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
   const [homeFeaturedPosition, setHomeFeaturedPosition] = useState(
     course?.home_featured_position ? String(course.home_featured_position) : "none"
   )
+  const [replaceHomeFeatured, setReplaceHomeFeatured] = useState(false)
   const [priceValue, setPriceValue] = useState(
     course ? String(Math.round(course.price / 100)) : ""
   )
@@ -238,6 +253,27 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
       : String(course?.course_discount_value ?? 10)
   )
 
+  const featuredAssignmentsMap = new Map(
+    homeFeaturedAssignments.map((assignment) => [String(assignment.position), assignment])
+  )
+  const selectedAssignment =
+    homeFeaturedPosition === "none"
+      ? null
+      : featuredAssignmentsMap.get(homeFeaturedPosition) ?? null
+  const selectedPositionNumber =
+    homeFeaturedPosition === "none" ? null : Number(homeFeaturedPosition)
+  const selectedPositionLabel =
+    selectedPositionNumber === null
+      ? "No destacar"
+      : selectedPositionNumber === 1
+        ? "Hero (1)"
+        : `Destacado ${selectedPositionNumber}`
+  const selectedOccupiedByAnotherCourse =
+    Boolean(selectedAssignment) && selectedAssignment?.id !== course?.id
+  const selectedOccupiedTitle = selectedOccupiedByAnotherCourse
+    ? selectedAssignment?.title
+    : undefined
+
   const clientFieldErrors = getClientCourseFieldErrors({
     title,
     shortDescription,
@@ -245,6 +281,8 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
     category,
     instructorId,
     homeFeaturedPosition,
+    replaceHomeFeatured,
+    selectedOccupiedTitle,
     priceValue,
     isFree: isFreeChecked,
     isPublished: isPublishedChecked,
@@ -294,6 +332,10 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
   const shouldShowServerBanner =
     Boolean(state.error) &&
     (!state.fieldErrors || Object.keys(dirtyFields).length === 0)
+  const shouldShowSuccessBanner =
+    Boolean(state.success) &&
+    !hasClientErrors &&
+    Object.keys(dirtyFields).length === 0
 
   return (
     <form
@@ -315,9 +357,9 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           {state.error ?? "Corrige los campos marcados."}
         </div>
       )}
-      {state.success && (
+      {shouldShowSuccessBanner && (
         <div className="rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-700">
-          Curso actualizado exitosamente.
+          {state.successMessage ?? "Curso actualizado exitosamente."}
         </div>
       )}
 
@@ -435,12 +477,42 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
 
       {isEditing && (
         <div className="space-y-2">
+          <div className="rounded-xl border bg-muted/30 p-4">
+            <p className="text-sm font-semibold">Destacados actuales del home</p>
+            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+              {[1, 2, 3, 4].map((position) => {
+                const assignment = homeFeaturedAssignments.find(
+                  (item) => item.position === position
+                )
+                const label = position === 1 ? "Hero (1)" : `Destacado ${position}`
+
+                return (
+                  <div
+                    key={position}
+                    className="flex items-center justify-between gap-4 rounded-lg border bg-background/60 px-3 py-2"
+                  >
+                    <span className="font-medium text-foreground">{label}</span>
+                    <span>
+                      {assignment ? assignment.title : "Disponible"}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           <Label htmlFor="homeFeaturedPosition">Destacado en home</Label>
+          <input
+            type="hidden"
+            name="replaceHomeFeatured"
+            value={replaceHomeFeatured ? "true" : "false"}
+          />
           <Select
             name="homeFeaturedPosition"
             value={homeFeaturedPosition}
             onValueChange={(value) => {
               setHomeFeaturedPosition(value)
+              setReplaceHomeFeatured(false)
               markDirty("homeFeaturedPosition")
             }}
             disabled={!isPublishedChecked}
@@ -459,6 +531,41 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               <SelectItem value="4">Destacado 4</SelectItem>
             </SelectContent>
           </Select>
+          {homeFeaturedPosition !== "none" && !selectedOccupiedByAnotherCourse && (
+            <p className="text-xs text-emerald-600">
+              {selectedAssignment?.id === course?.id
+                ? `Este curso ya ocupa ${selectedPositionLabel}.`
+                : `${selectedPositionLabel} esta disponible.`}
+            </p>
+          )}
+          {selectedOccupiedByAnotherCourse && (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="text-sm text-amber-950 dark:text-amber-100">
+                {selectedPositionLabel} esta ocupado por{" "}
+                <span className="font-semibold">{selectedAssignment?.title}</span>.
+              </p>
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="replaceHomeFeatured"
+                  checked={replaceHomeFeatured}
+                  onCheckedChange={(checked) => {
+                    setReplaceHomeFeatured(Boolean(checked))
+                    markDirty("homeFeaturedPosition")
+                  }}
+                />
+                <Label
+                  htmlFor="replaceHomeFeatured"
+                  className="text-sm font-medium"
+                >
+                  Reemplazar este destacado al guardar
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Si confirmas, el curso actual tomara {selectedPositionLabel} y{" "}
+                {selectedAssignment?.title} quedara sin destacar.
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             Hero (1) ocupa la tarjeta principal del home. Las posiciones 2, 3
             y 4 llenan la grilla de destacados.
@@ -681,6 +788,7 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
               setIsPublishedChecked(checked)
               if (!checked) {
                 setHomeFeaturedPosition("none")
+                setReplaceHomeFeatured(false)
                 markDirty("homeFeaturedPosition")
               }
             }}

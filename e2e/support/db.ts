@@ -833,6 +833,17 @@ export async function getCourseById(id: string) {
   return data
 }
 
+export async function getCourseByHomeFeaturedPosition(position: number) {
+  const { data, error } = await supabase
+    .from("courses")
+    .select("*")
+    .eq("home_featured_position", position)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
 export async function getLessonByTitle(courseId: string, title: string) {
   const { data, error } = await supabase
     .from("lessons")

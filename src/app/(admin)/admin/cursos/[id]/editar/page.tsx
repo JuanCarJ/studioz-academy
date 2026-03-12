@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react"
 import { ensureCourseMediaFresh } from "@/lib/bunny"
 import { createServerClient } from "@/lib/supabase/server"
 import { decorateCourseWithPricing } from "@/lib/pricing"
+import { getHomeFeaturedAssignments } from "@/actions/admin/courses"
 import { getInstructors } from "@/actions/admin/instructors"
 import { getLessonsForCourse } from "@/actions/admin/lessons"
 import { CourseForm } from "@/components/admin/CourseForm"
@@ -57,10 +58,12 @@ export default async function EditCoursePage({
   const supabase = await createServerClient()
 
   // Parallel fetch: course + instructors
-  const [{ data: course }, instructors] = await Promise.all([
-    supabase.from("courses").select("*").eq("id", id).single(),
-    getInstructors(),
-  ])
+  const [{ data: course }, instructors, homeFeaturedAssignments] =
+    await Promise.all([
+      supabase.from("courses").select("*").eq("id", id).single(),
+      getInstructors(),
+      getHomeFeaturedAssignments(),
+    ])
 
   if (!course) redirect("/admin/cursos")
 
@@ -84,6 +87,7 @@ export default async function EditCoursePage({
           id: i.id,
           full_name: i.full_name,
         }))}
+        homeFeaturedAssignments={homeFeaturedAssignments}
       />
 
       <Separator />

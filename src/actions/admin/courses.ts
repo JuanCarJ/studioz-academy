@@ -45,7 +45,15 @@ export type CourseFieldName =
 export interface CourseActionState {
   error?: string
   success?: boolean
+  successMessage?: string
   fieldErrors?: Partial<Record<CourseFieldName, string>>
+}
+
+export interface HomeFeaturedAssignment {
+  id: string
+  title: string
+  position: number
+  is_published: boolean
 }
 
 export interface CoursePreviewActionState {
@@ -110,6 +118,97 @@ async function findCourseUsingHomeFeaturedPosition(input: {
   return data
 }
 
+async function assignHomeFeaturedPosition(input: {
+  adminSupabase: ReturnType<typeof createServiceRoleClient>
+  courseId: string
+  homeFeaturedPosition: number
+  replaceHomeFeatured: boolean
+}) {
+  const rpcResult = await input.adminSupabase.rpc(
+    "replace_course_home_featured_position",
+    {
+      target_course_id: input.courseId,
+      target_position: input.homeFeaturedPosition,
+      replace_existing: input.replaceHomeFeatured,
+    }
+  )
+
+  if (!rpcResult.error) {
+    return {
+      replacedCourseTitle: (
+        rpcResult.data as { replaced_course_title?: string | null } | null
+      )?.replaced_course_title ?? null,
+    }
+  }
+
+  const rpcErrorMessage = rpcResult.error.message ?? ""
+  const rpcUnavailable = /replace_course_home_featured_position|schema cache|does not exist/i.test(
+    rpcErrorMessage
+  )
+
+  if (!rpcUnavailable) {
+    return { error: rpcErrorMessage }
+  }
+
+  const { data: conflictingCourse, error: conflictingCourseError } =
+    await input.adminSupabase
+      .from("courses")
+      .select("id, title")
+      .eq("home_featured_position", input.homeFeaturedPosition)
+      .neq("id", input.courseId)
+      .maybeSingle()
+
+  if (conflictingCourseError) {
+    return {
+      error:
+        conflictingCourseError.message ||
+        "No se pudo consultar el destacado actual del home.",
+    }
+  }
+
+  if (conflictingCourse && !input.replaceHomeFeatured) {
+    return {
+      error: `${getHomeFeaturedPositionLabel(input.homeFeaturedPosition)} ya esta asignado a "${conflictingCourse.title}". Activa el reemplazo para continuar.`,
+    }
+  }
+
+  if (conflictingCourse) {
+    const { error: clearError } = await input.adminSupabase
+      .from("courses")
+      .update({ home_featured_position: null })
+      .eq("id", conflictingCourse.id)
+
+    if (clearError) {
+      return {
+        error:
+          clearError.message ||
+          "No se pudo liberar la posicion destacada seleccionada.",
+      }
+    }
+  }
+
+  const { error: assignError } = await input.adminSupabase
+    .from("courses")
+    .update({ home_featured_position: input.homeFeaturedPosition })
+    .eq("id", input.courseId)
+
+  if (assignError) {
+    return {
+      error:
+        assignError.message ||
+        "No se pudo asignar la posicion destacada seleccionada.",
+    }
+  }
+
+  return {
+    replacedCourseTitle: conflictingCourse?.title ?? null,
+  }
+}
+
+function getHomeFeaturedPositionLabel(position: number) {
+  return position === 1 ? "Hero (1)" : `Destacado ${position}`
+}
+
 function buildCourseFieldErrorState(
   fieldErrors: Partial<Record<CourseFieldName, string>>
 ): CourseActionState {
@@ -150,6 +249,8 @@ function validateCourseFormData(formData: FormData) {
   const homeFeaturedPositionResult = parseHomeFeaturedPosition(
     formData.get("homeFeaturedPosition")
   )
+  const replaceHomeFeatured =
+    String(formData.get("replaceHomeFeatured") ?? "").trim() === "true"
   const priceRaw = String(formData.get("price") ?? "")
   const isFree = formData.get("isFree") === "on"
   const isPublished = formData.get("isPublished") === "on"
@@ -312,6 +413,7 @@ function validateCourseFormData(formData: FormData) {
       category,
       instructorId,
       homeFeaturedPosition: homeFeaturedPositionResult.value,
+      replaceHomeFeatured,
       isFree,
       isPublished,
       priceInCents: (parsedPrice.pesos ?? 0) * 100,
@@ -429,6 +531,7 @@ export async function updateCourse(
     category,
     instructorId,
     homeFeaturedPosition,
+    replaceHomeFeatured,
     isFree,
     isPublished,
     priceInCents,
@@ -453,7 +556,7 @@ export async function updateCourse(
   // Fetch current course to detect title change and publish toggle
   const { data: current } = await supabase
     .from("courses")
-    .select("title, slug, is_published")
+    .select("title, slug, is_published, home_featured_position")
     .eq("id", courseId)
     .single()
 
@@ -469,14 +572,25 @@ export async function updateCourse(
     })
 
     if (conflictingCourse) {
-      return buildCourseFieldErrorState({
-        homeFeaturedPosition: `La posicion ${homeFeaturedPosition} ya esta asignada a "${conflictingCourse.title}".`,
-      })
+      if (!replaceHomeFeatured) {
+        return {
+          error:
+            "Confirma el reemplazo para mover ese destacado del home a este curso.",
+          fieldErrors: {
+            homeFeaturedPosition: `${getHomeFeaturedPositionLabel(homeFeaturedPosition)} ya esta asignado a "${conflictingCourse.title}". Activa el reemplazo para continuar.`,
+          },
+        }
+      }
     }
   }
 
   const now = new Date().toISOString()
   const publishedAt = isPublished && !current.is_published ? now : undefined
+  const shouldAssignFeaturedPosition =
+    isPublished && homeFeaturedPosition !== null
+  const shouldKeepCurrentFeaturedPosition =
+    shouldAssignFeaturedPosition &&
+    current.home_featured_position === homeFeaturedPosition
 
   const updateData: Record<string, unknown> = {
     title: title.trim(),
@@ -487,7 +601,12 @@ export async function updateCourse(
     price: priceInCents,
     is_free: isFree,
     ...discountConfig,
-    home_featured_position: isPublished ? homeFeaturedPosition : null,
+    home_featured_position:
+      isPublished && !shouldAssignFeaturedPosition
+        ? null
+        : shouldKeepCurrentFeaturedPosition
+          ? current.home_featured_position
+          : null,
     is_published: isPublished,
   }
 
@@ -551,6 +670,35 @@ export async function updateCourse(
     return { error: "No se pudo actualizar el curso." }
   }
 
+  let successMessage = "Curso actualizado exitosamente."
+
+  if (shouldAssignFeaturedPosition && !shouldKeepCurrentFeaturedPosition) {
+    const adminSupabase = createServiceRoleClient()
+    const featuredAssignment = await assignHomeFeaturedPosition({
+      adminSupabase,
+      courseId,
+      homeFeaturedPosition,
+      replaceHomeFeatured,
+    })
+
+    if (featuredAssignment.error) {
+      return {
+        error:
+          "Se guardaron los cambios del curso, pero no se pudo actualizar el destacado del home.",
+        fieldErrors: {
+          homeFeaturedPosition:
+            featuredAssignment.error,
+        },
+      }
+    }
+
+    if (featuredAssignment.replacedCourseTitle) {
+      successMessage = `Curso destacado actualizado. "${featuredAssignment.replacedCourseTitle}" salio de ${getHomeFeaturedPositionLabel(homeFeaturedPosition)}.`
+    } else {
+      successMessage = `Curso destacado actualizado en ${getHomeFeaturedPositionLabel(homeFeaturedPosition)}.`
+    }
+  }
+
   const nextSlug =
     typeof updateData.slug === "string" ? updateData.slug : current.slug
 
@@ -565,7 +713,7 @@ export async function updateCourse(
     revalidatePath(`/cursos/${nextSlug}`)
     revalidatePath(`/dashboard/cursos/${nextSlug}`)
   }
-  return { success: true }
+  return { success: true, successMessage }
 }
 
 export async function prepareCoursePreviewUpload(
@@ -838,4 +986,37 @@ export async function getAdminCourses(): Promise<AdminCourseRow[]> {
     instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
     enrollment_count: Array.isArray(c.enrollments) ? c.enrollments.length : 0,
   })) as AdminCourseRow[]
+}
+
+export async function getHomeFeaturedAssignments(): Promise<
+  HomeFeaturedAssignment[]
+> {
+  const admin = await verifyAdmin()
+  if (!admin) return []
+
+  const supabase = await createServerClient()
+  const { data, error } = await supabase
+    .from("courses")
+    .select("id, title, home_featured_position, is_published")
+    .eq("is_published", true)
+    .not("home_featured_position", "is", null)
+    .order("home_featured_position", { ascending: true, nullsFirst: false })
+
+  if (error) return []
+
+  return (data ?? [])
+    .filter(
+      (course): course is {
+        id: string
+        title: string
+        home_featured_position: number
+        is_published: boolean
+      } => typeof course.home_featured_position === "number"
+    )
+    .map((course) => ({
+      id: course.id,
+      title: course.title,
+      position: course.home_featured_position,
+      is_published: course.is_published,
+    }))
 }
