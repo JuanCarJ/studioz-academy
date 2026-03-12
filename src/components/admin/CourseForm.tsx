@@ -55,8 +55,10 @@ function getClientCourseFieldErrors(input: {
   description: string
   category: string
   instructorId: string
+  homeFeaturedPosition: string
   priceValue: string
   isFree: boolean
+  isPublished: boolean
   courseDiscountEnabled: boolean
   courseDiscountType: "percentage" | "fixed"
   courseDiscountValue: string
@@ -107,6 +109,14 @@ function getClientCourseFieldErrors(input: {
 
   if (!input.instructorId) {
     fieldErrors.instructorId = "Selecciona un instructor."
+  }
+
+  if (
+    input.isPublished &&
+    !["none", "1", "2", "3", "4"].includes(input.homeFeaturedPosition)
+  ) {
+    fieldErrors.homeFeaturedPosition =
+      "Selecciona una posicion valida para home."
   }
 
   if (!input.isFree) {
@@ -205,11 +215,17 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
   const [description, setDescription] = useState(course?.description ?? "")
   const [category, setCategory] = useState(course?.category ?? "")
   const [instructorId, setInstructorId] = useState(course?.instructor_id ?? "")
+  const [homeFeaturedPosition, setHomeFeaturedPosition] = useState(
+    course?.home_featured_position ? String(course.home_featured_position) : "none"
+  )
   const [priceValue, setPriceValue] = useState(
     course ? String(Math.round(course.price / 100)) : ""
   )
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null)
   const [isFreeChecked, setIsFreeChecked] = useState(course?.is_free ?? false)
+  const [isPublishedChecked, setIsPublishedChecked] = useState(
+    course?.is_published ?? false
+  )
   const [courseDiscountEnabled, setCourseDiscountEnabled] = useState(
     course?.course_discount_enabled ?? false
   )
@@ -228,8 +244,10 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
     description,
     category,
     instructorId,
+    homeFeaturedPosition,
     priceValue,
     isFree: isFreeChecked,
+    isPublished: isPublishedChecked,
     courseDiscountEnabled,
     courseDiscountType,
     courseDiscountValue,
@@ -414,6 +432,45 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           <FieldErrorText message={getFieldError("instructorId")} />
         </div>
       </div>
+
+      {isEditing && (
+        <div className="space-y-2">
+          <Label htmlFor="homeFeaturedPosition">Destacado en home</Label>
+          <Select
+            name="homeFeaturedPosition"
+            value={homeFeaturedPosition}
+            onValueChange={(value) => {
+              setHomeFeaturedPosition(value)
+              markDirty("homeFeaturedPosition")
+            }}
+            disabled={!isPublishedChecked}
+          >
+            <SelectTrigger
+              id="homeFeaturedPosition"
+              aria-invalid={Boolean(getFieldError("homeFeaturedPosition"))}
+            >
+              <SelectValue placeholder="Seleccionar posicion" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No destacar</SelectItem>
+              <SelectItem value="1">Hero (1)</SelectItem>
+              <SelectItem value="2">Destacado 2</SelectItem>
+              <SelectItem value="3">Destacado 3</SelectItem>
+              <SelectItem value="4">Destacado 4</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Hero (1) ocupa la tarjeta principal del home. Las posiciones 2, 3
+            y 4 llenan la grilla de destacados.
+          </p>
+          {!isPublishedChecked && (
+            <p className="text-xs text-muted-foreground">
+              Publica el curso primero para poder destacarlo en home.
+            </p>
+          )}
+          <FieldErrorText message={getFieldError("homeFeaturedPosition")} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -619,15 +676,22 @@ export function CourseForm({ course, instructors }: CourseFormProps) {
           <Switch
             id="isPublished"
             name="isPublished"
-            defaultChecked={course.is_published}
+            checked={isPublishedChecked}
+            onCheckedChange={(checked) => {
+              setIsPublishedChecked(checked)
+              if (!checked) {
+                setHomeFeaturedPosition("none")
+                markDirty("homeFeaturedPosition")
+              }
+            }}
           />
           <Label htmlFor="isPublished" className="font-medium">
             Publicado
           </Label>
           <span className="text-sm text-muted-foreground">
-            {course.is_published
+            {isPublishedChecked
               ? "El curso es visible en el catalogo."
-              : "El curso esta oculto del catalogo."}
+              : "El curso esta oculto del catalogo y sale de los destacados del home."}
           </span>
         </div>
       )}

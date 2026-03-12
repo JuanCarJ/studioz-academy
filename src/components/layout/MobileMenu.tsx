@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator"
 const navLinks = [
   { href: "/", label: "Inicio" },
   { href: "/cursos", label: "Cursos" },
-  { href: "/servicios", label: "Servicios" },
+  { href: "/servicios", label: "Sobre Studio Z" },
   { href: "/galeria", label: "Galeria" },
   { href: "/noticias", label: "Noticias" },
   { href: "/eventos", label: "Eventos" },
