@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useEffect, useMemo, useState } from "react"
 
 import { cn } from "@/lib/utils"
@@ -96,13 +97,18 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
             key={image.id}
             type="button"
             onClick={() => setSelectedIndex(index)}
-            className="group overflow-hidden rounded-3xl border bg-card text-left transition-transform hover:-translate-y-1"
+            aria-label={`Abrir imagen: ${image.caption || image.alt}`}
+            className="group overflow-hidden rounded-3xl border bg-card text-left transition-[transform,border-color] hover:-translate-y-1 hover:border-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <div
-              className="aspect-[4/5] w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.03]"
-              style={{ backgroundImage: `url("${image.url}")` }}
-              aria-hidden="true"
-            />
+            <div className="relative aspect-[4/5] w-full overflow-hidden">
+              <Image
+                src={image.url}
+                alt={image.alt}
+                fill
+                sizes="(min-width: 1024px) 24vw, (min-width: 640px) 48vw, 100vw"
+                className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              />
+            </div>
             <div className="space-y-1 px-4 py-4">
               <p className="line-clamp-2 text-sm font-medium">
                 {image.caption || image.alt}
@@ -161,12 +167,15 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
                 </Button>
               </div>
 
-              <div
-                className="min-h-[50vh] rounded-3xl bg-contain bg-center bg-no-repeat"
-                style={{ backgroundImage: `url("${activeImage.url}")` }}
-                role="img"
-                aria-label={activeImage.alt}
-              />
+              <div className="relative min-h-[50vh] overflow-hidden rounded-3xl">
+                <Image
+                  src={activeImage.url}
+                  alt={activeImage.alt}
+                  fill
+                  sizes="100vw"
+                  className="object-contain"
+                />
+              </div>
 
               <div className="hidden items-center justify-end lg:flex">
                 <Button

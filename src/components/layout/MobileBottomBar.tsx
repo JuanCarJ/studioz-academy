@@ -32,7 +32,7 @@ interface MobileTab {
 }
 
 const sheetLinks = [
-  { href: "/servicios", label: "Servicios" },
+  { href: "/servicios", label: "Sobre Studio Z" },
   { href: "/galeria", label: "Galeria" },
   { href: "/noticias", label: "Noticias" },
   { href: "/eventos", label: "Eventos" },
@@ -70,7 +70,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
               href={tab.href}
               prefetch={tab.prefetch}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-2 py-1 text-[10px]",
+                "flex min-h-11 min-w-[68px] flex-col items-center justify-center gap-1 px-3 py-2 text-[11px]",
                 isActive ? "text-primary" : "text-muted-foreground"
               )}
             >
@@ -84,7 +84,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
         <Sheet>
           <SheetTrigger asChild>
             <button
-              className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground"
+              className="flex min-h-11 min-w-[68px] flex-col items-center justify-center gap-1 px-3 py-2 text-[11px] text-muted-foreground"
               aria-label="Abrir menu movil"
               data-testid="mobile-bottom-menu-trigger"
             >

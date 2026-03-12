@@ -37,6 +37,7 @@ export type CourseFieldName =
   | "description"
   | "category"
   | "instructorId"
+  | "homeFeaturedPosition"
   | "price"
   | "courseDiscountValue"
   | "thumbnail"
@@ -91,6 +92,24 @@ async function uploadThumbnail(
   return data.publicUrl
 }
 
+async function findCourseUsingHomeFeaturedPosition(input: {
+  supabase: Awaited<ReturnType<typeof createServerClient>>
+  homeFeaturedPosition: number
+  excludeCourseId?: string
+}) {
+  let query = input.supabase
+    .from("courses")
+    .select("id, title")
+    .eq("home_featured_position", input.homeFeaturedPosition)
+
+  if (input.excludeCourseId) {
+    query = query.neq("id", input.excludeCourseId)
+  }
+
+  const { data } = await query.maybeSingle()
+  return data
+}
+
 function buildCourseFieldErrorState(
   fieldErrors: Partial<Record<CourseFieldName, string>>
 ): CourseActionState {
@@ -98,6 +117,26 @@ function buildCourseFieldErrorState(
     error: "Corrige los campos marcados.",
     fieldErrors,
   }
+}
+
+function parseHomeFeaturedPosition(rawValue: FormDataEntryValue | null) {
+  const normalized = String(rawValue ?? "")
+    .trim()
+    .toLowerCase()
+
+  if (!normalized || normalized === "none") {
+    return { value: null as number | null }
+  }
+
+  const parsed = Number(normalized)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 4) {
+    return {
+      value: null as number | null,
+      error: "Selecciona una posicion valida para home.",
+    }
+  }
+
+  return { value: parsed }
 }
 
 function validateCourseFormData(formData: FormData) {
@@ -108,6 +147,9 @@ function validateCourseFormData(formData: FormData) {
   )
   const category = String(formData.get("category") ?? "").trim()
   const instructorId = String(formData.get("instructorId") ?? "").trim()
+  const homeFeaturedPositionResult = parseHomeFeaturedPosition(
+    formData.get("homeFeaturedPosition")
+  )
   const priceRaw = String(formData.get("price") ?? "")
   const isFree = formData.get("isFree") === "on"
   const isPublished = formData.get("isPublished") === "on"
@@ -167,6 +209,10 @@ function validateCourseFormData(formData: FormData) {
 
   if (!instructorId) {
     fieldErrors.instructorId = "Selecciona un instructor."
+  }
+
+  if (homeFeaturedPositionResult.error) {
+    fieldErrors.homeFeaturedPosition = homeFeaturedPositionResult.error
   }
 
   const parsedPrice = isFree
@@ -265,6 +311,7 @@ function validateCourseFormData(formData: FormData) {
       shortDescription,
       category,
       instructorId,
+      homeFeaturedPosition: homeFeaturedPositionResult.value,
       isFree,
       isPublished,
       priceInCents: (parsedPrice.pesos ?? 0) * 100,
@@ -292,6 +339,7 @@ export async function createCourse(
     shortDescription,
     category,
     instructorId,
+    homeFeaturedPosition,
     isFree,
     priceInCents,
     thumbnailFile,
@@ -335,6 +383,7 @@ export async function createCourse(
       price: priceInCents,
       is_free: isFree,
       ...discountConfig,
+      home_featured_position: homeFeaturedPosition,
       is_published: false,
     })
     .select("id")
@@ -356,6 +405,7 @@ export async function createCourse(
   }
 
   revalidatePath("/admin/cursos")
+  revalidatePath("/")
   redirect(`/admin/cursos/${course.id}/editar`)
 }
 
@@ -378,6 +428,7 @@ export async function updateCourse(
     shortDescription,
     category,
     instructorId,
+    homeFeaturedPosition,
     isFree,
     isPublished,
     priceInCents,
@@ -410,9 +461,22 @@ export async function updateCourse(
     return { error: "Curso no encontrado." }
   }
 
+  if (isPublished && homeFeaturedPosition !== null) {
+    const conflictingCourse = await findCourseUsingHomeFeaturedPosition({
+      supabase,
+      homeFeaturedPosition,
+      excludeCourseId: courseId,
+    })
+
+    if (conflictingCourse) {
+      return buildCourseFieldErrorState({
+        homeFeaturedPosition: `La posicion ${homeFeaturedPosition} ya esta asignada a "${conflictingCourse.title}".`,
+      })
+    }
+  }
+
   const now = new Date().toISOString()
-  const publishedAt =
-    isPublished && !current.is_published ? now : undefined
+  const publishedAt = isPublished && !current.is_published ? now : undefined
 
   const updateData: Record<string, unknown> = {
     title: title.trim(),
@@ -423,6 +487,7 @@ export async function updateCourse(
     price: priceInCents,
     is_free: isFree,
     ...discountConfig,
+    home_featured_position: isPublished ? homeFeaturedPosition : null,
     is_published: isPublished,
   }
 
@@ -476,6 +541,13 @@ export async function updateCourse(
     .eq("id", courseId)
 
   if (error) {
+    if (error.code === "23505") {
+      return buildCourseFieldErrorState({
+        homeFeaturedPosition:
+          "Esa posicion destacada ya esta ocupada por otro curso publicado.",
+      })
+    }
+
     return { error: "No se pudo actualizar el curso." }
   }
 
@@ -484,6 +556,7 @@ export async function updateCourse(
 
   revalidatePath("/admin/cursos")
   revalidatePath(`/admin/cursos/${courseId}/editar`)
+  revalidatePath("/")
   revalidatePath("/cursos")
   revalidatePath(`/cursos/${current.slug}`)
   revalidatePath("/dashboard")
@@ -755,6 +828,7 @@ export async function getAdminCourses(): Promise<AdminCourseRow[]> {
   const { data, error } = await supabase
     .from("courses")
     .select("*, instructors(id, full_name), enrollments(id)")
+    .order("home_featured_position", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
 
   if (error) return []

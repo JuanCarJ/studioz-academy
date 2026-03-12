@@ -30,6 +30,7 @@ async function CoursesTable() {
           <TableHead>Instructor</TableHead>
           <TableHead>Precio</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead>Home</TableHead>
           <TableHead>Inscritos</TableHead>
           <TableHead className="text-right">Acciones</TableHead>
         </TableRow>
@@ -37,7 +38,7 @@ async function CoursesTable() {
       <TableBody>
         {courses.length === 0 && (
           <TableRow>
-            <TableCell colSpan={7} className="text-center text-muted-foreground">
+            <TableCell colSpan={8} className="text-center text-muted-foreground">
               No hay cursos registrados.
             </TableCell>
           </TableRow>
@@ -62,6 +63,17 @@ async function CoursesTable() {
               <Badge variant={course.is_published ? "default" : "secondary"}>
                 {course.is_published ? "Publicado" : "Borrador"}
               </Badge>
+            </TableCell>
+            <TableCell>
+              {course.home_featured_position ? (
+                <Badge variant="outline">
+                  {course.home_featured_position === 1
+                    ? "Hero"
+                    : `Pos ${course.home_featured_position}`}
+                </Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">No</span>
+              )}
             </TableCell>
             <TableCell>
               <span className="text-sm">{course.enrollment_count}</span>

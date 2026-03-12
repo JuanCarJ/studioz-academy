@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 const navLinks = [
   { href: "/cursos", label: "Cursos" },
-  { href: "/servicios", label: "Servicios" },
+  { href: "/servicios", label: "Sobre Studio Z" },
   { href: "/galeria", label: "Galeria" },
   { href: "/noticias", label: "Noticias" },
   { href: "/eventos", label: "Eventos" },

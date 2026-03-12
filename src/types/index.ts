@@ -64,6 +64,7 @@ export interface Course {
   pending_preview_bunny_library_id: string | null
   pending_preview_status: "none" | "processing" | "ready" | "error"
   preview_upload_error: string | null
+  home_featured_position: number | null
   instructor_id: string
   instructor?: Instructor
   legacy_instructor_name: string | null

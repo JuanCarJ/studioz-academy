@@ -226,6 +226,7 @@ export type Database = {
           course_discount_value: number | null
           created_at: string
           description: string | null
+          home_featured_position: number | null
           id: string
           instructor_id: string
           is_free: boolean
@@ -258,6 +259,7 @@ export type Database = {
           course_discount_value?: number | null
           created_at?: string
           description?: string | null
+          home_featured_position?: number | null
           id?: string
           instructor_id: string
           is_free?: boolean
@@ -290,6 +292,7 @@ export type Database = {
           course_discount_value?: number | null
           created_at?: string
           description?: string | null
+          home_featured_position?: number | null
           id?: string
           instructor_id?: string
           is_free?: boolean

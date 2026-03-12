@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath, unstable_noStore as noStore } from "next/cache"
+import { unstable_noStore as noStore } from "next/cache"
 
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -35,8 +35,9 @@ export interface PublishedCoursePreview
     | "has_course_discount"
     | "course_discount_label"
     | "published_at"
+    | "home_featured_position"
   > {
-  instructor: Pick<Instructor, "id" | "full_name">
+  instructor?: Pick<Instructor, "id" | "full_name">
   isNew: boolean
 }
 
@@ -123,6 +124,35 @@ function mergePostsWithImages(
       images,
     }
   })
+}
+
+function decoratePublishedCoursePreview(
+  course: PriceableCourse & {
+    published_at: string | null
+    instructors:
+      | Pick<Instructor, "id" | "full_name">
+      | Pick<Instructor, "id" | "full_name">[]
+      | null
+  }
+): PublishedCoursePreview {
+  return {
+    ...decorateCourseWithPricing(course),
+    instructor: Array.isArray(course.instructors)
+      ? course.instructors[0]
+      : course.instructors,
+    isNew: computeIsNew(course.published_at),
+  } as unknown as PublishedCoursePreview
+}
+
+function takeNextUnusedCourse(
+  pool: PublishedCoursePreview[],
+  usedIds: Set<string>
+) {
+  const nextCourse = pool.find((course) => !usedIds.has(course.id))
+  if (!nextCourse) return null
+
+  usedIds.add(nextCourse.id)
+  return nextCourse
 }
 
 export async function getPublishedPosts(): Promise<Post[]> {
@@ -224,36 +254,44 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
 }
 
 export async function getHomePageData(): Promise<{
+  heroCourse: PublishedCoursePreview | null
   featuredCourses: PublishedCoursePreview[]
   latestPosts: Post[]
   upcomingEvents: Event[]
   galleryPreview: GalleryItem[]
-  stats: {
-    publishedCourses: number
-    publishedPosts: number
-    galleryItems: number
-    upcomingEvents: number
+  categoryShowcase: {
+    baile: GalleryItem | null
+    tatuaje: GalleryItem | null
   }
+  publishedCoursesCount: number
 }> {
   noStore()
   const supabase = createServiceRoleClient()
   const nowIso = new Date().toISOString()
+  const courseSelect =
+    "id, title, slug, short_description, thumbnail_url, price, category, is_free, rating_avg, reviews_count, published_at, home_featured_position, course_discount_enabled, course_discount_type, course_discount_value, instructors(id, full_name)"
 
   const [
-    coursesResult,
+    curatedCoursesResult,
+    recentCoursesResult,
     postsResult,
     eventsResult,
     galleryResult,
-    countsResult,
+    coursesCountResult,
   ] = await Promise.all([
     supabase
       .from("courses")
-      .select(
-        "id, title, slug, short_description, thumbnail_url, price, category, is_free, rating_avg, reviews_count, published_at, course_discount_enabled, course_discount_type, course_discount_value, instructors(id, full_name)"
-      )
+      .select(courseSelect)
+      .eq("is_published", true)
+      .not("home_featured_position", "is", null)
+      .order("home_featured_position", { ascending: true, nullsFirst: false })
+      .limit(4),
+    supabase
+      .from("courses")
+      .select(courseSelect)
       .eq("is_published", true)
       .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(4),
+      .limit(8),
     supabase
       .from("posts")
       .select("*")
@@ -271,40 +309,64 @@ export async function getHomePageData(): Promise<{
       .from("gallery_items")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(6),
-    Promise.all([
-      supabase
-        .from("courses")
-        .select("id", { count: "exact", head: true })
-        .eq("is_published", true),
-      supabase
-        .from("posts")
-        .select("id", { count: "exact", head: true })
-        .eq("is_published", true),
-      supabase
-        .from("gallery_items")
-        .select("id", { count: "exact", head: true }),
-      supabase
-        .from("events")
-        .select("id", { count: "exact", head: true })
-        .eq("is_published", true)
-        .gte("event_date", nowIso),
-    ]),
+      .limit(12),
+    supabase
+      .from("courses")
+      .select("id", { count: "exact", head: true })
+      .eq("is_published", true),
   ])
 
-  const featuredCourses = (coursesResult.data ?? []).map((course) => ({
-    ...decorateCourseWithPricing(
-      course as PriceableCourse & (typeof course)
-    ),
-    instructor: Array.isArray(course.instructors)
-      ? course.instructors[0]
-      : course.instructors,
-    isNew: computeIsNew(course.published_at),
-  })) as PublishedCoursePreview[]
+  const curatedCourses = (curatedCoursesResult.data ?? []).map((course) =>
+    decoratePublishedCoursePreview(
+      course as PriceableCourse & {
+        published_at: string | null
+        instructors:
+          | Pick<Instructor, "id" | "full_name">
+          | Pick<Instructor, "id" | "full_name">[]
+          | null
+      }
+    )
+  )
+  const recentCourses = (recentCoursesResult.data ?? []).map((course) =>
+    decoratePublishedCoursePreview(
+      course as PriceableCourse & {
+        published_at: string | null
+        instructors:
+          | Pick<Instructor, "id" | "full_name">
+          | Pick<Instructor, "id" | "full_name">[]
+          | null
+      }
+    )
+  )
+  const fallbackPool = [...recentCourses, ...curatedCourses].filter(
+    (course, index, allCourses) =>
+      allCourses.findIndex((candidate) => candidate.id === course.id) === index
+  )
+  const curatedByPosition = new Map(
+    curatedCourses
+      .filter((course) => course.home_featured_position !== null)
+      .map((course) => [course.home_featured_position!, course] as const)
+  )
+  const usedFeaturedCourseIds = new Set<string>()
+  const curatedHeroCourse = curatedByPosition.get(1)
+  const heroCourse =
+    curatedHeroCourse && !usedFeaturedCourseIds.has(curatedHeroCourse.id)
+      ? (usedFeaturedCourseIds.add(curatedHeroCourse.id), curatedHeroCourse)
+      : takeNextUnusedCourse(fallbackPool, usedFeaturedCourseIds)
+  const featuredCourses = [2, 3, 4]
+    .map((position) => {
+      const positionedCourse = curatedByPosition.get(position)
+      if (positionedCourse && !usedFeaturedCourseIds.has(positionedCourse.id)) {
+        usedFeaturedCourseIds.add(positionedCourse.id)
+        return positionedCourse
+      }
 
-  const [coursesCount, postsCount, galleryCount, eventsCount] = countsResult
+      return takeNextUnusedCourse(fallbackPool, usedFeaturedCourseIds)
+    })
+    .filter((course): course is PublishedCoursePreview => Boolean(course))
   const latestPosts = (postsResult.data ?? []) as Post[]
   const upcomingEvents = (eventsResult.data ?? []) as Event[]
+  const galleryItems = (galleryResult.data ?? []) as GalleryItem[]
   const postsImagesMap = await getPostImagesMap(
     supabase,
     latestPosts.map((post) => post.id)
@@ -315,47 +377,17 @@ export async function getHomePageData(): Promise<{
   )
 
   return {
+    heroCourse,
     featuredCourses,
     latestPosts: mergePostsWithImages(latestPosts, postsImagesMap),
     upcomingEvents: mergeEventsWithImages(upcomingEvents, upcomingImagesMap),
-    galleryPreview: (galleryResult.data ?? []) as GalleryItem[],
-    stats: {
-      publishedCourses: coursesCount.count ?? 0,
-      publishedPosts: postsCount.count ?? 0,
-      galleryItems: galleryCount.count ?? 0,
-      upcomingEvents: eventsCount.count ?? 0,
+    galleryPreview: galleryItems.slice(0, 6),
+    categoryShowcase: {
+      baile: galleryItems.find((item) => item.category === "baile") ?? null,
+      tatuaje: galleryItems.find((item) => item.category === "tatuaje") ?? null,
     },
+    publishedCoursesCount: coursesCountResult.count ?? 0,
   }
-}
-
-export async function submitContactMessage(
-  _prevState: { error?: string; success?: boolean },
-  formData: FormData
-): Promise<{ error?: string; success?: boolean }> {
-  const name = String(formData.get("name") ?? "").trim()
-  const email = String(formData.get("email") ?? "").trim()
-  const subject = String(formData.get("subject") ?? "").trim()
-  const message = String(formData.get("message") ?? "").trim()
-
-  if (!name || !email || !message) {
-    return { error: "Nombre, email y mensaje son obligatorios." }
-  }
-
-  const supabase = await createServerClient()
-  const { error } = await supabase.from("contact_messages").insert({
-    name,
-    email,
-    subject: subject || null,
-    message,
-  })
-
-  if (error) {
-    console.error("[editorial] Failed to submit contact message:", error)
-    return { error: "No se pudo enviar tu mensaje. Intenta de nuevo." }
-  }
-
-  revalidatePath("/contacto")
-  return { success: true }
 }
 
 export async function getContactMessages(): Promise<ContactMessage[]> {
