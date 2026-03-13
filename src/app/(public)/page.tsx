@@ -552,15 +552,16 @@ export default async function HomePage() {
           <CardContent className="flex flex-col gap-8 pt-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs uppercase tracking-[0.2em] text-primary">
-                Empieza hoy
+                Studio Z Academy
               </p>
               <h2 id="home-cta-heading" className="mt-3 text-3xl font-bold">
-                Elige tu siguiente paso con Studio Z Academy.
+                No es solo contenido.
               </h2>
               <p className="mt-4 text-muted-foreground">
-                Si quieres empezar online, entra al catalogo completo. Si lo
-                tuyo es el proceso presencial de baile, en Sobre Studio Z
-                encuentras la informacion actual de la academia.
+                Es una forma de aprender con el sello de Studio Z. Cada ruta
+                esta pensada para ayudarte a desarrollar base, criterio y
+                confianza. Elige formacion online si quieres empezar hoy, o
+                conoce la experiencia presencial si buscas inmersion completa.
               </p>
             </div>
 
@@ -568,10 +569,13 @@ export default async function HomePage() {
               <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href="/cursos">Explorar cursos online</Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
-                <Link href="/servicios#baile">
-                  Ver cursos presenciales de baile
-                </Link>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
+              >
+                <Link href="/servicios#about-studio-z-heading">Conoce mas sobre nosotros</Link>
               </Button>
             </div>
           </CardContent>
