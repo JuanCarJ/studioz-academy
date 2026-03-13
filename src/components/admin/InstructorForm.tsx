@@ -68,10 +68,9 @@ function FieldErrorText({ message }: { message?: string }) {
   return <p className="text-sm text-destructive">{message}</p>
 }
 
-function getSpecialtyValue(option: Pick<
-  InstructorSpecialtyOption,
-  "category" | "normalized_name"
->) {
+function getSpecialtyValue(
+  option: Pick<InstructorSpecialtyOption, "category" | "normalized_name">
+) {
   return buildInstructorSpecialtyValue(option.category, option.normalized_name)
 }
 

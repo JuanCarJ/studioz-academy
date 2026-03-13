@@ -72,7 +72,12 @@ export default async function ServiciosPage() {
             <Button asChild size="lg">
               <Link href="#baile">Explorar baile</Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
               <Link href="#tattoo">Explorar tattoo</Link>
             </Button>
           </nav>
@@ -151,9 +156,11 @@ export default async function ServiciosPage() {
                     {section.details.map((detail) => (
                       <p key={detail}>{detail}</p>
                     ))}
-                    <p className="font-medium text-foreground">
-                      {section.audience}
-                    </p>
+                    {section.audience ? (
+                      <p className="font-medium text-foreground">
+                        {section.audience}
+                      </p>
+                    ) : null}
                   </div>
 
                   {section.shortName === "Baile" && (
@@ -199,7 +206,12 @@ export default async function ServiciosPage() {
                         {primaryCta}
                       </a>
                     </Button>
-                    <Button asChild size="lg" variant="outline">
+                    <Button
+                      asChild
+                      size="lg"
+                      variant="outline"
+                      className="border-white/15 bg-background/70 text-foreground hover:bg-white/10 hover:text-white"
+                    >
                       <a
                         href={section.instagramUrl}
                         target="_blank"
@@ -210,7 +222,12 @@ export default async function ServiciosPage() {
                         Ver Instagram
                       </a>
                     </Button>
-                    <Button asChild size="lg" variant="ghost">
+                    <Button
+                      asChild
+                      size="lg"
+                      variant="ghost"
+                      className="text-foreground hover:bg-white/10 hover:text-white"
+                    >
                       <a
                         href={buildMapsUrl(section.mapsQuery)}
                         target="_blank"
@@ -234,7 +251,11 @@ export default async function ServiciosPage() {
                         Un vistazo a {section.shortName.toLowerCase()}.
                       </h3>
                     </div>
-                    <Button asChild variant="ghost" className="shrink-0">
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="shrink-0 text-foreground hover:bg-white/10 hover:text-white"
+                    >
                       <Link href="/galeria">
                         Ver galeria
                         <ArrowRight className="ml-2 h-4 w-4" />
@@ -280,12 +301,6 @@ export default async function ServiciosPage() {
                     </div>
                   )}
 
-                  <div className="rounded-3xl border border-white/10 bg-card/70 p-5">
-                    <p className="text-sm text-muted-foreground">{section.name}</p>
-                    <address className="mt-1 not-italic text-sm text-muted-foreground">
-                      {section.address}
-                    </address>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -298,15 +313,26 @@ export default async function ServiciosPage() {
           <CardContent className="flex flex-col gap-4 pt-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs uppercase tracking-[0.15em] text-primary">
-                Siguiente paso
+                Contacto
               </p>
               <h2 id="next-step-heading" className="mt-2 text-2xl font-semibold">
-                Si ya sabes que linea te llama, habla con el equipo correcto.
+                Si quieres ubicar Studio Z, aqui encuentras nuestras dos sedes.
               </h2>
-              <p className="mt-2 text-muted-foreground">
-                Tambien puedes revisar la pagina de contacto para ver ambas sedes
-                y abrir la ruta directa en Google Maps.
-              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {sections.map((section) => (
+                  <div
+                    key={`footer-${section.shortName}`}
+                    className="rounded-2xl border border-white/10 bg-background/70 px-4 py-3"
+                  >
+                    <p className="text-sm font-medium text-foreground">
+                      {section.name}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {section.address}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
             <nav
               aria-label="Acciones finales de Sobre Studio Z"
@@ -315,7 +341,11 @@ export default async function ServiciosPage() {
               <Button asChild>
                 <Link href="/contacto">Ir a contacto</Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button
+                asChild
+                variant="outline"
+                className="border-white/15 bg-background/70 text-foreground hover:bg-white/10 hover:text-white"
+              >
                 <Link href="/galeria">Ver galeria completa</Link>
               </Button>
             </nav>

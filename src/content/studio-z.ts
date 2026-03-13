@@ -50,8 +50,7 @@ export const studioZLines = {
       "El proceso parte de la idea, el estilo y la piel de cada persona para construir una propuesta con direccion.",
       "Es un espacio para resolver dudas, afinar conceptos y llevar una idea a una pieza que tenga presencia real.",
     ],
-    audience:
-      "Si tienes un proyecto que quieres plasmar o quieres aterrizar una idea antes de tatuarte, esta es la linea para hablarlo.",
+    audience: "",
   },
 } as const
 
