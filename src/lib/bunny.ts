@@ -10,8 +10,11 @@ const BUNNY_API_BASE_URL = "https://video.bunnycdn.com"
 const BUNNY_TUS_ENDPOINT = `${BUNNY_API_BASE_URL}/tusupload`
 const DEFAULT_TUS_SESSION_TTL_SECONDS = 60 * 60
 const DEFAULT_BUNNY_CHECK_THROTTLE_MS = 30_000
+export const COURSE_MEDIA_HEALTH_THROTTLE_MS = 5 * 60_000
 const PROCESSING_WARNING_THRESHOLD_MS = 30 * 60_000
 const STALE_CHECK_WARNING_THRESHOLD_MS = 2 * 60_000
+const BUNNY_VIDEO_ID_PATTERN =
+  /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 
 interface BunnyVideoCreateResponse {
   guid: string
@@ -374,6 +377,60 @@ function getElapsedMs(value: string | null | undefined, nowMs: number): number |
   return Math.max(0, nowMs - timestamp)
 }
 
+function isMediaCheckStale(
+  value: string | null | undefined,
+  throttleMs: number
+): boolean {
+  const elapsedMs = getElapsedMs(value, Date.now())
+  return elapsedMs == null || elapsedMs >= throttleMs
+}
+
+function isManagedBunnyVideoId(videoId: string | null | undefined): videoId is string {
+  return typeof videoId === "string" && BUNNY_VIDEO_ID_PATTERN.test(videoId)
+}
+
+export function shouldRefreshCourseMediaHealth(
+  course: {
+    preview_bunny_video_id: string | null
+    preview_last_checked_at: string | null
+    preview_status: string | null
+    pending_preview_bunny_video_id: string | null
+  },
+  lessons: Array<
+    {
+      bunny_video_id: string | null
+      bunny_last_checked_at: string | null
+      bunny_status: string | null
+      pending_bunny_video_id: string | null
+    }
+  >,
+  throttleMs = COURSE_MEDIA_HEALTH_THROTTLE_MS
+): boolean {
+  if (isManagedBunnyVideoId(course.pending_preview_bunny_video_id)) {
+    return true
+  }
+
+  if (
+    isManagedBunnyVideoId(course.preview_bunny_video_id) &&
+    (course.preview_status !== "ready" ||
+      isMediaCheckStale(course.preview_last_checked_at, throttleMs))
+  ) {
+    return true
+  }
+
+  return lessons.some((lesson) => {
+    if (isManagedBunnyVideoId(lesson.pending_bunny_video_id)) {
+      return true
+    }
+
+    return (
+      isManagedBunnyVideoId(lesson.bunny_video_id) &&
+      (lesson.bunny_status !== "ready" ||
+        isMediaCheckStale(lesson.bunny_last_checked_at, throttleMs))
+    )
+  })
+}
+
 function shouldSkipRemoteCheck(input: {
   hasRelevantMedia: boolean
   lastCheckedAt: string | null
@@ -403,13 +460,18 @@ function shouldWarnForStaleChecks(input: {
 
 function isCoursePreviewCheckRelevant(course: CoursePreviewRow): boolean {
   return (
-    !!course.pending_preview_bunny_video_id ||
-    (!!course.preview_bunny_video_id && course.preview_status !== "ready")
+    isManagedBunnyVideoId(course.pending_preview_bunny_video_id) ||
+    (isManagedBunnyVideoId(course.preview_bunny_video_id) &&
+      course.preview_status !== "ready")
   )
 }
 
 function isLessonCheckRelevant(lesson: LessonMediaRow): boolean {
-  return !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
+  return (
+    isManagedBunnyVideoId(lesson.pending_bunny_video_id) ||
+    (isManagedBunnyVideoId(lesson.bunny_video_id) &&
+      lesson.bunny_status !== "ready")
+  )
 }
 
 function warnIfProcessingLooksStuck(input: {
@@ -604,7 +666,7 @@ export async function reconcilePendingBunnyAssets(options?: {
     }
 
     if (
-      course.pending_preview_bunny_video_id &&
+      isManagedBunnyVideoId(course.pending_preview_bunny_video_id) &&
       course.pending_preview_bunny_library_id
     ) {
       if (
@@ -704,7 +766,7 @@ export async function reconcilePendingBunnyAssets(options?: {
       continue
     }
 
-    if (course.preview_bunny_video_id) {
+    if (isManagedBunnyVideoId(course.preview_bunny_video_id)) {
       if (
         shouldSkipRemoteCheck({
           hasRelevantMedia: isCoursePreviewCheckRelevant(course),
@@ -866,7 +928,10 @@ export async function reconcilePendingBunnyAssets(options?: {
       })
     }
 
-    if (lesson.pending_bunny_video_id && lesson.pending_bunny_library_id) {
+    if (
+      isManagedBunnyVideoId(lesson.pending_bunny_video_id) &&
+      lesson.pending_bunny_library_id
+    ) {
       if (
         shouldSkipRemoteCheck({
           hasRelevantMedia: true,
@@ -975,6 +1040,10 @@ export async function reconcilePendingBunnyAssets(options?: {
         force,
       })
     ) {
+      continue
+    }
+
+    if (!isManagedBunnyVideoId(lesson.bunny_video_id)) {
       continue
     }
 

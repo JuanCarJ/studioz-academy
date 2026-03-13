@@ -42,8 +42,10 @@ const sheetLinks = [
 export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean }) {
   const pathname = usePathname()
 
-  // Hide on admin routes
-  if (pathname.startsWith("/admin")) return null
+  // Hide on admin routes and immersive lesson playback.
+  if (pathname.startsWith("/admin") || pathname.startsWith("/dashboard/cursos/")) {
+    return null
+  }
 
   const tabs: MobileTab[] = [
     { href: "/", label: "Inicio", icon: Home },
@@ -55,8 +57,8 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
   ]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur-lg md:hidden">
-      <div className="flex items-center justify-around py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur-lg lg:hidden">
+      <div className="grid grid-cols-5 items-stretch gap-1 px-1 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))]">
         {tabs.map((tab) => {
           const isActive =
             tab.href === "/"
@@ -70,7 +72,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
               href={tab.href}
               prefetch={tab.prefetch}
               className={cn(
-                "flex min-h-11 min-w-[68px] flex-col items-center justify-center gap-1 px-3 py-2 text-[11px]",
+                "flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 text-[10px] leading-tight sm:px-2 sm:text-[11px]",
                 isActive ? "text-primary" : "text-muted-foreground"
               )}
             >
@@ -84,7 +86,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
         <Sheet>
           <SheetTrigger asChild>
             <button
-              className="flex min-h-11 min-w-[68px] flex-col items-center justify-center gap-1 px-3 py-2 text-[11px] text-muted-foreground"
+              className="flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 text-[10px] leading-tight text-muted-foreground sm:px-2 sm:text-[11px]"
               aria-label="Abrir menu movil"
               data-testid="mobile-bottom-menu-trigger"
             >

@@ -91,7 +91,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       {/* Quick stats row */}
       {totalCourses > 0 && (
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-4">
           <div className="rounded-lg border bg-card p-3 sm:p-4 space-y-1">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
               Total

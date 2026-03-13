@@ -13,11 +13,13 @@ export default async function DashboardLayout({
   return (
     <>
       <PublicNavbar />
-      <div className="flex min-h-[calc(100vh-4rem)]">
-        <aside className="hidden w-64 border-r md:block">
+      <div className="flex min-h-[calc(100vh-4rem)] min-w-0">
+        <aside className="hidden w-64 border-r lg:block">
           <DashboardNav />
         </aside>
-        <main className="flex-1 p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pb-28 sm:p-6 sm:pb-28 lg:pb-6">
+          {children}
+        </main>
       </div>
       <Footer />
     </>

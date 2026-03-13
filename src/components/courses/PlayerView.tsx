@@ -9,6 +9,7 @@ import {
   saveVideoPosition,
   getLastPosition,
 } from "@/actions/lessons"
+import { MediaFallbackPanel } from "@/components/courses/MediaFallbackPanel"
 import { updateLastLesson } from "@/actions/progress"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
@@ -40,11 +41,14 @@ interface LessonInfo {
 
 interface PlayerViewProps {
   courseId: string
+  courseTitle: string
   lessons: LessonInfo[]
   activeLessonId: string
   initialSignedUrl: string
   initialPlaybackMessage?: string
   initialPosition?: number
+  thumbnailUrl?: string | null
+  supportUrl?: string | null
 }
 
 function formatDuration(seconds: number): string {
@@ -71,17 +75,21 @@ function ListIcon() {
 
 export function PlayerView({
   courseId,
+  courseTitle,
   lessons,
   activeLessonId,
   initialSignedUrl,
   initialPlaybackMessage = "",
   initialPosition = 0,
+  thumbnailUrl,
+  supportUrl,
 }: PlayerViewProps) {
   const [activeId, setActiveId] = useState(activeLessonId)
   const [signedUrl, setSignedUrl] = useState(initialSignedUrl)
   const [playerMessage, setPlayerMessage] = useState(initialPlaybackMessage)
   const [videoPosition, setVideoPosition] = useState(initialPosition)
   const [isPending, startTransition] = useTransition()
+  const [isLessonSheetOpen, setIsLessonSheetOpen] = useState(false)
   const { csrfToken } = useCsrfToken()
   const [completionContextLessonId, setCompletionContextLessonId] = useState<string | null>(null)
   const [completedIds, setCompletedIds] = useState<Set<string>>(
@@ -92,6 +100,7 @@ export function PlayerView({
   const currentTimeRef = useRef<number>(initialPosition)
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pendingPositionSave = useRef<boolean>(false)
+  const playerRegionRef = useRef<HTMLDivElement>(null)
   const flushExitProgressRef = useRef<
     (reason: "pause" | "logout" | "pagehide", transport?: "fetch" | "beacon") => Promise<void>
   >(async () => {})
@@ -273,8 +282,14 @@ export function PlayerView({
     flushPositionSave(activeId)
     stopPeriodicSave()
     setCompletionContextLessonId(null)
+    setIsLessonSheetOpen(false)
 
     setActiveId(lessonId)
+    playerRegionRef.current?.focus()
+    playerRegionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    })
 
     startTransition(async () => {
       // 2. Fetch new signed URL and saved position in parallel
@@ -342,7 +357,7 @@ export function PlayerView({
           <button
             onClick={() => handleSelectLesson(lesson.id)}
             disabled={isPending}
-            className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors min-h-[44px] ${
+            className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition-colors min-h-[44px] ${
               activeId === lesson.id ? "bg-primary/10" : "hover:bg-muted"
             }`}
           >
@@ -409,33 +424,37 @@ export function PlayerView({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Video column */}
-        <div className="lg:col-span-2 space-y-3">
-          {signedUrl ? (
-            <VideoPlayer
-              signedUrl={signedUrl}
-              initialPosition={videoPosition}
-              onTimeUpdate={handleTimeUpdate}
-              onPause={handleVideoPause}
-              onEnded={handleVideoEnded}
-              progressFlushReady={Boolean(csrfToken)}
-            />
-          ) : (
-            <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/30 p-6 text-center">
-              <p className="max-w-md text-sm text-muted-foreground">
-                {playerMessage || "Selecciona una leccion para comenzar."}
-              </p>
-            </div>
-          )}
+        <div className="space-y-3 lg:col-span-2">
+          <div ref={playerRegionRef} tabIndex={-1} className="space-y-3 outline-none">
+            {signedUrl ? (
+              <VideoPlayer
+                signedUrl={signedUrl}
+                initialPosition={videoPosition}
+                onTimeUpdate={handleTimeUpdate}
+                onPause={handleVideoPause}
+                onEnded={handleVideoEnded}
+                progressFlushReady={Boolean(csrfToken)}
+              />
+            ) : (
+              <MediaFallbackPanel
+                title={courseTitle}
+                message={playerMessage || "Selecciona una leccion para comenzar."}
+                thumbnailUrl={thumbnailUrl}
+                supportUrl={supportUrl}
+                supportLabel="Necesito ayuda por WhatsApp"
+              />
+            )}
+          </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold truncate">
+          <div className="space-y-3 sm:flex sm:items-start sm:justify-between sm:gap-3 sm:space-y-0">
+            <h2 className="text-base font-semibold leading-6 sm:text-lg">
               {lessons.find((l) => l.id === activeId)?.title ?? ""}
             </h2>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
               {/* Mobile: toggle lesson list Sheet */}
               <div className="lg:hidden">
-                <Sheet>
+                <Sheet open={isLessonSheetOpen} onOpenChange={setIsLessonSheetOpen}>
                   <SheetTrigger asChild>
                     <Button
                       size="sm"
@@ -464,7 +483,7 @@ export function PlayerView({
                   variant="ghost"
                   onClick={handleMarkIncomplete}
                   disabled={isPending}
-                  className="min-h-[44px] text-green-700 hover:text-green-900 gap-1"
+                  className="min-h-[44px] gap-1 text-green-700 hover:text-green-900"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -477,7 +496,7 @@ export function PlayerView({
                   variant="outline"
                   onClick={handleMarkComplete}
                   disabled={isPending}
-                  className="min-h-[44px]"
+                  className="min-h-[44px] w-full sm:w-auto"
                 >
                   Marcar como completada
                 </Button>

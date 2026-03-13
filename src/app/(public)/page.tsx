@@ -223,24 +223,24 @@ export default async function HomePage() {
                 una forma de enseñar que nace del estudio real.
               </p>
 
-              <div className="mt-7 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-muted-foreground">
+              <div className="mt-7 inline-flex max-w-full flex-wrap items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-muted-foreground">
                 <span className="h-2.5 w-2.5 rounded-full bg-primary" />
                 <span>{data.publishedCoursesCount} cursos online disponibles</span>
               </div>
 
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button asChild size="lg">
+              <div className="mt-8 grid gap-3 sm:flex sm:flex-wrap">
+                <Button asChild size="lg" className="w-full sm:w-auto">
                   <Link href="/cursos">Explorar cursos</Link>
                 </Button>
                 <Button
                   asChild
                   size="lg"
                   variant="outline"
-                  className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:w-auto"
                 >
                   <Link href="/servicios">Sobre Studio Z</Link>
                 </Button>
-                <Button asChild size="lg" variant="ghost">
+                <Button asChild size="lg" variant="ghost" className="w-full sm:w-auto">
                   <Link href="/contacto">Hablar con Studio Z</Link>
                 </Button>
               </div>
@@ -255,7 +255,7 @@ export default async function HomePage() {
         aria-labelledby="home-categories-heading"
         className="container mx-auto px-4 py-14"
       >
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Empieza por aqui
@@ -267,7 +267,7 @@ export default async function HomePage() {
               Elige tu camino: baile o tatuaje.
             </h2>
           </div>
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" className="w-full sm:w-auto">
             <Link href="/servicios">Conocer Studio Z</Link>
           </Button>
         </div>
@@ -306,7 +306,7 @@ export default async function HomePage() {
         aria-labelledby="home-courses-heading"
         className="container mx-auto px-4 py-10"
       >
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Cursos destacados
@@ -319,7 +319,7 @@ export default async function HomePage() {
               en Studio Z Academy.
             </p>
           </div>
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" className="w-full sm:w-auto">
             <Link href="/cursos">Ver catalogo completo</Link>
           </Button>
         </div>
@@ -330,7 +330,7 @@ export default async function HomePage() {
         aria-labelledby="home-gallery-heading"
         className="container mx-auto px-4 py-10"
       >
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Comunidad
@@ -343,7 +343,7 @@ export default async function HomePage() {
               alrededor de Studio Z.
             </p>
           </div>
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" className="w-full sm:w-auto">
             <Link href="/galeria">Abrir galeria</Link>
           </Button>
         </div>
@@ -394,7 +394,7 @@ export default async function HomePage() {
         aria-labelledby="home-events-heading"
         className="container mx-auto px-4 py-10"
       >
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Eventos
@@ -407,7 +407,7 @@ export default async function HomePage() {
               la comunidad.
             </p>
           </div>
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" className="w-full sm:w-auto">
             <Link href="/eventos">Ver agenda</Link>
           </Button>
         </div>
@@ -468,7 +468,7 @@ export default async function HomePage() {
         aria-labelledby="home-news-heading"
         className="container mx-auto px-4 py-10"
       >
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Noticias
@@ -481,7 +481,7 @@ export default async function HomePage() {
               academia y el estudio.
             </p>
           </div>
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" className="w-full sm:w-auto">
             <Link href="/noticias">Ir a noticias</Link>
           </Button>
         </div>
@@ -564,11 +564,11 @@ export default async function HomePage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button asChild size="lg">
+            <div className="grid gap-3 sm:flex sm:flex-wrap">
+              <Button asChild size="lg" className="w-full sm:w-auto">
                 <Link href="/cursos">Explorar cursos online</Link>
               </Button>
-              <Button asChild size="lg" variant="outline">
+              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
                 <Link href="/servicios#baile">
                   Ver cursos presenciales de baile
                 </Link>

@@ -13,6 +13,7 @@ import { createServerClient } from "@/lib/supabase/server"
 import { CourseActions } from "@/components/courses/CourseActions"
 import { CourseGrid } from "@/components/courses/CourseGrid"
 import { FreeLessonPlayer } from "@/components/courses/FreeLessonPlayer"
+import { MediaFallbackPanel } from "@/components/courses/MediaFallbackPanel"
 import { CoursesSkeleton } from "@/components/skeletons/CoursesSkeleton"
 import { PreviewPlayer } from "@/components/courses/PreviewPlayer"
 import { ReviewSection } from "@/components/courses/ReviewSection"
@@ -77,10 +78,12 @@ async function RelatedCourses({
 function HeroMedia({
   preview,
   thumbnailUrl,
+  supportUrl,
   title,
 }: {
   preview: ResolvedCoursePreview
   thumbnailUrl: string | null
+  supportUrl: string | null
   title: string
 }) {
   if (preview.isPlayable && preview.url) {
@@ -93,25 +96,16 @@ function HeroMedia({
 
   if (preview.kind !== "none") {
     return (
-      <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
-        {thumbnailUrl && (
-          <Image
-            src={thumbnailUrl}
-            alt={title}
-            fill
-            priority
-            className="object-cover"
-            sizes="(max-width: 1024px) 100vw, 65vw"
-            unoptimized
-          />
-        )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-          <p className="max-w-sm px-4 text-center text-sm text-white">
-            {preview.message ??
-              "La vista previa no esta disponible en este momento."}
-          </p>
-        </div>
-      </div>
+      <MediaFallbackPanel
+        title={title}
+        message={
+          preview.message ??
+          "La vista previa no esta disponible en este momento."
+        }
+        thumbnailUrl={thumbnailUrl}
+        supportUrl={supportUrl}
+        supportLabel="Solicitar ayuda por WhatsApp"
+      />
     )
   }
 
@@ -190,6 +184,13 @@ export default async function CourseDetailPage({ params }: PageProps) {
     isAuthenticated: !!user,
     enrollmentProgress: course.enrollmentProgress,
   }
+  const whatsappNumber =
+    process.env.WHATSAPP_NUMBER ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? ""
+  const supportUrl = whatsappNumber
+    ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
+        `Hola, necesito ayuda con el curso ${course.title}`
+      )}`
+    : null
 
   return (
     <section className="container mx-auto px-4 py-8 lg:py-12">
@@ -199,6 +200,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
           <HeroMedia
             preview={course.resolvedPreview}
             thumbnailUrl={course.thumbnail_url}
+            supportUrl={supportUrl}
             title={course.title}
           />
         </div>
@@ -207,8 +209,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
         <div className="order-3 lg:order-none lg:col-start-2 lg:row-span-4 lg:row-start-1">
           <MobileStickyPurchase
             stickyChildren={
-              <div className="flex items-center justify-between gap-4">
-                <p className="min-w-0 truncate text-sm font-medium">
+              <div className="flex items-center gap-3">
+                <p className="min-w-0 flex-1 text-sm font-medium leading-5">
                   {course.title}
                 </p>
                 <div className="flex-shrink-0">
@@ -372,6 +374,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 isEnrolled={course.isEnrolled}
                 isInCart={course.isInCart}
                 isFreeCourse={course.is_free}
+                thumbnailUrl={course.thumbnail_url}
+                supportUrl={supportUrl}
               />
             </div>
           )}

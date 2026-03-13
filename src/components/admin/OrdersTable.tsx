@@ -71,80 +71,160 @@ export function OrdersTable({ orders }: OrdersTableProps) {
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Referencia</TableHead>
-            <TableHead>Cliente</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Metodo pago</TableHead>
-            <TableHead>Fecha</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {orders.length === 0 && (
-            <TableRow>
-              <TableCell
-                colSpan={7}
-                className="py-8 text-center text-muted-foreground"
-              >
-                No se encontraron ordenes con los filtros aplicados.
-              </TableCell>
-            </TableRow>
-          )}
-          {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell className="font-mono text-sm">
-                {order.reference}
-              </TableCell>
-              <TableCell>
-                <div>
-                  <p className="font-medium">{order.customer_name_snapshot}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {order.customer_email_snapshot}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="font-medium">
-                <div>
-                  <p>{formatCOP(order.total)}</p>
-                  {order.discount_amount > 0 && (
-                    <p className="text-xs text-emerald-600 dark:text-emerald-500">
-                      {order.course_discount_amount > 0 && order.combo_discount_amount > 0
-                        ? "Promos + combo"
-                        : order.combo_discount_amount > 0
-                          ? (order.discount_rule_name ?? "Combo")
-                          : "Promo curso"}
+      {orders.length === 0 ? (
+        <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+          No se encontraron ordenes con los filtros aplicados.
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3 md:hidden">
+            {orders.map((order) => (
+              <div key={order.id} className="rounded-xl border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Referencia
                     </p>
-                  )}
+                    <p className="mt-1 break-all font-mono text-sm">
+                      {order.reference}
+                    </p>
+                  </div>
+                  <Badge variant={STATUS_VARIANTS[order.status] ?? "secondary"}>
+                    {STATUS_LABELS[order.status] ?? order.status}
+                  </Badge>
                 </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={STATUS_VARIANTS[order.status] ?? "secondary"}>
-                  {STATUS_LABELS[order.status] ?? order.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-sm">
-                {formatPaymentMethod(order.payment_method)}
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {formatDate(order.created_at)}
-              </TableCell>
-              <TableCell className="text-right">
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Cliente
+                    </p>
+                    <p className="mt-1 font-medium">
+                      {order.customer_name_snapshot}
+                    </p>
+                    <p className="break-all text-xs text-muted-foreground">
+                      {order.customer_email_snapshot}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Total
+                      </p>
+                      <p className="mt-1 font-medium">{formatCOP(order.total)}</p>
+                      {order.discount_amount > 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-500">
+                          {order.course_discount_amount > 0 &&
+                          order.combo_discount_amount > 0
+                            ? "Promos + combo"
+                            : order.combo_discount_amount > 0
+                              ? (order.discount_rule_name ?? "Combo")
+                              : "Promo curso"}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Metodo de pago
+                      </p>
+                      <p className="mt-1">
+                        {formatPaymentMethod(order.payment_method)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Fecha
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        {formatDate(order.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="outline"
+                  className="mt-4 w-full"
                   onClick={() => setSelectedOrder(order)}
                 >
-                  Ver
+                  Ver detalle
                 </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden rounded-lg border md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Referencia</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Metodo pago</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-mono text-sm">
+                      {order.reference}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{order.customer_name_snapshot}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {order.customer_email_snapshot}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <div>
+                        <p>{formatCOP(order.total)}</p>
+                        {order.discount_amount > 0 && (
+                          <p className="text-xs text-emerald-600 dark:text-emerald-500">
+                            {order.course_discount_amount > 0 &&
+                            order.combo_discount_amount > 0
+                              ? "Promos + combo"
+                              : order.combo_discount_amount > 0
+                                ? (order.discount_rule_name ?? "Combo")
+                                : "Promo curso"}
+                          </p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_VARIANTS[order.status] ?? "secondary"}>
+                        {STATUS_LABELS[order.status] ?? order.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatPaymentMethod(order.payment_method)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(order.created_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedOrder(order)}
+                      >
+                        Ver
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       {selectedOrder && (
         <OrderDetailModal

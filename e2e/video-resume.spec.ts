@@ -203,7 +203,7 @@ test.describe("video resume flow", () => {
       .not.toBe(previousProgress?.last_accessed_at ?? null)
   })
 
-  test("expone logout movil y conserva la reanudacion del video", async ({
+  test("oculta la barra inferior en el player movil y conserva la reanudacion del video", async ({
     page,
   }, testInfo) => {
     test.skip(!testInfo.project.name.includes("mobile"), "Mobile only")
@@ -231,9 +231,10 @@ test.describe("video resume flow", () => {
       })
       .toBe(58)
 
-    await page.getByTestId("mobile-bottom-menu-trigger").click()
-    await expect(page.getByTestId("mobile-logout-button")).toBeVisible()
-    await page.getByTestId("mobile-logout-button").click()
+    await expect(page.getByTestId("mobile-bottom-menu-trigger")).toHaveCount(0)
+    await page.getByTestId("mobile-header-user-menu-trigger").click()
+    await expect(page.getByTestId("logout-button")).toBeVisible()
+    await page.getByTestId("logout-button").click()
     await expect(page).toHaveURL(/\/$/)
 
     await loginAsUser(page)

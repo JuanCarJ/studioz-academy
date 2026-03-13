@@ -6,9 +6,11 @@ import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import {
+  COURSE_MEDIA_HEALTH_THROTTLE_MS,
   ensureCourseMediaFresh,
   generateSignedUrl,
   resolveLessonAssetState,
+  shouldRefreshCourseMediaHealth,
 } from "@/lib/bunny"
 import { PlayerView } from "@/components/courses/PlayerView"
 import { ReviewSection } from "@/components/courses/ReviewSection"
@@ -29,7 +31,7 @@ export default async function CoursePlayerPage({
   const courseQuery = () =>
     supabase
       .from("courses")
-      .select("id, title, slug, rating_avg, reviews_count, lessons(*), instructors(id, full_name, slug, avatar_url, specialties)")
+      .select("id, title, slug, thumbnail_url, rating_avg, reviews_count, lessons(*), instructors(id, full_name, slug, avatar_url, specialties)")
       .eq("slug", slug)
       .single()
 
@@ -42,13 +44,21 @@ export default async function CoursePlayerPage({
   const courseId = course.id
 
   const initialLessons = (course.lessons ?? []) as Lesson[]
-  const shouldEnsureFreshMedia = initialLessons.some(
-    (lesson) => !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
+  const shouldEnsureFreshMedia = shouldRefreshCourseMediaHealth(
+    {
+      preview_bunny_video_id: null,
+      preview_last_checked_at: null,
+      preview_status: null,
+      pending_preview_bunny_video_id: null,
+    },
+    initialLessons,
+    COURSE_MEDIA_HEALTH_THROTTLE_MS
   )
 
   if (shouldEnsureFreshMedia) {
     const freshnessResult = await ensureCourseMediaFresh(courseId, {
       source: "dashboard_page",
+      throttleMs: COURSE_MEDIA_HEALTH_THROTTLE_MS,
     })
 
     if (freshnessResult.touchedCourses.some((item) => item.id === courseId)) {
@@ -149,7 +159,8 @@ export default async function CoursePlayerPage({
     ? (videoPositionMap.get(activeLesson.id) ?? 0)
     : 0
 
-  const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
+  const whatsappNumber =
+    process.env.WHATSAPP_NUMBER ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
   const whatsappUrl = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
         `Hola, necesito ayuda con el curso ${course.title}`
@@ -197,6 +208,7 @@ export default async function CoursePlayerPage({
 
       <PlayerView
         courseId={course.id}
+        courseTitle={course.title}
         lessons={lessons.map((l) => ({
           id: l.id,
           title: l.title,
@@ -208,6 +220,8 @@ export default async function CoursePlayerPage({
         initialSignedUrl={initialSignedUrl}
         initialPlaybackMessage={initialPlaybackMessage}
         initialPosition={initialPosition}
+        thumbnailUrl={course.thumbnail_url}
+        supportUrl={whatsappUrl}
       />
 
       {whatsappUrl && (

@@ -1,7 +1,12 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
-import { ensureCourseMediaFresh, resolveCoursePreview } from "@/lib/bunny"
+import {
+  COURSE_MEDIA_HEALTH_THROTTLE_MS,
+  ensureCourseMediaFresh,
+  resolveCoursePreview,
+  shouldRefreshCourseMediaHealth,
+} from "@/lib/bunny"
 import { getCartItemsForUser } from "@/lib/cart"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
@@ -181,18 +186,17 @@ export async function getCourseBySlug(
   if (error || !initialCourse) return null
 
   const initialLessons = (initialCourse.lessons ?? []) as Lesson[]
-  const shouldEnsureFreshMedia =
-    !!initialCourse.pending_preview_bunny_video_id ||
-    (!!initialCourse.preview_bunny_video_id &&
-      initialCourse.preview_status !== "ready") ||
-    initialLessons.some(
-      (lesson) => !!lesson.pending_bunny_video_id || lesson.bunny_status !== "ready"
-    )
+  const shouldEnsureFreshMedia = shouldRefreshCourseMediaHealth(
+    initialCourse,
+    initialLessons,
+    COURSE_MEDIA_HEALTH_THROTTLE_MS
+  )
 
   let course = initialCourse
   if (shouldEnsureFreshMedia) {
     const freshnessResult = await ensureCourseMediaFresh(initialCourse.id, {
       source: "public_page",
+      throttleMs: COURSE_MEDIA_HEALTH_THROTTLE_MS,
     })
 
     if (freshnessResult.touchedCourses.some((item) => item.id === initialCourse.id)) {
