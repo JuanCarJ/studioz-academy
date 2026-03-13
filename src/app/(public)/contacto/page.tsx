@@ -30,8 +30,8 @@ export default function ContactoPage() {
           Datos de contacto de Studio Z.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Aqui encuentras los accesos directos a WhatsApp, Instagram y Google
-          Maps para las dos vertientes de Studio Z.
+          Aqui encuentras los accesos directos a WhatsApp, Instagram y de
+          Studio Z. Espereamos tu mensaje!
         </p>
       </section>
 
