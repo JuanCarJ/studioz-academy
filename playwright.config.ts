@@ -8,6 +8,8 @@ const baseURL =
   process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000"
 
 const useExistingServer = process.env.PLAYWRIGHT_USE_EXISTING_SERVER === "1"
+const webServerCommand =
+  process.env.PLAYWRIGHT_WEB_SERVER_COMMAND || "npm run dev"
 const vercelBypassSecret =
   process.env.PLAYWRIGHT_VERCEL_BYPASS_SECRET ||
   process.env.VERCEL_AUTOMATION_BYPASS_SECRET ||
@@ -51,7 +53,7 @@ export default defineConfig({
   webServer: useExistingServer
     ? undefined
     : {
-        command: "npm run dev",
+        command: webServerCommand,
         url: baseURL,
         reuseExistingServer: true,
         timeout: 120_000,
