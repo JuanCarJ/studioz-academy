@@ -50,8 +50,7 @@ export function EventImageCarousel({
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="border-white/20 bg-black/40 text-white hover:bg-black/60 hover:text-white"
+              variant="darkOutline"
               onClick={() =>
                 setActiveIndex((current) =>
                   current === 0 ? images.length - 1 : current - 1
@@ -63,8 +62,7 @@ export function EventImageCarousel({
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="border-white/20 bg-black/40 text-white hover:bg-black/60 hover:text-white"
+              variant="darkOutline"
               onClick={() =>
                 setActiveIndex((current) =>
                   current === images.length - 1 ? 0 : current + 1
