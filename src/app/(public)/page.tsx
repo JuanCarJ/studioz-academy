@@ -228,27 +228,37 @@ export default async function HomePage() {
                 <span>{data.publishedCoursesCount} cursos online disponibles</span>
               </div>
 
-              <div className="mt-8 grid gap-3 md:max-w-3xl md:grid-cols-3">
-                <Button asChild size="lg" className="w-full md:h-full">
-                  <Link href="/cursos">Explorar cursos</Link>
+              <nav
+                aria-label="Accesos principales del home"
+                className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
+              >
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-12 w-full rounded-full px-7 text-base font-semibold shadow-[0_18px_48px_rgba(244,63,94,0.28)] sm:w-auto sm:min-w-[220px]"
+                >
+                  <Link href="/cursos">
+                    Explorar cursos
+                    <span aria-hidden="true">→</span>
+                  </Link>
                 </Button>
                 <Button
                   asChild
                   size="lg"
                   variant="darkOutline"
-                  className="w-full md:h-full"
+                  className="h-12 w-full rounded-full border-white/14 bg-white/[0.04] px-7 text-base font-medium text-white/92 backdrop-blur-sm hover:border-white/28 hover:bg-white/[0.08] sm:w-auto sm:min-w-[200px]"
                 >
                   <Link href="/servicios">Sobre Studio Z</Link>
                 </Button>
                 <Button
                   asChild
                   size="lg"
-                  variant="outline"
-                  className="w-full border-amber-500/35 bg-amber-500/12 text-amber-50 hover:bg-amber-500/22 hover:text-white md:h-full"
+                  variant="darkOutline"
+                  className="h-12 w-full rounded-full border-amber-500/30 bg-amber-500/12 px-7 text-base font-medium text-amber-50 backdrop-blur-sm hover:border-amber-400/45 hover:bg-amber-500/18 hover:text-white sm:w-auto sm:min-w-[200px]"
                 >
                   <Link href="/contacto">Contactanos</Link>
                 </Button>
-              </div>
+              </nav>
             </div>
 
             <FeaturedCourseSpotlight course={data.heroCourse} />

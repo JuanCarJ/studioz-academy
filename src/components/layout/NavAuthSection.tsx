@@ -144,7 +144,12 @@ export function NavAuthSection({ user, cartCount }: NavAuthSectionProps) {
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
+        <Button
+          variant="darkOutline"
+          size="sm"
+          asChild
+          className="rounded-full border-white/16 bg-white/[0.03] px-4 text-white/90 hover:border-white/28 hover:bg-white/[0.08]"
+        >
           <Link href="/login">Iniciar sesion</Link>
         </Button>
         <Button size="sm" asChild>
