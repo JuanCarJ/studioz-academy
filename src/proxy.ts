@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 import { resolveAccountStatusByUserId } from "@/lib/auth/account"
+import { hasSupabaseAuthCookies } from "@/lib/supabase/request-auth"
 import { getSupabaseUserWithRecovery } from "@/lib/supabase/session-recovery"
 
 const publicRoutes = [
@@ -43,6 +44,10 @@ function isServerActionRequest(request: NextRequest) {
   return request.method === "POST" && request.headers.has("next-action")
 }
 
+function isProtectedAppGetRequest(request: NextRequest) {
+  return request.method === "GET" && !request.nextUrl.pathname.startsWith("/api")
+}
+
 function copySupabaseCookies(
   targetResponse: NextResponse,
   sourceResponse: NextResponse
@@ -63,6 +68,7 @@ function redirectWithSupabaseCookies(
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
+  const hasAuthCookies = hasSupabaseAuthCookies(request.cookies)
 
   // Create Supabase client and refresh auth session for ALL routes.
   // This follows the Supabase recommended pattern: session refresh must
@@ -92,7 +98,13 @@ export async function proxy(request: NextRequest) {
 
   // Refresh session for ALL routes — do not put code between
   // createServerClient and getUser()
-  const user = await getSupabaseUserWithRecovery(supabase, request.cookies)
+  const user = await getSupabaseUserWithRecovery(supabase, request.cookies, {
+    context: {
+      source: "proxy",
+      path,
+      method: request.method,
+    },
+  })
   const serverActionRequest = isServerActionRequest(request)
 
   let accountStatus:
@@ -133,6 +145,17 @@ export async function proxy(request: NextRequest) {
   // Protected routes: require authentication
   if (!user) {
     if (serverActionRequest) {
+      return supabaseResponse
+    }
+
+    if (hasAuthCookies && isProtectedAppGetRequest(request)) {
+      console.warn(
+        "[auth.proxy] Protected app request kept alive after session recovery returned no user; layout will re-check auth.",
+        {
+          path,
+          method: request.method,
+        }
+      )
       return supabaseResponse
     }
 

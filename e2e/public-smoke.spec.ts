@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test"
 const publicRoutes = [
   { path: "/", heading: /aprende baile y tatuaje online/i },
   { path: "/servicios", heading: /baile y tattoo con una identidad propia/i },
-  { path: "/galeria", heading: /trabajo, comunidad y momentos/i },
-  { path: "/noticias", heading: /contenido editorial/i },
-  { path: "/eventos", heading: /agenda publica/i },
+  { path: "/galeria", heading: /la energia, el oficio y la identidad de studio z en imagenes/i },
+  { path: "/noticias", heading: /lo que se mueve en studio z/i },
+  { path: "/eventos", heading: /encuentros, clases y activaciones para vivir studio z de cerca/i },
   { path: "/contacto", heading: /datos de contacto de studio z/i },
 ]
 
@@ -20,18 +20,18 @@ for (const route of publicRoutes) {
 
 test("home muestra el split temprano y el cierre final", async ({ page }) => {
   await page.goto("/")
+  const homeActions = page.getByRole("navigation", {
+    name: /accesos principales del home/i,
+  })
+
   await expect(
     page.getByRole("heading", { level: 3, name: /quiero aprender baile/i })
   ).toBeVisible()
   await expect(
     page.getByRole("heading", { level: 3, name: /quiero aprender tatuaje/i })
   ).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: /explorar cursos online/i })
-  ).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: /ver cursos presenciales de baile/i })
-  ).toBeVisible()
+  await expect(homeActions.getByRole("link", { name: "Explorar cursos" })).toBeVisible()
+  await expect(homeActions.getByRole("link", { name: "Sobre Studio Z" })).toBeVisible()
 })
 
 test("noticias permite navegar al detalle cuando existe un post publicado", async ({

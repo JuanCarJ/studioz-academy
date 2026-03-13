@@ -6,7 +6,7 @@ import {
   Home,
   GraduationCap,
   BookOpen,
-  UserPlus,
+  LogIn,
   ShoppingCart,
   Menu,
   ShoppingBag,
@@ -15,10 +15,13 @@ import {
 } from "lucide-react"
 
 import { LogoutForm } from "@/components/layout/LogoutForm"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
+  SheetHeader,
   SheetTrigger,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -29,6 +32,7 @@ interface MobileTab {
   label: string
   icon: typeof Home
   prefetch?: boolean
+  testId: string
 }
 
 const sheetLinks = [
@@ -48,12 +52,30 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
   }
 
   const tabs: MobileTab[] = [
-    { href: "/", label: "Inicio", icon: Home },
-    { href: "/cursos", label: "Cursos", icon: GraduationCap },
+    { href: "/", label: "Inicio", icon: Home, testId: "mobile-bottom-tab-home" },
+    { href: "/cursos", label: "Cursos", icon: GraduationCap, testId: "mobile-bottom-tab-cursos" },
     isAuthenticated
-      ? { href: "/dashboard", label: "Aprendizaje", icon: BookOpen, prefetch: false }
-      : { href: "/registro", label: "Registrarse", icon: UserPlus },
-    { href: "/carrito", label: "Carrito", icon: ShoppingCart, prefetch: false },
+      ? {
+          href: "/dashboard",
+          label: "Aprendizaje",
+          icon: BookOpen,
+          prefetch: false,
+          testId: "mobile-bottom-tab-aprendizaje",
+        }
+      : {
+          href: "/login",
+          label: "Iniciar sesion",
+          icon: LogIn,
+          prefetch: false,
+          testId: "mobile-bottom-tab-login",
+        },
+    {
+      href: "/carrito",
+      label: "Carrito",
+      icon: ShoppingCart,
+      prefetch: false,
+      testId: "mobile-bottom-tab-carrito",
+    },
   ]
 
   return (
@@ -64,6 +86,7 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
             tab.href === "/"
               ? pathname === "/"
               : pathname.startsWith(tab.href)
+          const showLabel = isActive || (!isAuthenticated && tab.href === "/login")
           const Icon = tab.icon
 
           return (
@@ -71,13 +94,19 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
               key={tab.href}
               href={tab.href}
               prefetch={tab.prefetch}
+              data-testid={tab.testId}
               className={cn(
                 "flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 text-[10px] leading-tight sm:px-2 sm:text-[11px]",
-                isActive ? "text-primary" : "text-muted-foreground"
+                isActive
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
               )}
+              aria-current={isActive ? "page" : undefined}
             >
               <Icon className="h-5 w-5" />
-              {tab.label}
+              <span className={showLabel ? undefined : "sr-only"}>
+                {tab.label}
+              </span>
             </Link>
           )
         })}
@@ -91,15 +120,34 @@ export function MobileBottomBar({ isAuthenticated }: { isAuthenticated: boolean 
               data-testid="mobile-bottom-menu-trigger"
             >
               <Menu className="h-5 w-5" />
-              Menu
+              <span className="sr-only">Menu</span>
             </button>
           </SheetTrigger>
           <SheetContent side="right" className="w-72">
-            <SheetTitle className="font-heading text-lg font-bold">
-              Studio Z
-            </SheetTitle>
+            <SheetHeader className="gap-1 px-0 pt-0">
+              <SheetTitle className="font-heading text-lg font-bold">
+                Studio Z
+              </SheetTitle>
+              <SheetDescription>
+                Accesos rapidos del sitio y opciones de cuenta para continuar tu proceso.
+              </SheetDescription>
+            </SheetHeader>
             <Separator className="my-4" />
             <nav className="flex flex-col gap-1">
+              {!isAuthenticated && (
+                <>
+                  <div className="space-y-2">
+                    <Button asChild className="w-full justify-center">
+                      <Link href="/login">Iniciar sesion</Link>
+                    </Button>
+                    <Button asChild variant="outline" className="w-full justify-center">
+                      <Link href="/registro">Registrarse</Link>
+                    </Button>
+                  </div>
+                  <Separator className="my-2" />
+                </>
+              )}
+
               {isAuthenticated && (
                 <>
                   <Link

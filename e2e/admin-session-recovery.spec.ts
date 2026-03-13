@@ -64,4 +64,17 @@ test.describe.serial("Admin Session Recovery", () => {
       page.getByRole("heading", { name: /editar curso/i })
     ).toBeVisible()
   })
+
+  test("keeps admin signed in during sidebar navigation after token degradation", async ({
+    page,
+  }) => {
+    await loginAsAdmin(page)
+    await page.goto("/admin/cursos")
+    await degradeAccessTokenCookie(page)
+
+    await page.getByRole("link", { name: /^ventas$/i }).first().click()
+
+    await expect(page).toHaveURL(/\/admin\/ventas$/)
+    await expect(page.getByRole("heading", { name: /ventas/i }).first()).toBeVisible()
+  })
 })

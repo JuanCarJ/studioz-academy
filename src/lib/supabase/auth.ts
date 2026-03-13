@@ -9,7 +9,11 @@ import { createServerClient } from "./server"
 export const getCurrentUser = cache(async () => {
   const supabase = await createServerClient()
   const cookieStore = await cookies()
-  const user = await getSupabaseUserWithRecovery(supabase, cookieStore)
+  const user = await getSupabaseUserWithRecovery(supabase, cookieStore, {
+    context: {
+      source: "server_component:getCurrentUser",
+    },
+  })
   if (!user) return null
 
   const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)

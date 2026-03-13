@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
+    "test:e2e:prod:admin-session": "npm run build && PLAYWRIGHT_BASE_URL=http://127.0.0.1:3100 PLAYWRIGHT_WEB_SERVER_COMMAND='npm run start -- --hostname 127.0.0.1 --port 3100' playwright test e2e/admin-session-recovery.spec.ts --project=desktop-chromium",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:bunny": "PLAYWRIGHT_BUNNY_ENABLED=1 playwright test e2e/bunny-integration.spec.ts --project=desktop-chromium",

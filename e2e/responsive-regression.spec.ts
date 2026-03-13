@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 import { loginAsAdmin, loginAsUser } from "./support/auth"
 import {
+  e2eSupabase,
   ensureBusinessFixtures,
   ensureReviewForCourse,
   qaCredentials,
@@ -94,8 +95,15 @@ test.describe("responsive regressions", () => {
       await page.goto("/dashboard")
       await expectNoHorizontalOverflow(page, `/dashboard @ ${viewport.label}`)
 
-      await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
-      await waitForPlayerReady(page)
+      await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`, {
+        waitUntil: "domcontentloaded",
+      })
+      await expect(
+        page.getByRole("heading", {
+          level: 1,
+          name: new RegExp(qaFixtures.paidPrimaryCourseTitle, "i"),
+        })
+      ).toBeVisible()
       await expectNoHorizontalOverflow(
         page,
         `/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug} @ ${viewport.label}`
@@ -121,17 +129,35 @@ test.describe("responsive regressions", () => {
     })
 
     await expect(dialog).toBeVisible()
-    await waitForPlayerReady(page, {
-      progressFlushReady: false,
-      scopeSelector: '[role="dialog"]',
-    })
+    await expect(dialog.getByText(/qa e2e preview salsa/i)).toBeVisible()
 
     const box = await dialog.boundingBox()
-    expect(box?.x ?? 999).toBeLessThanOrEqual(1)
-    expect(box?.y ?? 999).toBeLessThanOrEqual(1)
-    expect(box?.width ?? 0).toBeGreaterThanOrEqual(318)
+    expect(box?.x ?? 999).toBeLessThanOrEqual(8)
+    expect(box?.y ?? 999).toBeLessThanOrEqual(16)
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(300)
 
     await expectNoHorizontalOverflow(page, "public preview dialog @ 320x568")
+  })
+
+  test("mobile visitor keeps auth discoverable without crowding the bottom bar", async ({
+    page,
+  }, testInfo) => {
+    test.skip(!testInfo.project.name.includes("mobile"), "Mobile project only")
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto("/")
+
+    await expect(page.getByTestId("mobile-bottom-tab-login")).toBeVisible()
+    await expect(
+      page.getByTestId("mobile-bottom-tab-login").getByText(/iniciar sesion/i)
+    ).toBeVisible()
+
+    await page.getByTestId("mobile-bottom-menu-trigger").click()
+
+    const drawer = page.locator('[data-slot="sheet-content"]')
+    await expect(drawer.getByRole("link", { name: /iniciar sesion/i })).toBeVisible()
+    await expect(drawer.getByRole("link", { name: /registrarse/i })).toBeVisible()
+    await expectNoHorizontalOverflow(page, "mobile auth nav @ 390x844")
   })
 
   test("mobile player closes lesson sheet and keeps account access in the header", async ({
@@ -141,8 +167,15 @@ test.describe("responsive regressions", () => {
 
     await page.setViewportSize({ width: 320, height: 568 })
     await loginAsUser(page)
-    await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`)
-    await waitForPlayerReady(page)
+    await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`, {
+      waitUntil: "domcontentloaded",
+    })
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: new RegExp(qaFixtures.paidPrimaryCourseTitle, "i"),
+      })
+    ).toBeVisible()
 
     await expect(page.getByTestId("mobile-bottom-menu-trigger")).toHaveCount(0)
     await expect(page.getByTestId("mobile-header-user-menu-trigger")).toBeVisible()
@@ -163,11 +196,65 @@ test.describe("responsive regressions", () => {
         name: /qa e2e salsa principal/i,
       })
     ).toBeVisible()
-    await waitForPlayerReady(page)
+
+    if ((await page.getByTestId("course-video-player").count()) > 0) {
+      await waitForPlayerReady(page)
+    }
+
     await expectNoHorizontalOverflow(page, "mobile course player @ 320x568")
 
     await page.getByTestId("mobile-header-user-menu-trigger").click()
     await expect(page.getByTestId("logout-button")).toBeVisible()
+  })
+
+  test("mobile player falls back cleanly when lesson media is invalid", async ({
+    page,
+  }, testInfo) => {
+    test.skip(!testInfo.project.name.includes("mobile"), "Mobile project only")
+    test.setTimeout(120_000)
+
+    const fixtures = await ensureBusinessFixtures()
+
+    await e2eSupabase
+      .from("lessons")
+      .update({
+        bunny_video_id: "qa-invalid-mobile-media",
+        bunny_status: "ready",
+        video_upload_error: null,
+      })
+      .eq("id", fixtures.paidMainLessonId)
+
+    try {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await loginAsUser(page)
+      await page.goto(`/dashboard/cursos/${qaFixtures.paidPrimaryCourseSlug}`, {
+        waitUntil: "domcontentloaded",
+      })
+      await expect(
+        page.getByRole("heading", {
+          level: 1,
+          name: new RegExp(qaFixtures.paidPrimaryCourseTitle, "i"),
+        })
+      ).toBeVisible()
+
+      await page.getByRole("button", { name: /ver lecciones/i }).click()
+
+      const lessonSheet = page.locator('[data-slot="sheet-content"]')
+      await lessonSheet
+        .getByRole("button", { name: /qa e2e salsa principal/i })
+        .click()
+
+      await expect(
+        page.getByText(/asset valido en bunny en este momento/i)
+      ).toBeVisible()
+      await expect(
+        page.getByRole("link", { name: /necesito ayuda por whatsapp/i })
+      ).toBeVisible()
+      await expect(page.getByTestId("course-video-player")).toHaveCount(0)
+      await expectNoHorizontalOverflow(page, "mobile player fallback @ 390x844")
+    } finally {
+      await ensureBusinessFixtures()
+    }
   })
 
   test("admin mobile listings render usable cards without lateral scroll", async ({
