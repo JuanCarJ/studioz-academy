@@ -228,20 +228,25 @@ export default async function HomePage() {
                 <span>{data.publishedCoursesCount} cursos online disponibles</span>
               </div>
 
-              <div className="mt-8 grid gap-3 sm:flex sm:flex-wrap">
-                <Button asChild size="lg" className="w-full sm:w-auto">
+              <div className="mt-8 grid gap-3 md:max-w-3xl md:grid-cols-3">
+                <Button asChild size="lg" className="w-full md:h-full">
                   <Link href="/cursos">Explorar cursos</Link>
                 </Button>
                 <Button
                   asChild
                   size="lg"
                   variant="outline"
-                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:w-auto"
+                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white md:h-full"
                 >
                   <Link href="/servicios">Sobre Studio Z</Link>
                 </Button>
-                <Button asChild size="lg" variant="ghost" className="w-full sm:w-auto">
-                  <Link href="/contacto">Hablar con Studio Z</Link>
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  className="w-full border-amber-500/35 bg-amber-500/12 text-amber-50 hover:bg-amber-500/22 hover:text-white md:h-full"
+                >
+                  <Link href="/contacto">Contactanos</Link>
                 </Button>
               </div>
             </div>
