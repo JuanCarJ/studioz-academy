@@ -80,7 +80,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
   return (
     <div className="space-y-4">
       {/* Category tabs */}
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-2 min-[420px]:flex min-[420px]:flex-wrap">
         {CATEGORIES.map((cat) => (
           <Button
             key={cat.value}
@@ -88,6 +88,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
             size="sm"
             onClick={() => updateParams({ category: cat.value })}
             disabled={isPending}
+            className="w-full min-[420px]:w-auto"
           >
             {cat.label}
           </Button>
@@ -95,7 +96,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
       </div>
 
       {/* Search + instructor + sort row */}
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -114,7 +115,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
               updateParams({ instructor: value === "all" ? "" : value })
             }
           >
-            <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Instructor" />
             </SelectTrigger>
             <SelectContent>
@@ -132,7 +133,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
           value={currentSort}
           onValueChange={(value) => updateParams({ sort: value })}
         >
-          <SelectTrigger className="w-full sm:w-[200px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Ordenar por" />
           </SelectTrigger>
           <SelectContent>

@@ -21,11 +21,12 @@ export default async function NoticiasPage() {
           Noticias
         </p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
-          Contenido editorial para mantener activa la comunidad.
+          Lo que se mueve en Studio Z.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Aqui se publican novedades, lanzamientos, eventos y piezas que
-          conectan el sitio informativo con la conversion comercial.
+          Lanzamientos, novedades, aperturas, anuncios y contenido que
+          mantiene cerca a la comunidad de Studio Z Academy, la academia de
+          baile y el estudio.
         </p>
       </div>
 

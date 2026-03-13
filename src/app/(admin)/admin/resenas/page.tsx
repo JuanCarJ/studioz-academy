@@ -22,11 +22,9 @@ export default function AdminReviewsPage() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <Suspense fallback={<AdminTableSkeleton rows={8} />}>
-          <ReviewsList />
-        </Suspense>
-      </div>
+      <Suspense fallback={<AdminTableSkeleton rows={8} />}>
+        <ReviewsList />
+      </Suspense>
     </section>
   )
 }

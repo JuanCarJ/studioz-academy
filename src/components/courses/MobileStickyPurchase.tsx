@@ -31,8 +31,8 @@ export function MobileStickyPurchase({
     <>
       <div ref={sentinelRef}>{children}</div>
       {showSticky && (
-        <div className="fixed bottom-16 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur-lg md:bottom-0 lg:hidden">
-          <div className="container mx-auto px-4 py-3">
+        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t bg-background/95 backdrop-blur-lg lg:bottom-0 lg:hidden">
+          <div className="container mx-auto px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] lg:pb-3">
             {stickyChildren}
           </div>
         </div>

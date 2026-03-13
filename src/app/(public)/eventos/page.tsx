@@ -30,11 +30,12 @@ export default async function EventosPage() {
           Eventos
         </p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
-          Agenda publica para workshops, activaciones y comunidad.
+          Encuentros, clases y activaciones para vivir Studio Z de cerca.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Los eventos publicados desde admin aparecen aqui separados entre
-          proximos y pasados, con fecha, ubicacion e imagen.
+          Consulta la agenda de Studio Z y encuentra proximos encuentros,
+          workshops, activaciones y experiencias pensadas para conectar con la
+          comunidad y mover la marca fuera de la pantalla.
         </p>
       </div>
 
@@ -42,7 +43,7 @@ export default async function EventosPage() {
         <div>
           <h2 className="text-2xl font-semibold">Proximos eventos</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Publicaciones vigentes ordenadas por fecha.
+            Lo que viene en la agenda de Studio Z.
           </p>
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
@@ -80,7 +81,7 @@ export default async function EventosPage() {
         <div>
           <h2 className="text-2xl font-semibold">Eventos pasados</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Historial de agenda ya ejecutada.
+            Momentos que ya hicieron parte del recorrido.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

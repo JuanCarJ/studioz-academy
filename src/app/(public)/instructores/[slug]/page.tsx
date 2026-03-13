@@ -41,11 +41,11 @@ export default async function InstructorProfilePage({ params }: PageProps) {
   if (!instructor) notFound()
 
   return (
-    <section className="container mx-auto px-4 py-16">
+    <section className="container mx-auto px-4 py-12 sm:py-16">
       {/* Profile header */}
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:gap-10">
         {/* Avatar */}
-        <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full bg-muted ring-2 ring-border">
+        <div className="relative mx-auto h-32 w-32 shrink-0 overflow-hidden rounded-full bg-muted ring-2 ring-border sm:mx-0">
           {instructor.avatar_url ? (
             <Image
               src={instructor.avatar_url}
@@ -63,10 +63,10 @@ export default async function InstructorProfilePage({ params }: PageProps) {
         </div>
 
         {/* Info */}
-        <div className="flex-1 space-y-4">
+        <div className="flex-1 space-y-4 text-center sm:text-left">
           <div>
             <h1 className="text-3xl font-bold">{instructor.full_name}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground sm:justify-start">
               {instructor.publishedCoursesCount > 0 && (
                 <span>
                   {instructor.publishedCoursesCount}{" "}
@@ -77,7 +77,7 @@ export default async function InstructorProfilePage({ params }: PageProps) {
           </div>
 
           {instructor.specialties.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
               {instructor.specialties.map((specialty) => (
                 <Badge key={specialty} variant="secondary">
                   {specialty}
@@ -87,7 +87,7 @@ export default async function InstructorProfilePage({ params }: PageProps) {
           )}
 
           {instructor.bio && (
-            <p className="text-muted-foreground leading-relaxed max-w-2xl">
+            <p className="max-w-2xl text-balance leading-relaxed text-muted-foreground">
               {instructor.bio}
             </p>
           )}

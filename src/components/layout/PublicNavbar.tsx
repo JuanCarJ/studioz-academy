@@ -3,7 +3,7 @@ import Link from "next/link"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { AuthStateSync } from "./AuthStateSync"
-import { NavAuthSection } from "./NavAuthSection"
+import { MobileNavAuthSection, NavAuthSection } from "./NavAuthSection"
 import { DesktopNavLinks } from "./DesktopNavLinks"
 import { MobileBottomBar } from "./MobileBottomBar"
 
@@ -28,7 +28,7 @@ export async function PublicNavbar() {
     <>
       <AuthStateSync isAuthenticated={!!user} />
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
-        <nav className="container mx-auto flex h-16 items-center justify-center px-4 md:justify-between">
+        <nav className="container relative mx-auto flex h-16 items-center justify-center px-4 lg:justify-between">
           {/* Logo — centered on mobile, start-aligned on desktop */}
           <Link
             href="/"
@@ -41,8 +41,24 @@ export async function PublicNavbar() {
           <DesktopNavLinks />
 
           {/* Right section: Auth (includes CartIcon when authenticated) — desktop only */}
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="hidden items-center gap-2 lg:flex">
             <NavAuthSection
+              user={
+                user
+                  ? {
+                      id: user.id,
+                      full_name: user.full_name,
+                      role: user.role,
+                      avatar_url: user.avatar_url,
+                    }
+                  : null
+              }
+              cartCount={cartCount}
+            />
+          </div>
+
+          <div className="absolute right-4 flex items-center lg:hidden">
+            <MobileNavAuthSection
               user={
                 user
                   ? {

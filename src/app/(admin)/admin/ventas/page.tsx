@@ -79,9 +79,7 @@ export default async function AdminSalesPage({ searchParams }: PageProps) {
           combo={combo}
         />
 
-        <div className="overflow-x-auto rounded-lg border">
-          <OrdersTable orders={result.orders} />
-        </div>
+        <OrdersTable orders={result.orders} />
 
         <AdminPagination
           page={result.page}

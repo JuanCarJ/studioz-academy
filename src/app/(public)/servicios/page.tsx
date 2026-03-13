@@ -67,16 +67,16 @@ export default async function ServiciosPage() {
           </p>
           <nav
             aria-label="Secciones de Sobre Studio Z"
-            className="mt-8 flex flex-wrap gap-3"
+            className="mt-8 grid gap-3 sm:flex sm:flex-wrap"
           >
-            <Button asChild size="lg">
+            <Button asChild size="lg" className="w-full sm:w-auto">
               <Link href="#baile">Explorar baile</Link>
             </Button>
             <Button
               asChild
               size="lg"
               variant="outline"
-              className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+              className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
             >
               <Link href="#tattoo">Explorar tattoo</Link>
             </Button>
@@ -190,9 +190,9 @@ export default async function ServiciosPage() {
 
                   <nav
                     aria-label={actionsLabel}
-                    className="flex flex-wrap gap-3"
+                    className="grid gap-3 sm:flex sm:flex-wrap"
                   >
-                    <Button asChild size="lg">
+                    <Button asChild size="lg" className="w-full sm:w-auto">
                       <a
                         href={buildWhatsAppUrl(
                           section.whatsappNumber,
@@ -210,7 +210,7 @@ export default async function ServiciosPage() {
                       asChild
                       size="lg"
                       variant="outline"
-                      className="border-white/15 bg-background/70 text-foreground hover:bg-white/10 hover:text-white"
+                      className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
                     >
                       <a
                         href={section.instagramUrl}
@@ -226,7 +226,7 @@ export default async function ServiciosPage() {
                       asChild
                       size="lg"
                       variant="ghost"
-                      className="text-foreground hover:bg-white/10 hover:text-white"
+                      className="text-white hover:bg-black/40 hover:text-white"
                     >
                       <a
                         href={buildMapsUrl(section.mapsQuery)}
@@ -344,7 +344,7 @@ export default async function ServiciosPage() {
               <Button
                 asChild
                 variant="outline"
-                className="border-white/15 bg-background/70 text-foreground hover:bg-white/10 hover:text-white"
+                className="border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white"
               >
                 <Link href="/galeria">Ver galeria completa</Link>
               </Button>

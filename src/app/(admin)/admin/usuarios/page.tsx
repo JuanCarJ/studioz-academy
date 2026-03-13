@@ -50,56 +50,101 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
 
       <UsersFilters search={search} />
 
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Telefono</TableHead>
-              <TableHead>Rol</TableHead>
-              <TableHead>Ultimo ingreso</TableHead>
-              <TableHead>Registro</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {result.users.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  No se encontraron usuarios.
-                </TableCell>
-              </TableRow>
-            )}
+      {result.users.length === 0 ? (
+        <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+          No se encontraron usuarios.
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3 md:hidden">
             {result.users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell className="font-medium">{user.full_name}</TableCell>
-                <TableCell className="text-sm">{user.email}</TableCell>
-                <TableCell className="text-sm">{user.phone ?? "—"}</TableCell>
-                <TableCell>
+              <div key={user.id} className="rounded-xl border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{user.full_name}</p>
+                    <p className="break-all text-sm text-muted-foreground">
+                      {user.email}
+                    </p>
+                  </div>
                   <Badge variant={user.role === "admin" ? "default" : "secondary"}>
                     {user.role === "admin" ? "Admin" : "Usuario"}
                   </Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatDate(user.last_login_at)}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatDate(user.created_at)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link href={`/admin/usuarios/${user.id}`}>Ver ficha</Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 text-sm min-[420px]:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Telefono
+                    </p>
+                    <p className="mt-1">{user.phone ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Ultimo ingreso
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      {formatDate(user.last_login_at)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Registro
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      {formatDate(user.created_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <Button variant="outline" className="mt-4 w-full" asChild>
+                  <Link href={`/admin/usuarios/${user.id}`}>Ver ficha</Link>
+                </Button>
+              </div>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+
+          <div className="hidden rounded-lg border md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Telefono</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>Ultimo ingreso</TableHead>
+                  <TableHead>Registro</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.full_name}</TableCell>
+                    <TableCell className="text-sm">{user.email}</TableCell>
+                    <TableCell className="text-sm">{user.phone ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                        {user.role === "admin" ? "Admin" : "Usuario"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(user.last_login_at)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(user.created_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href={`/admin/usuarios/${user.id}`}>Ver ficha</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       <AdminPagination
         page={result.page}

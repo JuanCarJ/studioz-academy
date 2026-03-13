@@ -27,11 +27,12 @@ export default async function GaleriaPage() {
           Galeria
         </p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
-          Trabajo, comunidad y momentos que respaldan la propuesta Studio Z.
+          La energia, el oficio y la identidad de Studio Z en imagenes.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Esta galeria consume contenido editorial publicado desde admin y
-          permite revisar por categoria con vista ampliada.
+          Aqui ves parte de lo que se vive dentro y alrededor de Studio Z:
+          procesos, trabajos, comunidad, momentos de practica y piezas que
+          hablan por si solas de nuestra forma de crear y enseñar.
         </p>
       </div>
 

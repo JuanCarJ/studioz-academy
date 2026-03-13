@@ -87,8 +87,8 @@ export function OrdersFilters({
   const hasFilters = status !== "all" || dateFrom || dateTo || search || paymentMethod !== "all" || combo !== "all"
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="min-w-[180px]">
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_auto]">
+      <div className="w-full">
         <Select
           value={status}
           onValueChange={(val) => updateParam("status", val)}
@@ -106,7 +106,7 @@ export function OrdersFilters({
         </Select>
       </div>
 
-      <div className="min-w-[180px]">
+      <div className="w-full">
         <Select
           value={paymentMethod}
           onValueChange={(val) => updateParam("paymentMethod", val)}
@@ -124,7 +124,7 @@ export function OrdersFilters({
         </Select>
       </div>
 
-      <div className="min-w-[140px]">
+      <div className="w-full">
         <Select
           value={combo}
           onValueChange={(val) => updateParam("combo", val)}
@@ -142,7 +142,7 @@ export function OrdersFilters({
         </Select>
       </div>
 
-      <div className="flex items-end gap-2">
+      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 xl:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground" htmlFor="dateFrom">
             Desde
@@ -152,7 +152,6 @@ export function OrdersFilters({
             type="date"
             defaultValue={dateFrom}
             onChange={(e) => updateParam("dateFrom", e.target.value)}
-            className="w-40"
           />
         </div>
         <div className="space-y-1">
@@ -164,17 +163,19 @@ export function OrdersFilters({
             type="date"
             defaultValue={dateTo}
             onChange={(e) => updateParam("dateTo", e.target.value)}
-            className="w-40"
           />
         </div>
       </div>
 
-      <form onSubmit={handleSearchSubmit} className="flex gap-2">
+      <form
+        onSubmit={handleSearchSubmit}
+        className="flex flex-col gap-2 min-[460px]:flex-row xl:col-span-1"
+      >
         <Input
           name="search"
           placeholder="Referencia, nombre, email o ID Wompi..."
           defaultValue={search}
-          className="w-64"
+          className="w-full"
         />
         <Button type="submit" variant="secondary" size="default">
           Buscar
@@ -182,7 +183,12 @@ export function OrdersFilters({
       </form>
 
       {hasFilters && (
-        <Button variant="ghost" size="default" onClick={handleClear}>
+        <Button
+          variant="ghost"
+          size="default"
+          onClick={handleClear}
+          className="w-full xl:w-auto"
+        >
           Limpiar filtros
         </Button>
       )}

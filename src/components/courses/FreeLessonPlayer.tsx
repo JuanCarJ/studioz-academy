@@ -10,6 +10,7 @@ import { getSignedVideoUrl } from "@/actions/lessons"
 import { buildCourseAuthPath } from "@/lib/auth-intent"
 import { dispatchCartCountUpdated } from "@/lib/cart-events"
 import { getCartErrorMessage } from "@/lib/cart"
+import { MediaFallbackPanel } from "@/components/courses/MediaFallbackPanel"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,6 +36,8 @@ interface FreeLessonPlayerProps {
   isEnrolled: boolean
   isInCart: boolean
   isFreeCourse: boolean
+  thumbnailUrl?: string | null
+  supportUrl?: string | null
 }
 
 export function FreeLessonPlayer({
@@ -45,6 +48,8 @@ export function FreeLessonPlayer({
   isEnrolled,
   isInCart,
   isFreeCourse,
+  thumbnailUrl,
+  supportUrl,
 }: FreeLessonPlayerProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -162,19 +167,28 @@ export function FreeLessonPlayer({
               <button
                 type="button"
                 onClick={() => loadLesson(lesson.id)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
                     {idx + 1}
                   </span>
-                  <span className="text-sm font-medium">{lesson.title}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    Gratis
-                  </Badge>
-                  <Play className="h-3.5 w-3.5 text-primary" />
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium leading-5">
+                        {lesson.title}
+                      </span>
+                      <Badge variant="secondary" className="text-xs">
+                        Gratis
+                      </Badge>
+                      <Play className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    </div>
+                    <span className="text-xs text-muted-foreground sm:hidden">
+                      {lesson.durationFormatted}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-xs text-muted-foreground">
+                <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                   {lesson.durationFormatted}
                 </span>
               </button>
@@ -182,15 +196,22 @@ export function FreeLessonPlayer({
           ) : (
             <li
               key={lesson.id}
-              className="flex items-center justify-between px-4 py-3"
+              className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div className="flex items-center gap-3">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
                   {idx + 1}
                 </span>
-                <span className="text-sm font-medium">{lesson.title}</span>
+                <div className="min-w-0">
+                  <span className="text-sm font-medium leading-5">
+                    {lesson.title}
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+                    {lesson.durationFormatted}
+                  </span>
+                </div>
               </div>
-              <span className="text-xs text-muted-foreground">
+              <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                 {lesson.durationFormatted}
               </span>
             </li>
@@ -208,82 +229,98 @@ export function FreeLessonPlayer({
           }
         }}
       >
-        <DialogContent className="max-w-3xl overflow-hidden p-0">
-          <DialogHeader className="px-6 pt-6 pb-0">
-            <DialogTitle>{activeLesson?.title ?? "Vista previa gratuita"}</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="left-0 top-0 h-[100dvh] max-h-[100dvh] max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0 sm:left-[50%] sm:top-[50%] sm:h-auto sm:max-h-[85dvh] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border">
+          <div className="flex h-full flex-col overflow-hidden">
+            <DialogHeader className="sticky top-0 z-10 border-b bg-background px-4 py-4 sm:px-6">
+              <DialogTitle>
+                {activeLesson?.title ?? "Vista previa gratuita"}
+              </DialogTitle>
+            </DialogHeader>
 
-          <div className="space-y-4 px-6 pb-6">
-            {isPending && (
-              <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-                <p className="text-sm text-muted-foreground">
-                  Cargando video...
-                </p>
-              </div>
-            )}
-
-            {!isPending && playerMessage && (
-              <div className="flex aspect-video items-center justify-center rounded-lg bg-destructive/5">
-                <p className="text-sm text-destructive">{playerMessage}</p>
-              </div>
-            )}
-
-            {videoUrl && !isPending && (
-              <VideoPlayer signedUrl={videoUrl} onEnded={handleVideoEnded} />
-            )}
-
-            {shouldShowCompletionContext && (
-              <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    {nextFreeLesson
-                      ? "Leccion gratuita completada."
-                      : shouldOfferUnlock
-                        ? "Ya viste todas las lecciones gratuitas."
-                        : "Ya terminaste las lecciones disponibles."}
-                  </p>
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:pb-6">
+              {isPending && (
+                <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
                   <p className="text-sm text-muted-foreground">
-                    {nextFreeLesson
-                      ? `Continua con "${nextFreeLesson.title}".`
-                      : shouldOfferUnlock
-                        ? "Desbloquea el curso completo para seguir con el resto del contenido."
-                        : "No hay mas lecciones disponibles en esta vista previa."}
+                    Cargando video...
                   </p>
                 </div>
+              )}
 
-                {actionError && (
-                  <p className="text-sm text-destructive">{actionError}</p>
-                )}
+              {!isPending && playerMessage && (
+                <MediaFallbackPanel
+                  title={activeLesson?.title ?? "Vista previa gratuita"}
+                  message={playerMessage}
+                  thumbnailUrl={thumbnailUrl}
+                  supportUrl={supportUrl}
+                  supportLabel="Necesito ayuda por WhatsApp"
+                />
+              )}
 
-                {nextFreeLesson ? (
-                  <Button
-                    onClick={() => loadLesson(nextFreeLesson.id)}
-                    disabled={isPending}
-                    className="min-h-[44px] w-full sm:w-auto"
-                  >
-                    Continuar siguiente leccion gratuita
-                  </Button>
-                ) : shouldOfferUnlock ? (
-                  cartState ? (
-                    <Button asChild className="min-h-[44px] w-full sm:w-auto">
-                      <Link href="/carrito">Ya en tu carrito</Link>
-                    </Button>
-                  ) : (
+              {videoUrl && !isPending && (
+                <VideoPlayer signedUrl={videoUrl} onEnded={handleVideoEnded} />
+              )}
+
+              {!videoUrl && !playerMessage && !isPending && (
+                <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
+                  <p className="text-sm text-muted-foreground">
+                    Selecciona una lección gratuita para comenzar.
+                  </p>
+                </div>
+              )}
+
+              {shouldShowCompletionContext && (
+                <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {nextFreeLesson
+                        ? "Leccion gratuita completada."
+                        : shouldOfferUnlock
+                          ? "Ya viste todas las lecciones gratuitas."
+                          : "Ya terminaste las lecciones disponibles."}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {nextFreeLesson
+                        ? `Continua con "${nextFreeLesson.title}".`
+                        : shouldOfferUnlock
+                          ? "Desbloquea el curso completo para seguir con el resto del contenido."
+                          : "No hay mas lecciones disponibles en esta vista previa."}
+                    </p>
+                  </div>
+
+                  {actionError && (
+                    <p className="text-sm text-destructive">{actionError}</p>
+                  )}
+
+                  {nextFreeLesson ? (
                     <Button
-                      onClick={handleUnlockCourse}
+                      onClick={() => loadLesson(nextFreeLesson.id)}
                       disabled={isPending}
                       className="min-h-[44px] w-full sm:w-auto"
                     >
-                      Desbloquear curso completo
+                      Continuar siguiente leccion gratuita
                     </Button>
-                  )
-                ) : (
-                  <Badge className="w-fit bg-emerald-600 text-white hover:bg-emerald-600">
-                    Vista previa completada
-                  </Badge>
-                )}
-              </div>
-            )}
+                  ) : shouldOfferUnlock ? (
+                    cartState ? (
+                      <Button asChild className="min-h-[44px] w-full sm:w-auto">
+                        <Link href="/carrito">Ya en tu carrito</Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleUnlockCourse}
+                        disabled={isPending}
+                        className="min-h-[44px] w-full sm:w-auto"
+                      >
+                        Desbloquear curso completo
+                      </Button>
+                    )
+                  ) : (
+                    <Badge className="w-fit bg-emerald-600 text-white hover:bg-emerald-600">
+                      Vista previa completada
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
