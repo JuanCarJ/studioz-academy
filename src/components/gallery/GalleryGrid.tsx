@@ -139,9 +139,8 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
               </div>
               <Button
                 type="button"
-                variant="outline"
+                variant="darkOutline"
                 onClick={() => setSelectedIndex(null)}
-                className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
               >
                 Cerrar
               </Button>
@@ -151,7 +150,7 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
               <div className="hidden items-center lg:flex">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="darkOutline"
                   disabled={selectedIndex === 0}
                   onClick={() =>
                     setSelectedIndex((current) =>
@@ -159,7 +158,7 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
                     )
                   }
                   className={cn(
-                    "h-16 w-16 rounded-full text-white hover:bg-white/10 hover:text-white",
+                    "h-16 w-16 rounded-full px-0",
                     selectedIndex === 0 && "opacity-40"
                   )}
                 >
@@ -180,7 +179,7 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
               <div className="hidden items-center justify-end lg:flex">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="darkOutline"
                   disabled={selectedIndex === filteredImages.length - 1}
                   onClick={() =>
                     setSelectedIndex((current) =>
@@ -190,7 +189,7 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
                     )
                   }
                   className={cn(
-                    "h-16 w-16 rounded-full text-white hover:bg-white/10 hover:text-white",
+                    "h-16 w-16 rounded-full px-0",
                     selectedIndex === filteredImages.length - 1 && "opacity-40"
                   )}
                 >
@@ -202,20 +201,19 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
             <div className="flex items-center justify-between lg:hidden">
               <Button
                 type="button"
-                variant="outline"
+                variant="darkOutline"
                 disabled={selectedIndex === 0}
                 onClick={() =>
                   setSelectedIndex((current) =>
                     current == null ? 0 : Math.max(0, current - 1)
                   )
                 }
-                className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
               >
                 Anterior
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="darkOutline"
                 disabled={selectedIndex === filteredImages.length - 1}
                 onClick={() =>
                   setSelectedIndex((current) =>
@@ -224,7 +222,6 @@ export function GalleryGrid({ images }: { images: GalleryImage[] }) {
                       : Math.min(filteredImages.length - 1, current + 1)
                   )
                 }
-                className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
               >
                 Siguiente
               </Button>

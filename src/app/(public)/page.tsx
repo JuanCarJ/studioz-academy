@@ -235,8 +235,8 @@ export default async function HomePage() {
                 <Button
                   asChild
                   size="lg"
-                  variant="outline"
-                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white md:h-full"
+                  variant="darkOutline"
+                  className="w-full md:h-full"
                 >
                   <Link href="/servicios">Sobre Studio Z</Link>
                 </Button>
@@ -272,7 +272,7 @@ export default async function HomePage() {
               Elige tu camino: baile o tatuaje.
             </h2>
           </div>
-          <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
             <Link href="/servicios">Conocer Studio Z</Link>
           </Button>
         </div>
@@ -324,7 +324,7 @@ export default async function HomePage() {
               en Studio Z Academy.
             </p>
           </div>
-          <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
             <Link href="/cursos">Ver catalogo completo</Link>
           </Button>
         </div>
@@ -338,17 +338,17 @@ export default async function HomePage() {
         <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
-              Comunidad
+              Galeria
             </p>
             <h2 id="home-gallery-heading" className="mt-2 text-3xl font-bold">
-              Nuestra comunidad en accion
+              Asi se vive Studio Z
             </h2>
             <p className="mt-3 max-w-2xl text-muted-foreground">
-              Una muestra rapida del ritmo, la energia y el trabajo que se vive
-              alrededor de Studio Z.
+              Una seleccion visual de clases, trabajos y momentos que reflejan
+              la energia y la identidad de Studio Z.
             </p>
           </div>
-          <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
             <Link href="/galeria">Abrir galeria</Link>
           </Button>
         </div>
@@ -380,14 +380,7 @@ export default async function HomePage() {
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     unoptimized
                   />
-                </div>
-                <div className="space-y-1 px-4 py-4">
-                  <p className="line-clamp-2 text-sm font-medium">
-                    {item.caption || "Studio Z Academy"}
-                  </p>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    {item.category}
-                  </p>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                 </div>
               </Link>
             </ScrollReveal>
@@ -412,7 +405,7 @@ export default async function HomePage() {
               la comunidad.
             </p>
           </div>
-          <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
             <Link href="/eventos">Ver agenda</Link>
           </Button>
         </div>
@@ -486,7 +479,7 @@ export default async function HomePage() {
               academia y el estudio.
             </p>
           </div>
-          <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
             <Link href="/noticias">Ir a noticias</Link>
           </Button>
         </div>
@@ -577,8 +570,8 @@ export default async function HomePage() {
               <Button
                 asChild
                 size="lg"
-                variant="outline"
-                className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
+                variant="darkOutline"
+                className="w-full sm:w-auto"
               >
                 <Link href="/servicios#about-studio-z-heading">Conoce mas sobre nosotros</Link>
               </Button>

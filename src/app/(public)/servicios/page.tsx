@@ -75,8 +75,8 @@ export default async function ServiciosPage() {
             <Button
               asChild
               size="lg"
-              variant="outline"
-              className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
+              variant="darkOutline"
+              className="w-full sm:w-auto"
             >
               <Link href="#tattoo">Explorar tattoo</Link>
             </Button>
@@ -209,8 +209,8 @@ export default async function ServiciosPage() {
                     <Button
                       asChild
                       size="lg"
-                      variant="outline"
-                      className="w-full border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white sm:w-auto"
+                      variant="darkOutline"
+                      className="w-full sm:w-auto"
                     >
                       <a
                         href={section.instagramUrl}
@@ -225,8 +225,7 @@ export default async function ServiciosPage() {
                     <Button
                       asChild
                       size="lg"
-                      variant="ghost"
-                      className="text-white hover:bg-black/40 hover:text-white"
+                      variant="darkOutline"
                     >
                       <a
                         href={buildMapsUrl(section.mapsQuery)}
@@ -253,8 +252,8 @@ export default async function ServiciosPage() {
                     </div>
                     <Button
                       asChild
-                      variant="ghost"
-                      className="shrink-0 text-foreground hover:bg-white/10 hover:text-white"
+                      variant="darkOutline"
+                      className="shrink-0"
                     >
                       <Link href="/galeria">
                         Ver galeria
@@ -343,8 +342,7 @@ export default async function ServiciosPage() {
               </Button>
               <Button
                 asChild
-                variant="outline"
-                className="border-white/15 bg-black/40 text-white hover:bg-black/60 hover:text-white"
+                variant="darkOutline"
               >
                 <Link href="/galeria">Ver galeria completa</Link>
               </Button>

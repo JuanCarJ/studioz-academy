@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google"
 
 import { ThemeSync } from "@/components/layout/ThemeSync"
@@ -56,6 +57,7 @@ export default function RootLayout({
       >
         <ThemeSync />
         {children}
+        <SpeedInsights />
       </body>
     </html>
   )
