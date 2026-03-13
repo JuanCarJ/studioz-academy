@@ -24,6 +24,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -469,6 +470,9 @@ export function PlayerView({
                   <SheetContent side="right" className="w-full max-w-sm p-0">
                     <SheetHeader className="sr-only">
                       <SheetTitle>Lecciones del curso</SheetTitle>
+                      <SheetDescription>
+                        Abre el listado compacto de lecciones y cambia de video sin salir del reproductor.
+                      </SheetDescription>
                     </SheetHeader>
                     {lessonPanelHeader}
                     {lessonList}

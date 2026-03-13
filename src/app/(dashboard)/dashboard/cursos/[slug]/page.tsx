@@ -13,6 +13,7 @@ import {
   shouldRefreshCourseMediaHealth,
 } from "@/lib/bunny"
 import { PlayerView } from "@/components/courses/PlayerView"
+import { MobileReviewDisclosure } from "@/components/courses/MobileReviewDisclosure"
 import { ReviewSection } from "@/components/courses/ReviewSection"
 
 import type { Lesson } from "@/types"
@@ -144,10 +145,10 @@ export default async function CoursePlayerPage({
   // Generate signed URL for active lesson
   let initialSignedUrl = ""
   let initialPlaybackMessage = ""
-  if (activeLesson?.bunny_video_id) {
+  if (activeLesson) {
     const playbackState = resolveLessonAssetState(activeLesson)
-    if (playbackState.isPlayable) {
-      initialSignedUrl = generateSignedUrl(activeLesson.bunny_video_id)
+    if (playbackState.isPlayable && playbackState.videoId) {
+      initialSignedUrl = generateSignedUrl(playbackState.videoId)
     } else {
       initialPlaybackMessage =
         playbackState.message ?? "El video todavia no esta listo."
@@ -238,13 +239,15 @@ export default async function CoursePlayerPage({
         </p>
       )}
 
-      <Suspense fallback={<div className="h-32 animate-pulse rounded-lg bg-muted" />}>
-        <ReviewSection
-          courseId={course.id}
-          ratingAvg={course.rating_avg ?? null}
-          reviewsCount={course.reviews_count ?? 0}
-        />
-      </Suspense>
+      <MobileReviewDisclosure>
+        <Suspense fallback={<div className="h-32 animate-pulse rounded-lg bg-muted" />}>
+          <ReviewSection
+            courseId={course.id}
+            ratingAvg={course.rating_avg ?? null}
+            reviewsCount={course.reviews_count ?? 0}
+          />
+        </Suspense>
+      </MobileReviewDisclosure>
     </section>
   )
 }

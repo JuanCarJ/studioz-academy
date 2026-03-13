@@ -61,9 +61,17 @@ export async function getSignedVideoUrl(
     }
   }
 
+  if (!playbackState.videoId) {
+    return {
+      url: "",
+      error: playbackState.message ?? "El video no esta disponible.",
+      state: playbackState.state,
+    }
+  }
+
   // Free lessons: no auth required
   if (lesson.is_free) {
-    const signedUrl = generateSignedUrl(lesson.bunny_video_id)
+    const signedUrl = generateSignedUrl(playbackState.videoId)
     return { url: signedUrl, state: playbackState.state }
   }
 
@@ -84,7 +92,7 @@ export async function getSignedVideoUrl(
     return { url: "", error: "No estas inscrito en este curso." }
   }
 
-  const signedUrl = generateSignedUrl(lesson.bunny_video_id)
+  const signedUrl = generateSignedUrl(playbackState.videoId)
   return { url: signedUrl, state: playbackState.state }
 }
 

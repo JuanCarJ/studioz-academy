@@ -42,6 +42,110 @@ export const qaFixtures = {
   orderReference: "QA-E2E-ORDER-APPROVED",
 }
 
+const qaBunnyLibraryId = process.env.BUNNY_LIBRARY_ID ?? "603019"
+
+function optionalEnv(name: string) {
+  const value = process.env[name]
+  return value && value.trim().length > 0 ? value : null
+}
+
+function isSharedPlaywrightEnvironment() {
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!baseUrl) return false
+
+  try {
+    const hostname = new URL(baseUrl).hostname
+    return hostname !== "localhost" && hostname !== "127.0.0.1"
+  } catch {
+    return false
+  }
+}
+
+const qaSharedMediaMode = isSharedPlaywrightEnvironment()
+const qaSharedPreviewVideoId = optionalEnv("QA_BUNNY_PREVIEW_VIDEO_ID")
+const qaSharedLessonPreviewVideoId = optionalEnv("QA_BUNNY_LESSON_VIDEO_ID_PREVIEW")
+const qaSharedLessonMainVideoId = optionalEnv("QA_BUNNY_LESSON_VIDEO_ID_MAIN")
+
+function resolveQaLessonMedia(input: {
+  localVideoId: string
+  sharedVideoId?: string | null
+}) {
+  if (!qaSharedMediaMode) {
+    return {
+      bunnyVideoId: input.localVideoId,
+      bunnyStatus: "ready",
+      videoUploadError: null,
+    } as const
+  }
+
+  if (input.sharedVideoId) {
+    return {
+      bunnyVideoId: input.sharedVideoId,
+      bunnyStatus: "ready",
+      videoUploadError: null,
+    } as const
+  }
+
+  return {
+    bunnyVideoId: "qa-media-not-configured",
+    bunnyStatus: "error",
+    videoUploadError: "Media QA no configurada en este entorno compartido.",
+  } as const
+}
+
+const qaLessonMedia = {
+  paidPreview: resolveQaLessonMedia({
+    localVideoId: "11111111-1111-4111-8111-111111111111",
+    sharedVideoId: qaSharedLessonPreviewVideoId,
+  }),
+  paidMain: resolveQaLessonMedia({
+    localVideoId: "22222222-2222-4222-8222-222222222222",
+    sharedVideoId: qaSharedLessonMainVideoId,
+  }),
+  cartOne: resolveQaLessonMedia({
+    localVideoId: "33333333-3333-4333-8333-333333333333",
+  }),
+  cartTwo: resolveQaLessonMedia({
+    localVideoId: "44444444-4444-4444-8444-444444444444",
+  }),
+  freeIntro: resolveQaLessonMedia({
+    localVideoId: "55555555-5555-4555-8555-555555555555",
+  }),
+}
+
+const qaCoursePreviewConfig = qaSharedMediaMode
+  ? qaSharedPreviewVideoId
+    ? {
+        preview_video_url: null,
+        preview_bunny_video_id: qaSharedPreviewVideoId,
+        preview_bunny_library_id: qaBunnyLibraryId,
+        preview_status: "ready",
+        pending_preview_bunny_video_id: null,
+        pending_preview_bunny_library_id: null,
+        pending_preview_status: "none",
+        preview_upload_error: null,
+      }
+    : {
+        preview_video_url: null,
+        preview_bunny_video_id: null,
+        preview_bunny_library_id: null,
+        preview_status: "none",
+        pending_preview_bunny_video_id: null,
+        pending_preview_bunny_library_id: null,
+        pending_preview_status: "none",
+        preview_upload_error: null,
+      }
+  : {
+      preview_video_url: "https://iframe.mediadelivery.net/embed/603019/sample",
+      preview_bunny_video_id: null,
+      preview_bunny_library_id: null,
+      preview_status: "legacy",
+      pending_preview_bunny_video_id: null,
+      pending_preview_bunny_library_id: null,
+      pending_preview_status: "none",
+      preview_upload_error: null,
+    }
+
 const supabase = createClient(
   requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
   requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
@@ -488,14 +592,7 @@ export async function ensureBusinessFixtures() {
       price: 12000000,
       is_free: false,
       thumbnail_url: sampleImage,
-      preview_video_url: "https://iframe.mediadelivery.net/embed/603019/sample",
-      preview_bunny_video_id: null,
-      preview_bunny_library_id: null,
-      preview_status: "legacy",
-      pending_preview_bunny_video_id: null,
-      pending_preview_bunny_library_id: null,
-      pending_preview_status: "none",
-      preview_upload_error: null,
+      ...qaCoursePreviewConfig,
       instructor_id: danceInstructorId,
       legacy_instructor_name: null,
       is_published: true,
@@ -607,13 +704,13 @@ export async function ensureBusinessFixtures() {
       course_id: paidPrimaryCourseId,
       title: "QA E2E Preview Salsa",
       description: "Leccion gratuita del curso pago principal.",
-      bunny_video_id: "qa-e2e-preview-salsa",
-      bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
-      bunny_status: "ready",
+      bunny_video_id: qaLessonMedia.paidPreview.bunnyVideoId,
+      bunny_library_id: qaBunnyLibraryId,
+      bunny_status: qaLessonMedia.paidPreview.bunnyStatus,
       pending_bunny_video_id: null,
       pending_bunny_library_id: null,
       pending_bunny_status: "none",
-      video_upload_error: null,
+      video_upload_error: qaLessonMedia.paidPreview.videoUploadError,
       duration_seconds: 90,
       sort_order: 1,
       is_free: true,
@@ -627,13 +724,13 @@ export async function ensureBusinessFixtures() {
       course_id: paidPrimaryCourseId,
       title: "QA E2E Salsa Principal",
       description: "Leccion paga principal del curso de salsa.",
-      bunny_video_id: "qa-e2e-salsa-principal",
-      bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
-      bunny_status: "ready",
+      bunny_video_id: qaLessonMedia.paidMain.bunnyVideoId,
+      bunny_library_id: qaBunnyLibraryId,
+      bunny_status: qaLessonMedia.paidMain.bunnyStatus,
       pending_bunny_video_id: null,
       pending_bunny_library_id: null,
       pending_bunny_status: "none",
-      video_upload_error: null,
+      video_upload_error: qaLessonMedia.paidMain.videoUploadError,
       duration_seconds: 180,
       sort_order: 2,
       is_free: false,
@@ -647,13 +744,13 @@ export async function ensureBusinessFixtures() {
       course_id: cartCourseOneId,
       title: "QA E2E Bachata Intro",
       description: "Leccion del curso de carrito uno.",
-      bunny_video_id: "qa-e2e-bachata-intro",
-      bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
-      bunny_status: "ready",
+      bunny_video_id: qaLessonMedia.cartOne.bunnyVideoId,
+      bunny_library_id: qaBunnyLibraryId,
+      bunny_status: qaLessonMedia.cartOne.bunnyStatus,
       pending_bunny_video_id: null,
       pending_bunny_library_id: null,
       pending_bunny_status: "none",
-      video_upload_error: null,
+      video_upload_error: qaLessonMedia.cartOne.videoUploadError,
       duration_seconds: 120,
       sort_order: 1,
       is_free: false,
@@ -667,13 +764,13 @@ export async function ensureBusinessFixtures() {
       course_id: cartCourseTwoId,
       title: "QA E2E Reggaeton Intro",
       description: "Leccion del curso de carrito dos.",
-      bunny_video_id: "qa-e2e-reggaeton-intro",
-      bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
-      bunny_status: "ready",
+      bunny_video_id: qaLessonMedia.cartTwo.bunnyVideoId,
+      bunny_library_id: qaBunnyLibraryId,
+      bunny_status: qaLessonMedia.cartTwo.bunnyStatus,
       pending_bunny_video_id: null,
       pending_bunny_library_id: null,
       pending_bunny_status: "none",
-      video_upload_error: null,
+      video_upload_error: qaLessonMedia.cartTwo.videoUploadError,
       duration_seconds: 120,
       sort_order: 1,
       is_free: false,
@@ -687,13 +784,13 @@ export async function ensureBusinessFixtures() {
       course_id: freeCourseId,
       title: "QA E2E Tatuaje Gratis Intro",
       description: "Leccion gratuita del curso gratuito.",
-      bunny_video_id: "qa-e2e-tatuaje-gratis-intro",
-      bunny_library_id: process.env.BUNNY_LIBRARY_ID ?? "603019",
-      bunny_status: "ready",
+      bunny_video_id: qaLessonMedia.freeIntro.bunnyVideoId,
+      bunny_library_id: qaBunnyLibraryId,
+      bunny_status: qaLessonMedia.freeIntro.bunnyStatus,
       pending_bunny_video_id: null,
       pending_bunny_library_id: null,
       pending_bunny_status: "none",
-      video_upload_error: null,
+      video_upload_error: qaLessonMedia.freeIntro.videoUploadError,
       duration_seconds: 150,
       sort_order: 1,
       is_free: true,

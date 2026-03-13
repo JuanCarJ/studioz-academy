@@ -30,8 +30,8 @@ export default function ContactoPage() {
           Datos de contacto de Studio Z.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Aqui encuentras los accesos directos a WhatsApp, Instagram y de
-          Studio Z. Espereamos tu mensaje!
+          Aqui encuentras los accesos directos a WhatsApp, Instagram y Google
+          Maps de Studio Z. Esperamos tu mensaje.
         </p>
       </section>
 
@@ -50,14 +50,14 @@ export default function ContactoPage() {
             >
               <CardContent className="space-y-6 pt-6">
                 <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-primary">
-                  {location.eyebrow}
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold">{location.name}</h2>
-                <p className="mt-3 leading-7 text-muted-foreground">
-                  {contactSummaries[location.shortName]}
-                </p>
-              </div>
+                  <p className="text-xs uppercase tracking-[0.15em] text-primary">
+                    {location.eyebrow}
+                  </p>
+                  <h2 className="mt-2 text-3xl font-semibold">{location.name}</h2>
+                  <p className="mt-3 leading-7 text-muted-foreground">
+                    {contactSummaries[location.shortName]}
+                  </p>
+                </div>
 
                 <div className="rounded-3xl border border-white/10 bg-card/70 p-5">
                   <p className="text-xs uppercase tracking-[0.15em] text-primary">
@@ -70,9 +70,9 @@ export default function ContactoPage() {
 
                 <nav
                   aria-label={`Canales para ${location.name}`}
-                  className="flex flex-wrap gap-3"
+                  className="grid gap-3 sm:flex sm:flex-wrap"
                 >
-                  <Button asChild>
+                  <Button asChild className="w-full sm:w-auto">
                     <a
                       href={buildWhatsAppUrl(
                         location.whatsappNumber,
@@ -86,7 +86,7 @@ export default function ContactoPage() {
                       WhatsApp
                     </a>
                   </Button>
-                  <Button asChild variant="outline">
+                  <Button asChild variant="darkOutline" className="w-full sm:w-auto">
                     <a
                       href={location.instagramUrl}
                       target="_blank"
@@ -97,7 +97,7 @@ export default function ContactoPage() {
                       Instagram
                     </a>
                   </Button>
-                  <Button asChild variant="ghost">
+                  <Button asChild variant="darkOutline" className="w-full sm:w-auto">
                     <a
                       href={buildMapsUrl(location.mapsQuery)}
                       target="_blank"

@@ -226,6 +226,7 @@ export default async function ServiciosPage() {
                       asChild
                       size="lg"
                       variant="darkOutline"
+                      className="w-full sm:w-auto"
                     >
                       <a
                         href={buildMapsUrl(section.mapsQuery)}

@@ -29,6 +29,7 @@ Validar:
 - H1 principal correcto;
 - accesos visibles a cursos, servicios o CTA principales;
 - header y footer renderizan correctamente;
+- en mobile visitante, el tab `Iniciar sesion` permanece visible y el drawer expone `Iniciar sesion` + `Registrarse`;
 - el estado autenticado cambia la navegacion respecto a visitante.
 
 ### Servicios `/servicios`
@@ -292,6 +293,8 @@ Validar:
 - `last_lesson_id` inconsistente no rompe la experiencia;
 - marcar leccion completa/incompleta actualiza progreso;
 - CTA contextual de siguiente leccion aparece y desaparece correctamente;
+- si `bunny_video_id` es invalido o la media no esta lista, aparece fallback claro y nunca un iframe roto;
+- en mobile, el panel de lecciones no emite warnings de accesibilidad y sigue cerrando correctamente al cambiar de leccion;
 - en cursos de una sola leccion, el estado final se refleja correctamente.
 
 ## 11. Reseñas
@@ -308,6 +311,7 @@ Validar:
 
 Validar:
 
+- en mobile, el bloque de reseñas inicia colapsado y se puede expandir sin afectar el player;
 - usuario con compra puede crear reseña;
 - puede actualizarla;
 - puede eliminarla;

@@ -273,18 +273,26 @@ export function resolveLessonAssetState(
         video_upload_error: string | null
       }
 ): ResolvedLessonAssetState {
+  const hasManagedVideoId = isManagedBunnyVideoId(lesson.bunny_video_id)
   const state =
-    lesson.bunny_status === "ready"
-      ? "ready"
-      : lesson.bunny_status === "error"
-        ? "error"
+    lesson.bunny_status === "error"
+      ? "error"
+      : lesson.bunny_status === "ready"
+        ? hasManagedVideoId
+          ? "ready"
+          : "missing"
         : "processing"
+
+  const invalidReadyMessage =
+    lesson.bunny_status === "ready" && !hasManagedVideoId
+      ? "Este video no tiene un asset valido en Bunny en este momento."
+      : null
 
   return {
     state,
-    message: getLessonStateMessage(state, lesson.video_upload_error),
-    isPlayable: state === "ready",
-    videoId: lesson.bunny_video_id ?? null,
+    message: invalidReadyMessage ?? getLessonStateMessage(state, lesson.video_upload_error),
+    isPlayable: state === "ready" && hasManagedVideoId,
+    videoId: hasManagedVideoId ? lesson.bunny_video_id : null,
   }
 }
 
@@ -297,12 +305,26 @@ export function resolveCoursePreview(
     | "preview_upload_error"
   >
 ): ResolvedCoursePreview {
-  if (course.preview_bunny_video_id && course.preview_status === "ready") {
+  const hasManagedPreviewVideoId = isManagedBunnyVideoId(course.preview_bunny_video_id)
+
+  if (hasManagedPreviewVideoId && course.preview_status === "ready") {
+    const previewVideoId = course.preview_bunny_video_id!
+
     return {
       kind: "ready",
-      url: generateSignedUrl(course.preview_bunny_video_id),
+      url: generateSignedUrl(previewVideoId),
       message: null,
       isPlayable: true,
+      videoId: previewVideoId,
+    }
+  }
+
+  if (course.preview_bunny_video_id && course.preview_status === "ready") {
+    return {
+      kind: "error",
+      url: null,
+      message: "La vista previa no tiene un asset valido en Bunny en este momento.",
+      isPlayable: false,
       videoId: course.preview_bunny_video_id,
     }
   }
