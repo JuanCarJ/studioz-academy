@@ -20,8 +20,6 @@ import {
   getLessonProgress,
   getOrderByReference,
   getOutboxEntry,
-  getPostBySlug,
-  getPostImages,
   getProfileByEmail,
   getReviewForCourse,
   qaCredentials,
@@ -36,16 +34,10 @@ const reviewTextUpdated = `QA E2E review actualizada ${runId}`
 const contactSubject = `QA E2E contact ${runId}`
 const comboName = `QA E2E Temporal Combo ${runId}`
 const comboNameUpdated = `QA E2E Temporal Combo ${runId} Updated`
-const newsTitle = `QA E2E Temp News ${runId}`
-const newsTitleUpdated = `QA E2E Temp News ${runId} Updated`
 const instructorName = `QA E2E Instructor ${runId}`
 const courseTitle = `QA E2E Curso Admin ${runId}`
 const avatarPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0p7x8AAAAASUVORK5CYII=",
-  "base64"
-)
-const alternateUploadPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP8z8Dwn4EIwDiqAABhWQO6U0YvrQAAAABJRU5ErkJggg==",
   "base64"
 )
 
@@ -438,81 +430,18 @@ test.describe.serial("Business E2E", () => {
       .toBeNull()
   })
 
-  test("admin crea, actualiza y elimina noticia con reflejo publico y auditoria", async ({
+  test("admin omite noticias y redirige la ruta legacy al panel", async ({
     page,
   }) => {
-    const newsSlug = slugify(newsTitle)
-    const newsSlugUpdated = slugify(newsTitleUpdated)
-
     await loginAsAdmin(page)
-    await page.goto("/admin/noticias")
-
-    const createForm = page.getByTestId("news-create-form")
-    await createForm.locator('input[name="title"]').fill(newsTitle)
-    await createForm.locator('input[name="excerpt"]').fill("Extracto temporal QA E2E.")
-    await createForm.locator('textarea[name="content"]').fill(
-      "Contenido temporal QA E2E para validar CRUD editorial."
-    )
-    await createForm.locator('input[name="images"]').setInputFiles([
-      {
-        name: "news-one.png",
-        mimeType: "image/png",
-        buffer: avatarPng,
-      },
-      {
-        name: "news-two.png",
-        mimeType: "image/png",
-        buffer: alternateUploadPng,
-      },
-    ])
-    await createForm.getByRole("button", { name: /crear noticia/i }).click()
-
-    await expect
-      .poll(async () => getPostBySlug(newsSlug).then((post) => !!post))
-      .toBe(true)
-
-    const post = await getPostBySlug(newsSlug)
-    expect(post?.id).toBeTruthy()
-    await expect
-      .poll(async () => getPostImages(post!.id).then((images) => images.length))
-      .toBe(2)
-    await page.goto("/admin/noticias")
-
-    const postCard = page.getByTestId(`news-card-${post!.id}`)
-    await postCard.locator('input[name="title"]').fill(newsTitleUpdated)
-    await postCard.locator('textarea[name="content"]').fill(
-      "Contenido actualizado QA E2E para reflejo publico."
-    )
-    await postCard.getByRole("button", { name: /guardar cambios/i }).click()
-
-    await expect
-      .poll(async () => getPostBySlug(newsSlugUpdated).then((row) => row?.title ?? null))
-      .toBe(newsTitleUpdated)
-
-    await page.goto(`/noticias/${newsSlug}`)
-    await expect(page).toHaveURL(new RegExp(`/noticias/${newsSlugUpdated}$`))
-
-    await page.goto(`/noticias/${newsSlugUpdated}`)
-    await expect(
-      page.getByRole("heading", { level: 1, name: newsTitleUpdated })
-    ).toBeVisible()
-    await expect(page.getByRole("button", { name: /siguiente/i }).first()).toBeVisible()
-
-    await page.goto("/admin/auditoria?action=post.update")
-    await expect(page.getByRole("cell", { name: "post.update" }).first()).toBeVisible()
+    await page.goto("/admin")
+    await expect(page.getByText(/noticias publicadas/i)).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /publicar noticia/i })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /^Noticias$/i })).toHaveCount(0)
 
     await page.goto("/admin/noticias")
-    const updatedPost = await getPostBySlug(newsSlugUpdated)
-    expect(updatedPost?.id).toBeTruthy()
-
-    await page
-      .getByTestId(`news-card-${updatedPost!.id}`)
-      .getByRole("button", { name: /eliminar noticia/i })
-      .click()
-
-    await expect
-      .poll(async () => getPostBySlug(newsSlugUpdated))
-      .toBeNull()
+    await expect(page).toHaveURL(/\/admin$/)
+    await expect(page.getByRole("heading", { name: /panel de administracion/i })).toBeVisible()
   })
 
   test("admin modera visibilidad de resenas contra DB y sitio publico", async ({

@@ -6,16 +6,12 @@ import {
   getEventByTitle,
   getEventImages,
   getGalleryItemByCaption,
-  getPostBySlug,
-  getPostImages,
-  slugify,
 } from "./support/db"
 
 const runId = Date.now().toString(36)
 const galleryName = `QA E2E Temp Gallery ${runId}`
 const galleryNameUpdated = `${galleryName} Updated`
 const eventTitle = `QA E2E Temp Event ${runId}`
-const newsTitle = `QA E2E Temp News Media ${runId}`
 
 const samplePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0p7x8AAAAASUVORK5CYII=",
@@ -151,69 +147,6 @@ test.describe.serial("Editorial media admin", () => {
     await page.goto("/admin/eventos")
     const updateForm = page.getByTestId(`event-update-form-${event!.id}`)
 
-    await updateForm.locator('input[name="removeImageIds"]').nth(0).check()
-    await updateForm.locator('input[name="removeImageIds"]').nth(1).check()
-    await updateForm.getByRole("button", { name: /guardar cambios/i }).click()
-
-    await expect(updateForm).toContainText(/debe conservar al menos una imagen/i)
-  })
-
-  test("admin crea noticia con varias imagenes y evita dejarla sin galeria", async ({
-    page,
-  }) => {
-    const newsSlug = slugify(newsTitle)
-
-    await loginAsAdmin(page)
-    await page.goto("/admin/noticias")
-
-    const createForm = page.getByTestId("news-create-form")
-    await createForm.locator('input[name="title"]').fill(newsTitle)
-    await createForm
-      .locator('textarea[name="content"]')
-      .fill("Noticia temporal QA E2E con varias imagenes y validacion editorial.")
-    await expect(createForm.locator('input[name="images"]')).toHaveJSProperty(
-      "required",
-      true
-    )
-
-    await createForm.getByRole("button", { name: /crear noticia/i }).click()
-    await expect
-      .poll(async () => getPostBySlug(newsSlug))
-      .toBeNull()
-
-    await createForm.locator('input[name="images"]').setInputFiles([
-      {
-        name: "news-one.png",
-        mimeType: "image/png",
-        buffer: samplePng,
-      },
-      {
-        name: "news-two.png",
-        mimeType: "image/png",
-        buffer: alternatePng,
-      },
-    ])
-    await createForm.getByRole("button", { name: /crear noticia/i }).click()
-
-    await expect
-      .poll(async () => getPostBySlug(newsSlug).then((post) => post?.cover_image_url ?? null))
-      .not.toBeNull()
-
-    const post = await getPostBySlug(newsSlug)
-    expect(post?.is_published).toBe(true)
-    await expect
-      .poll(async () => getPostImages(post!.id).then((images) => images.length))
-      .toBe(2)
-
-    await page.goto(`/noticias/${newsSlug}`)
-    await expect(page.getByRole("heading", { name: newsTitle })).toBeVisible()
-    await expect(page.getByRole("button", { name: /siguiente/i }).first()).toBeVisible()
-
-    await page.goto("/")
-    await expect(page.getByText(newsTitle)).toBeVisible()
-
-    await page.goto("/admin/noticias")
-    const updateForm = page.getByTestId(`news-update-form-${post!.id}`)
     await updateForm.locator('input[name="removeImageIds"]').nth(0).check()
     await updateForm.locator('input[name="removeImageIds"]').nth(1).check()
     await updateForm.getByRole("button", { name: /guardar cambios/i }).click()

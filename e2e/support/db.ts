@@ -20,10 +20,6 @@ export const qaCredentials = {
 
 export const qaFixtures = {
   comboName: "QA E2E Combo Baile x2",
-  publishedNewsTitle: "QA E2E Editorial Publica",
-  publishedNewsSlug: "qa-e2e-editorial-publica",
-  draftNewsTitle: "QA E2E Editorial Borrador",
-  draftNewsSlug: "qa-e2e-editorial-borrador",
   upcomingEventTitle: "QA E2E Masterclass Proxima",
   pastEventTitle: "QA E2E Masterclass Pasada",
   galleryCaption: "QA E2E Gallery Highlight",
@@ -222,23 +218,6 @@ async function upsertOrderByReference(payload: Record<string, unknown>) {
   }
 
   return data.id as string
-}
-
-async function ensureSinglePostImage(postId: string, imageUrl: string) {
-  const { error: deleteError } = await supabase
-    .from("post_images")
-    .delete()
-    .eq("post_id", postId)
-
-  if (deleteError) throw deleteError
-
-  const { error: insertError } = await supabase.from("post_images").insert({
-    post_id: postId,
-    image_url: imageUrl,
-    sort_order: 0,
-  })
-
-  if (insertError) throw insertError
 }
 
 async function ensureUser(input: {
@@ -455,28 +434,6 @@ export async function ensureBusinessFixtures() {
     .update({ is_active: false })
     .eq("category", "baile")
     .neq("name", qaFixtures.comboName)
-
-  const publishedPostId = await upsertBy("posts", { slug: qaFixtures.publishedNewsSlug }, {
-    title: qaFixtures.publishedNewsTitle,
-    slug: qaFixtures.publishedNewsSlug,
-    excerpt: "Noticia publica semilla para validar editorial y detalle.",
-    content: "Contenido semilla publicado para pruebas E2E de negocio.",
-    cover_image_url: sampleImage,
-    is_published: true,
-    published_at: fixedNow,
-  })
-  await ensureSinglePostImage(publishedPostId, sampleImage)
-
-  const draftPostId = await upsertBy("posts", { slug: qaFixtures.draftNewsSlug }, {
-    title: qaFixtures.draftNewsTitle,
-    slug: qaFixtures.draftNewsSlug,
-    excerpt: "Borrador semilla invisible en el sitio publico.",
-    content: "Este registro debe permanecer oculto del publico.",
-    cover_image_url: sampleImage,
-    is_published: false,
-    published_at: null,
-  })
-  await ensureSinglePostImage(draftPostId, sampleImage)
 
   const upcomingEventId = await upsertBy("events", { title: qaFixtures.upcomingEventTitle }, {
     title: qaFixtures.upcomingEventTitle,
@@ -1342,29 +1299,6 @@ export async function getAuditLogsByAction(action: string) {
     .select("*")
     .eq("action", action)
     .order("created_at", { ascending: false })
-
-  if (error) throw error
-  return data ?? []
-}
-
-export async function getPostBySlug(slug: string) {
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("slug", slug)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
-}
-
-export async function getPostImages(postId: string) {
-  const { data, error } = await supabase
-    .from("post_images")
-    .select("*")
-    .eq("post_id", postId)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true })
 
   if (error) throw error
   return data ?? []

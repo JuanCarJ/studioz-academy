@@ -13,8 +13,6 @@ import type {
   EventImage,
   GalleryItem,
   Instructor,
-  Post,
-  PostImage,
 } from "@/types"
 
 export interface PublishedCoursePreview
@@ -87,45 +85,6 @@ function mergeEventsWithImages(
   })
 }
 
-async function getPostImagesMap(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  postIds: string[]
-) {
-  if (postIds.length === 0) return {} as Record<string, PostImage[]>
-
-  const { data, error } = await supabase
-    .from("post_images")
-    .select("*")
-    .in("post_id", postIds)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true })
-
-  if (error) {
-    console.error("[editorial] Failed to load post images:", error)
-    return {} as Record<string, PostImage[]>
-  }
-
-  return (data ?? []).reduce<Record<string, PostImage[]>>((acc, image) => {
-    acc[image.post_id] ??= []
-    acc[image.post_id].push(image as PostImage)
-    return acc
-  }, {})
-}
-
-function mergePostsWithImages(
-  posts: Post[],
-  imagesMap: Record<string, PostImage[]>
-) {
-  return posts.map((post) => {
-    const images = imagesMap[post.id] ?? []
-    return {
-      ...post,
-      cover_image_url: images[0]?.image_url ?? post.cover_image_url,
-      images,
-    }
-  })
-}
-
 function decoratePublishedCoursePreview(
   course: PriceableCourse & {
     published_at: string | null
@@ -153,45 +112,6 @@ function takeNextUnusedCourse(
 
   usedIds.add(nextCourse.id)
   return nextCourse
-}
-
-export async function getPublishedPosts(): Promise<Post[]> {
-  noStore()
-  const supabase = createServiceRoleClient()
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("is_published", true)
-    .order("published_at", { ascending: false, nullsFirst: false })
-
-  if (error) {
-    console.error("[editorial] Failed to load posts:", error)
-    return []
-  }
-
-  const posts = (data ?? []) as Post[]
-  const imagesMap = await getPostImagesMap(
-    supabase,
-    posts.map((post) => post.id)
-  )
-
-  return mergePostsWithImages(posts, imagesMap)
-}
-
-export async function getPostBySlug(slug: string): Promise<Post | null> {
-  noStore()
-  const supabase = createServiceRoleClient()
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("slug", slug)
-    .eq("is_published", true)
-    .maybeSingle()
-
-  if (error || !data) return null
-
-  const imagesMap = await getPostImagesMap(supabase, [data.id])
-  return mergePostsWithImages([data as Post], imagesMap)[0] ?? (data as Post)
 }
 
 export async function getPublishedEvents(): Promise<Event[]> {
@@ -256,7 +176,6 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
 export async function getHomePageData(): Promise<{
   heroCourse: PublishedCoursePreview | null
   featuredCourses: PublishedCoursePreview[]
-  latestPosts: Post[]
   upcomingEvents: Event[]
   galleryPreview: GalleryItem[]
   categoryShowcase: {
@@ -274,7 +193,6 @@ export async function getHomePageData(): Promise<{
   const [
     curatedCoursesResult,
     recentCoursesResult,
-    postsResult,
     eventsResult,
     galleryResult,
     coursesCountResult,
@@ -292,12 +210,6 @@ export async function getHomePageData(): Promise<{
       .eq("is_published", true)
       .order("published_at", { ascending: false, nullsFirst: false })
       .limit(8),
-    supabase
-      .from("posts")
-      .select("*")
-      .eq("is_published", true)
-      .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(3),
     supabase
       .from("events")
       .select("*")
@@ -364,13 +276,8 @@ export async function getHomePageData(): Promise<{
       return takeNextUnusedCourse(fallbackPool, usedFeaturedCourseIds)
     })
     .filter((course): course is PublishedCoursePreview => Boolean(course))
-  const latestPosts = (postsResult.data ?? []) as Post[]
   const upcomingEvents = (eventsResult.data ?? []) as Event[]
   const galleryItems = (galleryResult.data ?? []) as GalleryItem[]
-  const postsImagesMap = await getPostImagesMap(
-    supabase,
-    latestPosts.map((post) => post.id)
-  )
   const upcomingImagesMap = await getEventImagesMap(
     supabase,
     upcomingEvents.map((event) => event.id)
@@ -379,7 +286,6 @@ export async function getHomePageData(): Promise<{
   return {
     heroCourse,
     featuredCourses,
-    latestPosts: mergePostsWithImages(latestPosts, postsImagesMap),
     upcomingEvents: mergeEventsWithImages(upcomingEvents, upcomingImagesMap),
     galleryPreview: galleryItems.slice(0, 6),
     categoryShowcase: {

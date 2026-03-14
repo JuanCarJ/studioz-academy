@@ -38,7 +38,6 @@ interface MobileTab {
 const sheetLinks = [
   { href: "/servicios", label: "Sobre Studio Z" },
   { href: "/galeria", label: "Galeria" },
-  { href: "/noticias", label: "Noticias" },
   { href: "/eventos", label: "Eventos" },
   { href: "/contacto", label: "Contacto" },
 ]

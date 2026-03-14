@@ -18,7 +18,7 @@ import { formatCOP } from "@/lib/utils"
 export const metadata: Metadata = {
   title: "Studio Z Academy",
   description:
-    "Cursos online de baile y tatuaje con la identidad de Studio Z, mas noticias, eventos y comunidad.",
+    "Cursos online de baile y tatuaje con la identidad de Studio Z, mas eventos y comunidad.",
 }
 
 function formatEventDate(date: string) {
@@ -462,86 +462,6 @@ export default async function HomePage() {
                     )}
                     <span className="inline-flex items-center gap-2 text-sm font-medium text-primary">
                       Ver agenda completa
-                      <span aria-hidden="true">→</span>
-                    </span>
-                  </CardContent>
-                </Card>
-              </Link>
-            </ScrollReveal>
-          ))}
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="home-news-heading"
-        className="container mx-auto px-4 py-10"
-      >
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-primary">
-              Noticias
-            </p>
-            <h2 id="home-news-heading" className="mt-2 text-3xl font-bold">
-              Lo ultimo de Studio Z
-            </h2>
-            <p className="mt-3 max-w-2xl text-muted-foreground">
-              Novedades, anuncios y contenido que acompana la vida de la
-              academia y el estudio.
-            </p>
-          </div>
-          <Button asChild variant="darkOutline" className="w-full sm:w-auto">
-            <Link href="/noticias">Ir a noticias</Link>
-          </Button>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          {data.latestPosts.length === 0 && (
-            <Card className="lg:col-span-3">
-              <CardContent className="pt-6 text-muted-foreground">
-                No hay noticias publicadas por ahora.
-              </CardContent>
-            </Card>
-          )}
-
-          {data.latestPosts.map((post) => (
-            <ScrollReveal key={post.id}>
-              <Link href={`/noticias/${post.slug}`} className="group block h-full">
-                <Card className="h-full overflow-hidden border-white/10 transition-transform duration-300 hover:-translate-y-1">
-                  <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-                    {post.cover_image_url ? (
-                      <Image
-                        src={post.cover_image_url}
-                        alt={post.title}
-                        fill
-                        className="object-cover transition-transform duration-500 group-hover:scale-105"
-                        sizes="(max-width: 1024px) 100vw, 33vw"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(244,63,94,0.2),transparent_50%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(0,0,0,0.12))] text-sm text-muted-foreground">
-                        Studio Z
-                      </div>
-                    )}
-                  </div>
-                  <CardContent className="space-y-3 pt-6">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      {post.published_at
-                        ? new Date(post.published_at).toLocaleDateString(
-                            "es-CO",
-                            {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            }
-                          )
-                        : "Borrador"}
-                    </p>
-                    <h3 className="text-xl font-semibold">{post.title}</h3>
-                    <p className="line-clamp-3 text-sm text-muted-foreground">
-                      {post.excerpt || "Leer mas sobre esta publicacion."}
-                    </p>
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-primary">
-                      Leer articulo
                       <span aria-hidden="true">→</span>
                     </span>
                   </CardContent>

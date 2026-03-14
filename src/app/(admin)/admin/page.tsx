@@ -40,11 +40,6 @@ export default async function AdminDashboardPage() {
       href: "/admin/cursos",
     },
     {
-      label: "Noticias publicadas",
-      value: data.metrics.publishedPosts,
-      href: "/admin/noticias",
-    },
-    {
       label: "Eventos activos",
       value: data.metrics.publishedEvents,
       href: "/admin/eventos",
@@ -60,7 +55,6 @@ export default async function AdminDashboardPage() {
     { href: "/admin/cursos", label: "Gestionar cursos" },
     { href: "/admin/ventas", label: "Revisar ventas" },
     { href: "/admin/combos", label: "Editar combos" },
-    { href: "/admin/noticias", label: "Publicar noticia" },
     { href: "/admin/auditoria", label: "Ver auditoria" },
   ]
 

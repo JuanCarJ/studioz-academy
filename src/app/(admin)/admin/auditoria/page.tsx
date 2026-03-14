@@ -76,7 +76,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
                 id="action"
                 name="action"
                 defaultValue={params.action ?? ""}
-                placeholder="combo.update, post.create..."
+                placeholder="combo.update, event.create..."
               />
             </div>
             <div className="space-y-2">

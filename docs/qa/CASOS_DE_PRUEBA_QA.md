@@ -29,6 +29,7 @@ Validar:
 - H1 principal correcto;
 - accesos visibles a cursos, servicios o CTA principales;
 - header y footer renderizan correctamente;
+- no existen links ni cards de noticias;
 - en mobile visitante, el tab `Iniciar sesion` permanece visible y el drawer expone `Iniciar sesion` + `Registrarse`;
 - el estado autenticado cambia la navegacion respecto a visitante.
 
@@ -49,24 +50,22 @@ Validar:
 - apertura correcta de lightbox o detalle si aplica;
 - las imagenes recientes aparecen primero cuando corresponde.
 
-### Noticias `/noticias`
+### Noticias legacy `/noticias`
 
 Validar:
 
-- listado solo de noticias publicadas;
-- cada card navega al detalle correcto;
-- slug y enlaces funcionales;
-- no aparecen borradores.
+- redirige permanentemente a `/eventos`;
+- no renderiza listado propio;
+- no queda indexada en sitemap;
+- la navegacion publica no expone links hacia noticias.
 
-### Detalle de noticia `/noticias/[slug]`
+### Detalle legacy `/noticias/[slug]`
 
 Validar:
 
-- carga del H1 correcto;
-- imagen de portada o galeria visible;
-- contenido completo renderizado;
-- si hay redireccion por slug antiguo, resuelve bien;
-- noticias no publicadas no quedan accesibles publicamente.
+- cualquier slug redirige permanentemente a `/eventos`;
+- no renderiza contenido de post;
+- el redirect funciona sin autenticacion.
 
 ### Eventos `/eventos`
 
@@ -419,19 +418,6 @@ Validar:
 
 ## 18. Admin editorial
 
-### Noticias
-
-Validar:
-
-- crear noticia;
-- editar noticia;
-- publicar noticia;
-- galeria de multiples imagenes;
-- no permite dejar noticia publicada sin galeria cuando aplique;
-- reflejo en sitio publico;
-- slug redirects funcionales;
-- auditoria registrada.
-
 ### Galeria
 
 Validar:
@@ -450,6 +436,15 @@ Validar:
 - publicacion inmediata;
 - no permite evento publicado sin imagenes requeridas;
 - reflejo correcto en el sitio publico.
+
+### Noticias legacy
+
+Validar:
+
+- no existe acceso visible a noticias en dashboard o sidebar admin;
+- `/admin/noticias` redirige a `/admin`;
+- la auditoria historica `post.*` sigue consultable si ya existe;
+- no se exponen formularios ni CRUD de noticias.
 
 ## 19. Emails transaccionales
 

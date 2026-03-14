@@ -8,7 +8,6 @@ export interface AdminDashboardData {
   metrics: {
     pendingOrders: number
     publishedCourses: number
-    publishedPosts: number
     publishedEvents: number
     galleryItems: number
     unreadContacts: number
@@ -43,7 +42,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       metrics: {
         pendingOrders: 0,
         publishedCourses: 0,
-        publishedPosts: 0,
         publishedEvents: 0,
         galleryItems: 0,
         unreadContacts: 0,
@@ -68,7 +66,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     sales,
     pendingOrders,
     publishedCourses,
-    publishedPosts,
     publishedEvents,
     galleryItems,
     unreadContacts,
@@ -82,10 +79,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .eq("status", "pending"),
     supabase
       .from("courses")
-      .select("id", { count: "exact", head: true })
-      .eq("is_published", true),
-    supabase
-      .from("posts")
       .select("id", { count: "exact", head: true })
       .eq("is_published", true),
     supabase
@@ -114,7 +107,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     metrics: {
       pendingOrders: pendingOrders.count ?? 0,
       publishedCourses: publishedCourses.count ?? 0,
-      publishedPosts: publishedPosts.count ?? 0,
       publishedEvents: publishedEvents.count ?? 0,
       galleryItems: galleryItems.count ?? 0,
       unreadContacts: unreadContacts.count ?? 0,

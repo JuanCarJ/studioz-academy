@@ -6,12 +6,12 @@ LMS y storefront para Studio Z Academy construido con Next.js App Router, Supaba
 
 La app ya cubre el flujo principal end to end:
 
-- sitio publico con home, catalogo, detalle de curso, instructores, noticias, galeria, eventos, servicios y contacto;
+- sitio publico con home, catalogo, detalle de curso, instructores, galeria, eventos, servicios y contacto;
 - autenticacion y dashboard de alumno;
 - carrito, checkout Wompi, retorno, webhook y conciliacion;
 - cursos gratis, cursos comprados y cursos promocionales `100% OFF`;
 - descuentos individuales por curso y combos de carrito;
-- admin de cursos, combos, ventas, usuarios, instructores, noticias, galeria, eventos, reseñas y auditoria;
+- admin de cursos, combos, ventas, usuarios, instructores, galeria, eventos, reseñas y auditoria;
 - media de video con Bunny y emails transaccionales via Resend.
 
 Documentacion relacionada:
@@ -33,9 +33,10 @@ Documentacion relacionada:
 
 ### Publico
 
-- home, servicios, galeria, noticias, eventos y contacto;
+- home, servicios, galeria, eventos y contacto;
 - catalogo de cursos y detalle de curso;
 - listado y detalle de instructores;
+- redirecciones legacy de `/noticias` y `/noticias/[slug]` hacia `/eventos`;
 - terminos, privacidad y politica de reembolso.
 
 ### Alumno
@@ -51,7 +52,7 @@ Documentacion relacionada:
 - cursos e instructores;
 - combos y promociones comerciales;
 - ventas con detalle de orden y reenvio de email;
-- noticias, galeria y eventos;
+- galeria y eventos;
 - usuarios, reseñas y auditoria.
 
 ## Comercio y promociones
