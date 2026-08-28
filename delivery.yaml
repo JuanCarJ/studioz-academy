@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "project": "studioz-academy",
+  "product_topology": "multi-codebase",
+  "repository_layout": "monorepo",
+  "configuration_status": "active",
+  "production_enabled": true,
+  "repositories": [
+    {
+      "id": "product",
+      "path": ".",
+      "integration_branch": "dev"
+    }
+  ],
+  "codebases": [
+    {
+      "id": "web-api",
+      "repository": "product",
+      "path": ".",
+      "kind": "nextjs-web-and-api",
+      "status": "active",
+      "delivery_target": "vercel:studioz-academy"
+    },
+    {
+      "id": "database",
+      "repository": "product",
+      "path": "supabase",
+      "kind": "supabase-postgres-auth-storage",
+      "status": "active",
+      "delivery_target": "supabase:environment-must-be-verified"
+    }
+  ],
+  "environments": {
+    "integration": {
+      "branch": "dev",
+      "state": "observed",
+      "deploy_enabled": false,
+      "target": "origin/dev and local validation"
+    },
+    "staging": {
+      "branch": "staging",
+      "state": "observed",
+      "deploy_enabled": true,
+      "target": "Vercel and Supabase identities require live preflight"
+    },
+    "production": {
+      "branch": "main",
+      "state": "observed",
+      "deploy_enabled": true,
+      "target": "Vercel and Supabase identities require live preflight"
+    }
+  },
+  "required_checks": {
+    "integration": [
+      "git diff --check",
+      "focal tests for affected domains",
+      "npm run lint for source changes",
+      "npm run build for runtime changes"
+    ],
+    "staging": [
+      "exact committed SHA",
+      "verified provider and database identities",
+      "focal smoke for affected journeys"
+    ],
+    "production": [
+      "explicit release authority",
+      "validated source SHA promoted from dev through staging",
+      "provider postflight and rollback reference"
+    ]
+  },
+  "rollback_refs": [
+    "previous origin/staging or origin/main SHA for the target",
+    "previous READY Vercel deployment",
+    "Supabase backup or PITR plus forward-compatible migration plan"
+  ]
+}
