@@ -24,6 +24,9 @@ hechos y restricciones del producto.
 
 ## Pruebas y proveedores
 
+- Web, Next.js, documentacion, Supabase y operaciones autorizadas son portables
+  a macOS o WSL. Cada host configura credenciales propias; Git no sincroniza
+  env, sesiones, caches, worktrees ni las skills globales del workflow.
 - Ejecutar pruebas focales y ampliar por riesgo hasta lint, build, integracion o
   E2E cuando la frontera afectada lo justifique.
 - Toda prueba con DB usa un proyecto Supabase de staging cuya identidad haya
