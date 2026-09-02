@@ -47,25 +47,36 @@ function VisibilityToggle({
 }) {
   const [isVisible, setIsVisible] = useState(initialVisible)
   const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   function handleToggle(checked: boolean) {
+    setError(null)
     setIsVisible(checked)
     startTransition(async () => {
-      const result = await moderateReview(reviewId, checked)
-      if (result.error) {
-        // Revert optimistic update on error
+      try {
+        const result = await moderateReview(reviewId, checked)
+        if (result.error) {
+          setIsVisible(!checked)
+          setError(result.error)
+        }
+      } catch {
+        // A lost response does not prove whether the server committed the change.
         setIsVisible(!checked)
+        setError("No pudimos confirmar el cambio. Recarga las reseñas antes de intentarlo otra vez.")
       }
     })
   }
 
   return (
+    <div className="space-y-2">
     <Switch
       checked={isVisible}
       onCheckedChange={handleToggle}
       disabled={isPending}
       aria-label={isVisible ? "Ocultar reseña" : "Mostrar reseña"}
     />
+    {error && <p className="max-w-56 text-sm text-destructive" role="alert">{error}</p>}
+    </div>
   )
 }
 
@@ -77,11 +88,15 @@ function DeleteButton({ reviewId }: { reviewId: string }) {
   function handleDelete() {
     setError(null)
     startTransition(async () => {
-      const result = await deleteReviewAdmin(reviewId)
-      if (result.error) {
-        setError(result.error)
-      } else {
-        setOpen(false)
+      try {
+        const result = await deleteReviewAdmin(reviewId)
+        if (result.error) {
+          setError(result.error)
+        } else {
+          setOpen(false)
+        }
+      } catch {
+        setError("No pudimos confirmar la eliminación. Recarga las reseñas para comprobar el estado.")
       }
     })
   }
@@ -102,7 +117,7 @@ function DeleteButton({ reviewId }: { reviewId: string }) {
           </DialogDescription>
         </DialogHeader>
         {error && (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive" role="alert">{error}</p>
         )}
         <DialogFooter>
           <Button
@@ -129,7 +144,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
   if (reviews.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
-        No hay reseñas registradas.
+        No hay reseñas para los filtros aplicados.
       </p>
     )
   }
@@ -160,7 +175,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
             <div className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Usuario
+                  Estudiante
                 </p>
                 <p className="mt-1">{review.user?.full_name ?? "—"}</p>
               </div>
@@ -181,7 +196,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
                   Comentario
                 </p>
-                <p className="mt-1 line-clamp-4 text-sm leading-6 text-muted-foreground">
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
                   {review.text?.trim() || "—"}
                 </p>
               </div>
@@ -200,6 +215,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Visible</span>
                 <VisibilityToggle
+                  key={String(review.is_visible)}
                   reviewId={review.id}
                   initialVisible={review.is_visible}
                 />
@@ -215,7 +231,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[18%]">Curso</TableHead>
-              <TableHead className="w-[20%]">Usuario</TableHead>
+              <TableHead className="w-[20%]">Estudiante</TableHead>
               <TableHead className="w-[13%]">Calificación</TableHead>
               <TableHead className="w-[27%]">Comentario</TableHead>
               <TableHead className="w-[8%] text-center">Visible</TableHead>
@@ -260,6 +276,7 @@ export function ReviewsTable({ reviews }: ReviewsTableProps) {
                 <TableCell className="align-top text-center">
                   <div className="flex justify-center">
                     <VisibilityToggle
+                      key={String(review.is_visible)}
                       reviewId={review.id}
                       initialVisible={review.is_visible}
                     />

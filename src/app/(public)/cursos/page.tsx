@@ -6,6 +6,8 @@ import { getCourses, getCatalogUserState, getInstructorsForFilter } from "@/acti
 import { CatalogFilters } from "@/components/courses/CatalogFilters"
 import { CourseGrid } from "@/components/courses/CourseGrid"
 import { CoursesSkeleton } from "@/components/skeletons/CoursesSkeleton"
+import { CatalogPagination } from "@/components/courses/CatalogPagination"
+import { normalizeCatalogFilters, type CatalogFilters as Filters, type CatalogQuery } from "@/lib/catalog"
 
 const CATEGORY_LABELS: Record<string, string> = {
   baile: "Baile",
@@ -13,18 +15,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 interface PageProps {
-  searchParams: Promise<{
-    category?: string
-    search?: string
-    sort?: string
-    instructor?: string
-  }>
+  searchParams: Promise<CatalogQuery>
 }
 
 export async function generateMetadata({
   searchParams,
 }: PageProps): Promise<Metadata> {
-  const sp = await searchParams
+  const sp = normalizeCatalogFilters(await searchParams)
   const categoryLabel = sp.category ? CATEGORY_LABELS[sp.category] : null
 
   return {
@@ -40,35 +37,29 @@ export async function generateMetadata({
 async function CourseResults({
   filters,
 }: {
-  filters: {
-    category?: string
-    search?: string
-    sort?: string
-    instructor?: string
-  }
+  filters: Filters
 }) {
-  const [courses, userState] = await Promise.all([
-    getCourses({
-      category: filters.category,
-      search: filters.search,
-      sort: (filters.sort as "newest" | "price_asc" | "price_desc") ?? "newest",
-      instructor: filters.instructor,
-    }),
-    getCatalogUserState(),
-  ])
+  const result = await getCourses(filters)
+  const userState = await getCatalogUserState(result.courses.map((course) => course.id))
 
   return (
+    <>
+    {result.total > 0 && <p className="mb-4 text-sm text-muted-foreground" role="status">
+      {(result.page - 1) * result.pageSize + 1}–{Math.min(result.page * result.pageSize, result.total)} de {result.total} cursos
+    </p>}
     <CourseGrid
-      courses={courses}
+      courses={result.courses}
       cartCourseIds={userState.cartCourseIds}
       enrolledCourseIds={userState.enrolledCourseIds}
       isAuthenticated={userState.isAuthenticated}
     />
+    <CatalogPagination filters={filters} page={result.page} pageSize={result.pageSize} total={result.total} />
+    </>
   )
 }
 
 export default async function CourseCatalogPage({ searchParams }: PageProps) {
-  const filters = await searchParams
+  const filters = normalizeCatalogFilters(await searchParams)
   const categoryLabel = filters.category
     ? CATEGORY_LABELS[filters.category]
     : null
@@ -92,7 +83,7 @@ export default async function CourseCatalogPage({ searchParams }: PageProps) {
       <CatalogFilters instructors={instructors} />
 
       <div className="mt-8">
-        <Suspense fallback={<CoursesSkeleton />}>
+        <Suspense key={JSON.stringify(filters)} fallback={<CoursesSkeleton />}>
           <CourseResults filters={filters} />
         </Suspense>
       </div>

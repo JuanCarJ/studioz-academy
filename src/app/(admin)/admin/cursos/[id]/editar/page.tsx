@@ -14,10 +14,25 @@ import { LessonList } from "@/components/admin/LessonList"
 import { AddLessonDialog } from "@/components/admin/AddLessonDialog"
 import { Separator } from "@/components/ui/separator"
 import { AdminTableSkeleton } from "@/components/skeletons/AdminTableSkeleton"
+import { CourseNotificationButton } from "@/components/admin/CourseNotificationButton"
+import { getCourseNotificationStats } from "@/lib/course-notifications"
+import { getCurrentUser } from "@/lib/supabase/auth"
 
 import type { Course } from "@/types"
 
 export const metadata = { title: "Editar curso — Admin | Studio Z" }
+
+async function AnnouncementSection({ courseId }: { courseId: string }) {
+  const admin = await getCurrentUser()
+  if (!admin || admin.role !== "admin") return null
+  const data = await Promise.all([getCourseNotificationStats(courseId), getLessonsForCourse(courseId)]).catch(() => null)
+  if (!data) {
+    return <p role="status" className="text-sm text-muted-foreground">No pudimos consultar los anuncios del curso. Intenta actualizar la página.</p>
+  }
+  const [stats, lessons] = data
+  return <CourseNotificationButton courseId={courseId} stats={stats}
+    lessons={lessons.filter((lesson) => lesson.bunny_status === "ready").map(({ id, title }) => ({ id, title }))} />
+}
 
 async function LessonsSection({
   courseId,
@@ -95,6 +110,9 @@ export default async function EditCoursePage({
       <Suspense fallback={<AdminTableSkeleton rows={3} />}>
         <LessonsSection courseId={id} />
       </Suspense>
+      {course.is_published && !course.archived_at && <Suspense fallback={<p>Cargando anuncios…</p>}>
+        <AnnouncementSection courseId={id} />
+      </Suspense>}
     </section>
   )
 }

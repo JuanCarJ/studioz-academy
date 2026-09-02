@@ -10,7 +10,8 @@ import {
   getLastPosition,
 } from "@/actions/lessons"
 import { MediaFallbackPanel } from "@/components/courses/MediaFallbackPanel"
-import { updateLastLesson } from "@/actions/progress"
+import { resetCourseProgress, updateLastLesson } from "@/actions/progress"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { VideoPlayer } from "@/components/courses/VideoPlayer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,7 @@ interface LessonInfo {
   durationSeconds: number
   isFree: boolean
   isCompleted: boolean
+  isNew?: boolean
 }
 
 interface PlayerViewProps {
@@ -50,6 +52,7 @@ interface PlayerViewProps {
   initialPosition?: number
   thumbnailUrl?: string | null
   supportUrl?: string | null
+  initialProgressError?: string
 }
 
 function formatDuration(seconds: number): string {
@@ -84,267 +87,222 @@ export function PlayerView({
   initialPosition = 0,
   thumbnailUrl,
   supportUrl,
+  initialProgressError = "",
 }: PlayerViewProps) {
   const [activeId, setActiveId] = useState(activeLessonId)
   const [signedUrl, setSignedUrl] = useState(initialSignedUrl)
   const [playerMessage, setPlayerMessage] = useState(initialPlaybackMessage)
   const [videoPosition, setVideoPosition] = useState(initialPosition)
+  const [isLoadingLesson, setIsLoadingLesson] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [isLessonSheetOpen, setIsLessonSheetOpen] = useState(false)
-  const { csrfToken } = useCsrfToken()
+  const [resetOpen, setResetOpen] = useState(false)
+  const [progressError, setProgressError] = useState("")
+  const [mutationError, setMutationError] = useState("")
   const [completionContextLessonId, setCompletionContextLessonId] = useState<string | null>(null)
   const [completedIds, setCompletedIds] = useState<Set<string>>(
-    new Set(lessons.filter((l) => l.isCompleted).map((l) => l.id))
+    () => new Set(lessons.filter((lesson) => lesson.isCompleted).map((lesson) => lesson.id))
   )
-
-  // Track current playback time — kept in a ref so debounce timer captures latest
-  const currentTimeRef = useRef<number>(initialPosition)
-  const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const pendingPositionSave = useRef<boolean>(false)
+  const { csrfToken } = useCsrfToken()
+  const currentTimeRef = useRef(initialPosition)
+  const pendingSaves = useRef(new Map<string, number>())
+  const inFlightSaves = useRef(new Map<string, Promise<boolean>>())
+  const selectionRequest = useRef(0)
+  const mounted = useRef(true)
+  const resetting = useRef(false)
   const playerRegionRef = useRef<HTMLDivElement>(null)
-  const flushExitProgressRef = useRef<
-    (reason: "pause" | "logout" | "pagehide", transport?: "fetch" | "beacon") => Promise<void>
-  >(async () => {})
+  const activeIdRef = useRef(activeLessonId)
 
-  // Derived: overall course progress percentage
-  const progressPercent =
-    lessons.length > 0 ? Math.round((completedIds.size / lessons.length) * 100) : 0
+  const progressPercent = lessons.length ? Math.round((completedIds.size / lessons.length) * 100) : 0
   const activeLessonIndex = lessons.findIndex((lesson) => lesson.id === activeId)
-  const nextLesson =
-    activeLessonIndex >= 0 && activeLessonIndex < lessons.length - 1
-      ? lessons[activeLessonIndex + 1]
-      : null
-  const isSingleLessonCourse = lessons.length === 1
-  const shouldShowCompletionContext =
-    completionContextLessonId === activeId && completedIds.has(activeId)
+  const nextLesson = lessons[activeLessonIndex + 1] ?? null
+  const nextIncompleteLesson = lessons.find((lesson) => !completedIds.has(lesson.id))
+  const courseCompleted = lessons.length > 0 && completedIds.size === lessons.length
+  const shouldShowCompletionContext = completionContextLessonId === activeId && completedIds.has(activeId)
 
-  // ── Position persistence helpers ─────────────────────────────────────────
+  const showSaveError = useCallback(() => {
+    if (mounted.current) setProgressError("No pudimos guardar tu avance. Puedes seguir viendo y volver a intentarlo.")
+  }, [])
 
-  const flushPositionSave = useCallback(
-    (lessonId: string) => {
-      const pos = Math.floor(currentTimeRef.current)
-      if (pos > 0 && pendingPositionSave.current) {
-        pendingPositionSave.current = false
-        // Fire-and-forget — do not block UI, but preserve the pending flag on failure.
-        void saveVideoPosition(lessonId, pos)
-          .then((result) => {
-            if (result.error) {
-              pendingPositionSave.current = true
-            }
-          })
-          .catch(() => {
-            pendingPositionSave.current = true
-          })
-      }
-    },
-    []
-  )
+  // Saves retain their own lesson and position. A late response may never mark the
+  // newly selected lesson as saved, nor erase a newer position queued for retry.
+  const flushPositionSave = useCallback((lessonId: string): Promise<boolean> => {
+    const running = inFlightSaves.current.get(lessonId)
+    if (running) return running
+    const position = pendingSaves.current.get(lessonId)
+    if (position === undefined || resetting.current) return Promise.resolve(true)
+    const operation = saveVideoPosition(lessonId, position).then((result) => {
+      if (result.error) { showSaveError(); return false }
+      if (pendingSaves.current.get(lessonId) === position) pendingSaves.current.delete(lessonId)
+      return true
+    }).catch(() => { showSaveError(); return false }).finally(() => {
+      inFlightSaves.current.delete(lessonId)
+    })
+    inFlightSaves.current.set(lessonId, operation)
+    return operation
+  }, [showSaveError])
 
-  const flushExitProgress = useCallback(
-    async (reason: "pause" | "logout" | "pagehide", transport: "fetch" | "beacon" = "fetch") => {
-      if (!signedUrl || !csrfToken || !pendingPositionSave.current) return
-
-      const position = Math.floor(currentTimeRef.current)
-      if (position <= 0) {
-        pendingPositionSave.current = false
-        return
-      }
-
-      pendingPositionSave.current = false
-
-      const payload = {
-        courseId,
-        lessonId: activeId,
-        position,
-        reason,
-        csrfToken,
-      }
-
+  const flushExitProgress = useCallback(async (reason: "pause" | "logout" | "pagehide", beacon = false) => {
+    if (resetting.current) return
+    for (const [lessonId, position] of pendingSaves.current) {
+      if (!csrfToken) { await flushPositionSave(lessonId); continue }
+      const payload = { courseId, lessonId, position, reason, csrfToken }
       try {
-        if (transport === "beacon") {
-          const beaconSent = sendVideoProgressFlushBeacon(payload)
-          if (beaconSent) {
-            return
-          }
-        }
+        if (beacon && sendVideoProgressFlushBeacon(payload)) continue
+        await postVideoProgressFlush(payload, { keepalive: beacon })
+        if (pendingSaves.current.get(lessonId) === position) pendingSaves.current.delete(lessonId)
+      } catch { showSaveError() }
+    }
+  }, [courseId, csrfToken, flushPositionSave, showSaveError])
+  const exitFlushRef = useRef(flushExitProgress)
 
-        await postVideoProgressFlush(payload, {
-          keepalive: transport === "beacon",
-        })
-      } catch {
-        pendingPositionSave.current = true
-      }
-    },
-    [activeId, courseId, csrfToken, signedUrl]
-  )
-
+  useEffect(() => { exitFlushRef.current = flushExitProgress }, [flushExitProgress])
   useEffect(() => {
-    flushExitProgressRef.current = flushExitProgress
-  }, [flushExitProgress])
-
-  const flushPauseProgress = useCallback(async () => {
-    if (!signedUrl || !pendingPositionSave.current) return
-
-    const position = Math.floor(currentTimeRef.current)
-    if (position <= 0) {
-      pendingPositionSave.current = false
-      return
-    }
-
-    pendingPositionSave.current = false
-
-    try {
-      const result = await saveVideoPosition(activeId, position)
-      if (result.error) {
-        pendingPositionSave.current = true
-      }
-    } catch {
-      pendingPositionSave.current = true
-    }
-  }, [activeId, signedUrl])
-
-  // Start the 30-second periodic save for the active lesson
-  const startPeriodicSave = useCallback(
-    (lessonId: string) => {
-      if (saveTimerRef.current !== null) {
-        clearInterval(saveTimerRef.current)
-      }
-      saveTimerRef.current = setInterval(() => {
-        flushPositionSave(lessonId)
-      }, SAVE_INTERVAL_MS)
-    },
-    [flushPositionSave]
-  )
-
-  const stopPeriodicSave = useCallback(() => {
-    if (saveTimerRef.current !== null) {
-      clearInterval(saveTimerRef.current)
-      saveTimerRef.current = null
-    }
-  }, [])
-
-  // Initialise periodic save for the first lesson on mount
-  useEffect(() => {
-    startPeriodicSave(activeId)
+    mounted.current = true
+    const timer = setInterval(() => {
+      for (const lessonId of pendingSaves.current.keys()) void flushPositionSave(lessonId)
+    }, SAVE_INTERVAL_MS)
     return () => {
-      stopPeriodicSave()
+      mounted.current = false
+      selectionRequest.current += 1
+      clearInterval(timer)
+      void exitFlushRef.current("pagehide", true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  }, [flushPositionSave])
+  useEffect(() => registerActiveVideoProgressFlushHandler(() => flushExitProgress("logout")), [flushExitProgress])
   useEffect(() => {
-    return registerActiveVideoProgressFlushHandler(() => flushExitProgress("logout"))
+    const onHide = () => { void flushExitProgress("pagehide", true) }
+    window.addEventListener("pagehide", onHide)
+    return () => window.removeEventListener("pagehide", onHide)
   }, [flushExitProgress])
-
   useEffect(() => {
-    function handlePageHide() {
-      void flushExitProgress("pagehide", "beacon")
-    }
-
-    window.addEventListener("pagehide", handlePageHide)
-    return () => {
-      window.removeEventListener("pagehide", handlePageHide)
-    }
-  }, [flushExitProgress])
-
-  useEffect(() => {
-    return () => {
-      void flushExitProgressRef.current("pagehide")
-    }
-  }, [])
-
-  // ── VideoPlayer callbacks ────────────────────────────────────────────────
+    if (!activeLessonId) return
+    void updateLastLesson(courseId, activeLessonId).then((result) => {
+      if (result.error) showSaveError()
+    }).catch(showSaveError)
+  }, [courseId, activeLessonId, showSaveError])
 
   const handleTimeUpdate = useCallback((time: number) => {
-    currentTimeRef.current = time
-    pendingPositionSave.current = true
+    if (resetting.current || !Number.isFinite(time) || time < 0) return
+    if (activeId === activeIdRef.current) currentTimeRef.current = time
+    pendingSaves.current.set(activeId, Math.floor(time))
+  }, [activeId])
+
+  const changeCompletion = useCallback((lessonId: string, complete: boolean) => {
+    setMutationError("")
+    startTransition(async () => {
+      try {
+        const result = await (complete ? markComplete(lessonId) : markIncomplete(lessonId))
+        if (result.error) { setMutationError(result.error === "AUTH_REQUIRED" ? "Inicia sesión de nuevo para guardar tu progreso." : result.error); return }
+        setCompletedIds((previous) => {
+          const updated = new Set(previous)
+          if (complete) updated.add(lessonId)
+          else updated.delete(lessonId)
+          return updated
+        })
+        setCompletionContextLessonId(complete ? lessonId : null)
+      } catch {
+        setMutationError("No pudimos actualizar esta lección. Vuelve a pulsar el botón para intentarlo.")
+      }
+    })
   }, [])
 
-  const handleVideoPause = useCallback(() => {
-    void flushPauseProgress()
-  }, [flushPauseProgress])
-
+  const handleVideoPause = useCallback(() => { void flushPositionSave(activeId) }, [activeId, flushPositionSave])
   const handleVideoEnded = useCallback(() => {
-    // Save final position and mark as completed automatically
-    flushPositionSave(activeId)
-    startTransition(async () => {
-      const result = await markComplete(activeId)
-      if (!result.error) {
-        setCompletedIds((prev) => new Set([...prev, activeId]))
-        setCompletionContextLessonId(activeId)
-      }
-    })
-  }, [activeId, flushPositionSave])
-
-  // ── Lesson navigation ────────────────────────────────────────────────────
+    void flushPositionSave(activeId)
+    changeCompletion(activeId, true)
+  }, [activeId, flushPositionSave, changeCompletion])
 
   function loadLesson(lessonId: string) {
-    // 1. Flush position for the lesson we are leaving
-    flushPositionSave(activeId)
-    stopPeriodicSave()
-    setCompletionContextLessonId(null)
-    setIsLessonSheetOpen(false)
-
+    if (!lessons.some((lesson) => lesson.id === lessonId) || resetting.current) return
+    void flushPositionSave(activeIdRef.current)
+    const requestId = ++selectionRequest.current
+    activeIdRef.current = lessonId
     setActiveId(lessonId)
+    setSignedUrl("")
+    setPlayerMessage("")
+    setIsLoadingLesson(true)
+    setCompletionContextLessonId(null)
+    setMutationError("")
+    setIsLessonSheetOpen(false)
     playerRegionRef.current?.focus()
-    playerRegionRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    })
-
-    startTransition(async () => {
-      // 2. Fetch new signed URL and saved position in parallel
-      const [urlResult, posResult] = await Promise.all([
-        getSignedVideoUrl(lessonId),
-        getLastPosition(lessonId),
-      ])
-
-      if (urlResult.url) {
+    const isCurrent = () => mounted.current && requestId === selectionRequest.current
+    void (async () => {
+      try {
+        const [urlResult, positionResult] = await Promise.all([
+          getSignedVideoUrl(lessonId), getLastPosition(lessonId),
+        ])
+        if (!isCurrent()) return
+        if (positionResult.error && !pendingSaves.current.has(lessonId)) {
+          setPlayerMessage("No pudimos recuperar dónde ibas. Vuelve a cargar la lección.")
+          setIsLoadingLesson(false)
+          return
+        }
         setSignedUrl(urlResult.url)
-        setPlayerMessage("")
-      } else {
-        setSignedUrl("")
-        setPlayerMessage(urlResult.error ?? "El video no esta disponible.")
+        setPlayerMessage(urlResult.error ?? (urlResult.url ? "" : "No pudimos abrir el video. Inténtalo de nuevo."))
+        const position = pendingSaves.current.get(lessonId) ?? positionResult.position
+        setVideoPosition(position)
+        currentTimeRef.current = position
+        setIsLoadingLesson(false)
+        const result = await updateLastLesson(courseId, lessonId)
+        if (isCurrent() && result.error) showSaveError()
+      } catch {
+        if (isCurrent()) {
+          setPlayerMessage("No pudimos abrir esta lección. Revisa tu conexión y vuelve a intentarlo.")
+          setIsLoadingLesson(false)
+        }
       }
-      setVideoPosition(posResult.position)
-      currentTimeRef.current = posResult.position
-      pendingPositionSave.current = false
-
-      // 3. Record last-accessed lesson in course_progress
-      await updateLastLesson(courseId, lessonId)
-
-      // 4. Restart periodic save for the new lesson
-      startPeriodicSave(lessonId)
-    })
+    })()
   }
 
   function handleSelectLesson(lessonId: string) {
-    if (lessonId === activeId || isPending) return
+    if (lessonId === activeId) return
     loadLesson(lessonId)
   }
 
-  // ── Complete / Incomplete toggle ─────────────────────────────────────────
-
-  function handleMarkComplete() {
+  function retryProgress() {
     startTransition(async () => {
-      const result = await markComplete(activeId)
-      if (!result.error) {
-        setCompletedIds((prev) => new Set([...prev, activeId]))
-        setCompletionContextLessonId(activeId)
-      }
+      try {
+        const results = await Promise.all([...pendingSaves.current.keys()].map(flushPositionSave))
+        const access = await updateLastLesson(courseId, activeId)
+        if (results.every(Boolean) && !access.error) setProgressError("")
+        else showSaveError()
+      } catch { showSaveError() }
     })
   }
 
-  function handleMarkIncomplete() {
+  function handleReset() {
+    resetting.current = true
+    setIsResetting(true)
+    selectionRequest.current += 1
+    const previousUrl = signedUrl
+    setSignedUrl("")
+    setMutationError("")
     startTransition(async () => {
-      const result = await markIncomplete(activeId)
-      if (!result.error) {
-        setCompletedIds((prev) => {
-          const next = new Set(prev)
-          next.delete(activeId)
-          return next
-        })
+      try {
+        await Promise.all([...inFlightSaves.current.values()])
+        const result = await resetCourseProgress(courseId, true)
+        if (result.error) {
+          setMutationError(result.error)
+          setSignedUrl(previousUrl)
+          return
+        }
+        pendingSaves.current.clear()
+        setCompletedIds(new Set())
         setCompletionContextLessonId(null)
+        setProgressError("")
+        setResetOpen(false)
+        setVideoPosition(0)
+        currentTimeRef.current = 0
+        resetting.current = false
+        if (lessons[0]) loadLesson(lessons[0].id)
+      } catch {
+        setMutationError("No pudimos reiniciar tu progreso. Inténtalo de nuevo.")
+        setSignedUrl(previousUrl)
+      } finally {
+        resetting.current = false
+        setIsResetting(false)
       }
     })
   }
@@ -357,7 +315,9 @@ export function PlayerView({
         <li key={lesson.id}>
           <button
             onClick={() => handleSelectLesson(lesson.id)}
-            disabled={isPending}
+            disabled={isResetting}
+            aria-current={activeId === lesson.id ? "step" : undefined}
+            aria-label={`${idx + 1}. ${lesson.title}${completedIds.has(lesson.id) ? ", completada" : ""}`}
             className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition-colors min-h-[44px] ${
               activeId === lesson.id ? "bg-primary/10" : "hover:bg-muted"
             }`}
@@ -378,6 +338,7 @@ export function PlayerView({
                 <span className="text-xs text-muted-foreground">
                   {formatDuration(lesson.durationSeconds)}
                 </span>
+                {lesson.isNew && <Badge variant="secondary" className="text-[10px] px-1 py-0">Nuevo</Badge>}
                 {lesson.isFree && (
                   <Badge variant="secondary" className="text-[10px] px-1 py-0">
                     Gratis
@@ -402,6 +363,9 @@ export function PlayerView({
 
   return (
     <div className="space-y-3">
+      {initialProgressError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm space-y-2"><p>{initialProgressError}</p><Button variant="outline" onClick={() => window.location.reload()}>Recargar mi progreso</Button></div>}
+      {progressError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm space-y-2"><p>{progressError}</p><Button variant="outline" size="sm" onClick={retryProgress} disabled={isPending}>Volver a guardar</Button></div>}
+      {mutationError && !resetOpen && <p role="alert" className="text-sm text-destructive">{mutationError}</p>}
       {/* Course progress bar */}
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -410,7 +374,7 @@ export function PlayerView({
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-green-600 transition-all duration-500"
+            className="h-full rounded-full bg-green-600 transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${progressPercent}%` }}
             role="progressbar"
             aria-valuenow={progressPercent}
@@ -427,8 +391,11 @@ export function PlayerView({
         {/* Video column */}
         <div className="space-y-3 lg:col-span-2">
           <div ref={playerRegionRef} tabIndex={-1} className="space-y-3 outline-none">
-            {signedUrl ? (
+            {isLoadingLesson ? (
+              <div role="status" className="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm">Cargando lección…</div>
+            ) : signedUrl ? (
               <VideoPlayer
+                key={activeId}
                 signedUrl={signedUrl}
                 initialPosition={videoPosition}
                 onTimeUpdate={handleTimeUpdate}
@@ -439,7 +406,7 @@ export function PlayerView({
             ) : (
               <MediaFallbackPanel
                 title={courseTitle}
-                message={playerMessage || "Selecciona una leccion para comenzar."}
+                message={playerMessage || "Selecciona una lección para comenzar."}
                 thumbnailUrl={thumbnailUrl}
                 supportUrl={supportUrl}
                 supportLabel="Necesito ayuda por WhatsApp"
@@ -447,6 +414,7 @@ export function PlayerView({
             )}
           </div>
 
+          {!signedUrl && !isLoadingLesson && <Button variant="outline" className="min-h-11" onClick={() => loadLesson(activeId)}>Volver a cargar la lección</Button>}
           <div className="space-y-3 sm:flex sm:items-start sm:justify-between sm:gap-3 sm:space-y-0">
             <h2 className="text-base font-semibold leading-6 sm:text-lg">
               {lessons.find((l) => l.id === activeId)?.title ?? ""}
@@ -464,7 +432,7 @@ export function PlayerView({
                       aria-label="Ver lecciones"
                     >
                       <ListIcon />
-                      <span className="sr-only sm:not-sr-only">Lecciones</span>
+                      <span>Lecciones</span>
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="right" className="w-full max-w-sm p-0">
@@ -485,9 +453,10 @@ export function PlayerView({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={handleMarkIncomplete}
-                  disabled={isPending}
-                  className="min-h-[44px] gap-1 text-green-700 hover:text-green-900"
+                  onClick={() => changeCompletion(activeId, false)}
+                  aria-label="Marcar esta lección como pendiente"
+                  disabled={isPending || isLoadingLesson || Boolean(initialProgressError)}
+                  className="min-h-[44px] gap-1 text-green-700 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -498,8 +467,8 @@ export function PlayerView({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleMarkComplete}
-                  disabled={isPending}
+                  onClick={() => changeCompletion(activeId, true)}
+                  disabled={isPending || isLoadingLesson || Boolean(initialProgressError)}
                   className="min-h-[44px] w-full sm:w-auto"
                 >
                   Marcar como completada
@@ -508,40 +477,21 @@ export function PlayerView({
             </div>
           </div>
 
-          {shouldShowCompletionContext && (
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    {nextLesson
-                      ? "Leccion completada."
-                      : isSingleLessonCourse
-                        ? "Curso completado."
-                        : "Terminaste la ultima leccion del curso."}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {nextLesson
-                      ? `Continua con "${nextLesson.title}".`
-                      : "Ya no quedan mas lecciones por completar."}
-                  </p>
-                </div>
-
-                {nextLesson ? (
-                  <Button
-                    onClick={() => loadLesson(nextLesson.id)}
-                    disabled={isPending}
-                    className="min-h-[44px] w-full sm:w-auto"
-                  >
-                    Continuar siguiente leccion
-                  </Button>
-                ) : (
-                  <Badge className="w-fit bg-emerald-600 text-white hover:bg-emerald-600">
-                    Curso completado
-                  </Badge>
-                )}
-              </div>
+          {(shouldShowCompletionContext || courseCompleted) && (
+            <div role="status" className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-sm font-medium">{courseCompleted ? "¡Felicitaciones! Completaste el curso." : "Lección completada."}</p>
+              {!courseCompleted && <p className="text-sm text-muted-foreground">{nextLesson ? `Continúa con “${nextLesson.title}”.` : "Todavía tienes lecciones pendientes. Puedes retomarlas cuando quieras."}</p>}
+              {!courseCompleted && (nextLesson ?? nextIncompleteLesson) && (
+                <Button onClick={() => loadLesson((nextLesson ?? nextIncompleteLesson)!.id)} disabled={isPending || isLoadingLesson} className="min-h-11">
+                  {nextLesson ? "Continuar con la siguiente lección" : "Ver lección pendiente"}
+                </Button>
+              )}
             </div>
           )}
+          {!initialProgressError && (completedIds.size > 0 || videoPosition > 0) && (
+            <Button variant="ghost" className="min-h-11" onClick={() => setResetOpen(true)} disabled={isPending || isLoadingLesson}>Reiniciar progreso</Button>
+          )}
+
         </div>
 
         {/* Lesson list — desktop sidebar (hidden on mobile, handled by Sheet) */}
@@ -550,6 +500,19 @@ export function PlayerView({
           {lessonList}
         </div>
       </div>
+      <Dialog open={resetOpen} onOpenChange={(open) => { if (!isPending) setResetOpen(open) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Reiniciar el progreso de este curso?</DialogTitle>
+            <DialogDescription>Las lecciones quedarán pendientes y los videos volverán al inicio. Conservarás tu acceso al curso. Esta acción no se puede deshacer.</DialogDescription>
+          </DialogHeader>
+          {mutationError && <p role="alert" className="text-sm text-destructive">{mutationError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetOpen(false)} disabled={isPending}>Conservar mi progreso</Button>
+            <Button onClick={handleReset} disabled={isPending}>{isPending ? "Reiniciando…" : "Sí, reiniciar progreso"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

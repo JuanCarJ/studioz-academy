@@ -21,10 +21,10 @@ export default function ConfirmPasswordPage() {
     <Card>
       <CardContent className="pt-6">
         <h2 className="mb-2 font-heading text-xl font-semibold">
-          Nueva contrasena
+          Nueva contraseña
         </h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          Ingresa tu nueva contrasena. Debe tener al menos 8 caracteres.
+          Ingresa tu nueva contraseña. Debe tener al menos 8 caracteres.
         </p>
 
         {csrfError && (
@@ -42,7 +42,7 @@ export default function ConfirmPasswordPage() {
           <input type="hidden" name="csrfToken" value={csrfToken} />
 
           <div className="space-y-2">
-            <Label htmlFor="password">Nueva contrasena</Label>
+            <Label htmlFor="password">Nueva contraseña</Label>
             <Input
               id="password"
               name="password"
@@ -55,12 +55,12 @@ export default function ConfirmPasswordPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirmar contrasena</Label>
+            <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
             <Input
               id="confirmPassword"
               name="confirmPassword"
               type="password"
-              placeholder="Repite tu contrasena"
+              placeholder="Repite tu contraseña"
               required
               minLength={8}
               autoComplete="new-password"
@@ -72,7 +72,7 @@ export default function ConfirmPasswordPage() {
             className="w-full"
             disabled={isPending || isCsrfLoading || !csrfToken}
           >
-            {isPending ? "Actualizando..." : "Actualizar contrasena"}
+            {isPending ? "Actualizando..." : "Actualizar contraseña"}
           </Button>
         </form>
       </CardContent>

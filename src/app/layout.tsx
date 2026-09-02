@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google"
 
@@ -27,15 +28,18 @@ export const metadata: Metadata = {
     "Academia de baile y estudio de tatuajes en Colombia. Cursos online y presenciales.",
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined
   return (
     <html lang="es-CO" suppressHydrationWarning>
       <head>
         <script
+          id="studio-z-theme"
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
               (function() {

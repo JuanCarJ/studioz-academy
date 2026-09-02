@@ -1,8 +1,6 @@
 "use client"
-
 import { useState, useTransition } from "react"
-
-import { deleteCourse } from "@/actions/admin/courses"
+import { performAdminOperation } from "@/actions/admin/operations"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -14,117 +12,100 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 
-interface DeleteCourseButtonProps {
+interface Props {
   courseId: string
   courseTitle: string
   enrollmentCount: number
+  archived: boolean
 }
-
-/**
- * US-033: Delete course button with confirmation dialog.
- *
- * Shows enrollment count warning when students are inscribed.
- * On confirm, calls deleteCourse Server Action which cascades all related data.
- */
+// Historical filename retained; the action only archives and never deletes content.
 export function DeleteCourseButton({
   courseId,
   courseTitle,
   enrollmentCount,
-}: DeleteCourseButtonProps) {
+  archived,
+}: Props) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
-
-  const hasEnrollments = enrollmentCount > 0
-
-  function handleConfirm() {
-    setError(null)
-
-    startTransition(async () => {
-      const result = await deleteCourse(courseId)
-
-      // deleteCourse redirects on success — if we get here, it errored
-      if (result?.error) {
-        setError(result.error)
-      }
-    })
-  }
-
+  const [pending, start] = useTransition()
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!isPending) {
-          setOpen(next)
-          if (!next) setError(null)
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={(value) => !pending && setOpen(value)}>
       <DialogTrigger asChild>
-        <Button variant="destructive" size="sm">
-          Eliminar
+        <Button variant={archived ? "outline" : "destructive"} size="sm">
+          {archived ? "Restaurar" : "Archivar"}
         </Button>
       </DialogTrigger>
-
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Eliminar curso</DialogTitle>
+          <DialogTitle>
+            {archived ? "Restaurar curso" : "Archivar curso"}
+          </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
-                Vas a eliminar el curso{" "}
-                <strong className="text-foreground">
-                  &quot;{courseTitle}&quot;
-                </strong>
-                .
+                Vas a {archived ? "restaurar" : "archivar"}{" "}
+                <strong className="text-foreground">{courseTitle}</strong>.
               </p>
-
-              {hasEnrollments && (
-                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800">
-                  <p className="font-semibold">Advertencia</p>
-                  <p>
-                    Este curso tiene{" "}
-                    <strong>
+              {archived ? (
+                <p>
+                  El curso volverá a borrador para que puedas revisarlo antes de
+                  publicarlo.
+                </p>
+              ) : (
+                <>
+                  <p>Dejará de aparecer en el catálogo.</p>
+                  {enrollmentCount > 0 && (
+                    <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
                       {enrollmentCount} estudiante
-                      {enrollmentCount !== 1 ? "s" : ""} inscrito
-                      {enrollmentCount !== 1 ? "s" : ""}
-                    </strong>
-                    . Al eliminar el curso se borraran todas sus inscripciones y
-                    el progreso de aprendizaje. Los pedidos historicos se
-                    conservan.
-                  </p>
-                </div>
+                      {enrollmentCount === 1 ? " conserva" : "s conservan"} su
+                      acceso, compras y progreso.
+                    </p>
+                  )}
+                </>
               )}
-
-              <p>
-                Esta accion eliminara todas las lecciones y sus videos en Bunny
-                Stream. Esta accion es{" "}
-                <strong className="text-foreground">irreversible</strong>.
-              </p>
             </div>
           </DialogDescription>
         </DialogHeader>
-
         {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
-
         <DialogFooter>
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            disabled={isPending}
+            disabled={pending}
           >
             Cancelar
           </Button>
           <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={isPending}
+            variant={archived ? "default" : "destructive"}
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                setError(null)
+                try {
+                  const result = await performAdminOperation({
+                    action: archived ? "course.restore" : "course.archive",
+                    targetId: courseId,
+                    reason: archived
+                      ? "Restaurar curso archivado"
+                      : "Archivar curso y conservar el acceso histórico",
+                  })
+                  if (result.error) setError(result.error)
+                  else setOpen(false)
+                } catch {
+                  setError("No pudimos guardar el cambio. Inténtalo de nuevo.")
+                }
+              })
+            }
           >
-            {isPending ? "Eliminando..." : "Confirmar eliminacion"}
+            {pending
+              ? "Guardando…"
+              : archived
+                ? "Restaurar curso"
+                : "Archivar curso"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import Script from "next/script"
 
 const PLAYER_JS_SCRIPT_URL =
-  "https://assets.mediadelivery.net/playerjs/playerjs-latest.min.js"
+  "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
 
 interface BunnyTimeUpdatePayload {
   currentTime?: number
@@ -34,6 +35,8 @@ declare global {
 }
 
 let playerJsPromise: Promise<PlayerJsConstructor> | null = null
+let resolvePlayerJs: ((player: PlayerJsConstructor) => void) | null = null
+let rejectPlayerJs: ((error: Error) => void) | null = null
 
 function getCurrentTimeFromEvent(data: unknown) {
   if (typeof data === "number") {
@@ -63,45 +66,8 @@ function loadPlayerJs() {
   }
 
   playerJsPromise = new Promise<PlayerJsConstructor>((resolve, reject) => {
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      `script[src="${PLAYER_JS_SCRIPT_URL}"]`
-    )
-
-    function resolvePlayer() {
-      if (window.playerjs?.Player) {
-        resolve(window.playerjs.Player)
-        return true
-      }
-
-      return false
-    }
-
-    function handleLoad() {
-      if (!resolvePlayer()) {
-        reject(new Error("Bunny player.js loaded without exposing window.playerjs.Player"))
-      }
-    }
-
-    function handleError() {
-      reject(new Error("Failed to load Bunny player.js"))
-    }
-
-    if (existingScript) {
-      if (resolvePlayer()) {
-        return
-      }
-
-      existingScript.addEventListener("load", handleLoad, { once: true })
-      existingScript.addEventListener("error", handleError, { once: true })
-      return
-    }
-
-    const script = document.createElement("script")
-    script.src = PLAYER_JS_SCRIPT_URL
-    script.async = true
-    script.addEventListener("load", handleLoad, { once: true })
-    script.addEventListener("error", handleError, { once: true })
-    document.head.appendChild(script)
+    resolvePlayerJs = resolve
+    rejectPlayerJs = reject
   }).catch((error) => {
     playerJsPromise = null
     throw error
@@ -131,6 +97,9 @@ export function VideoPlayer({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hasSeekedRef = useRef(false)
   const playerRef = useRef<PlayerJsInstance | null>(null)
+  const [bridgeFailed, setBridgeFailed] = useState(false)
+  const [playbackFailed, setPlaybackFailed] = useState(false)
+  const [retry, setRetry] = useState(0)
 
   const embedUrl = useCallback(() => {
     if (!signedUrl) return ""
@@ -170,6 +139,9 @@ export function VideoPlayer({
     if (!signedUrl || !iframeRef.current) return
 
     let cancelled = false
+    const readyTimeout = window.setTimeout(() => {
+      if (!cancelled) setBridgeFailed(true)
+    }, 12_000)
     const wrapper = wrapperRef.current
     const listeners: Array<{ event: string; handler: (data?: unknown) => void }> = []
 
@@ -198,12 +170,12 @@ export function VideoPlayer({
         const player = new Player(iframeRef.current)
         playerRef.current = player
 
-        if (wrapper) {
-          wrapper.dataset.playerApiReady = "true"
-        }
-
         addListener(player, "ready", () => {
+          if (cancelled) return
+          window.clearTimeout(readyTimeout)
+          setBridgeFailed(false)
           if (wrapper) {
+            wrapper.dataset.playerApiReady = "true"
             wrapper.dataset.lastPlayerEvent = "ready"
           }
           seekToInitial(player)
@@ -218,7 +190,7 @@ export function VideoPlayer({
 
         addListener(player, "timeupdate", (data) => {
           const currentTime = getCurrentTimeFromEvent(data)
-          if (currentTime == null) return
+          if (cancelled || currentTime == null || !Number.isFinite(currentTime) || currentTime < 0) return
 
           if (wrapper) {
             wrapper.dataset.lastPlayerEvent = "timeupdate"
@@ -229,6 +201,7 @@ export function VideoPlayer({
         })
 
         addListener(player, "pause", () => {
+          if (cancelled) return
           if (wrapper) {
             wrapper.dataset.lastPlayerEvent = "pause"
           }
@@ -236,13 +209,20 @@ export function VideoPlayer({
         })
 
         addListener(player, "ended", () => {
+          if (cancelled) return
           if (wrapper) {
             wrapper.dataset.lastPlayerEvent = "ended"
           }
           onEnded?.()
         })
+        addListener(player, "error", () => {
+          if (!cancelled) setPlaybackFailed(true)
+        })
       })
       .catch(() => {
+        if (cancelled) return
+        window.clearTimeout(readyTimeout)
+        setBridgeFailed(true)
         if (wrapper) {
           wrapper.dataset.playerApiReady = "false"
         }
@@ -250,6 +230,7 @@ export function VideoPlayer({
 
     return () => {
       cancelled = true
+      window.clearTimeout(readyTimeout)
 
       if (wrapper) {
         wrapper.dataset.playerApiReady = "false"
@@ -287,7 +268,7 @@ export function VideoPlayer({
 
       playerRef.current = null
     }
-  }, [initialPosition, onEnded, onPause, onTimeUpdate, seekToInitial, signedUrl])
+  }, [initialPosition, onEnded, onPause, onTimeUpdate, seekToInitial, signedUrl, retry])
 
   if (!signedUrl) {
     return (
@@ -298,6 +279,13 @@ export function VideoPlayer({
   }
 
   return (
+    <div className="space-y-2">
+    <Script src={PLAYER_JS_SCRIPT_URL} strategy="afterInteractive"
+      onReady={() => {
+        if (window.playerjs?.Player) resolvePlayerJs?.(window.playerjs.Player)
+        else rejectPlayerJs?.(new Error("Player script unavailable"))
+      }}
+      onError={() => rejectPlayerJs?.(new Error("Player script failed"))} />
     <div
       ref={wrapperRef}
       className="aspect-video overflow-hidden rounded-lg bg-black"
@@ -310,13 +298,27 @@ export function VideoPlayer({
       data-progress-flush-ready={progressFlushReady ? "true" : "false"}
     >
       <iframe
+        key={`${signedUrl}:${retry}`}
         ref={iframeRef}
         src={embedUrl()}
         className="h-full w-full"
         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
         title="Reproductor del curso"
+        onError={() => setPlaybackFailed(true)}
       />
+    </div>
+    {playbackFailed && <div role="alert" className="text-sm">
+      <p>No pudimos reproducir el video. Intenta cargarlo de nuevo.</p>
+      <button type="button" className="mt-2 underline underline-offset-4" onClick={() => {
+        setPlaybackFailed(false)
+        setBridgeFailed(false)
+        setRetry((value) => value + 1)
+      }}>Reintentar video</button>
+    </div>}
+    {bridgeFailed && (onTimeUpdate || onPause || onEnded) && <p role="status" className="text-sm text-muted-foreground">
+      No pudimos conectar el seguimiento del video. Puedes verlo, pero tu posición podría no guardarse. Actualiza la página para reintentar.
+    </p>}
     </div>
   )
 }

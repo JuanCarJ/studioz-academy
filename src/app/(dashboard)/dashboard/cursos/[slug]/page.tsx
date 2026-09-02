@@ -4,6 +4,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
+import { env } from "@/lib/env"
 import { createServerClient } from "@/lib/supabase/server"
 import {
   COURSE_MEDIA_HEALTH_THROTTLE_MS,
@@ -20,13 +21,16 @@ import type { Lesson } from "@/types"
 
 export default async function CoursePlayerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ lesson?: string }>
 }) {
   const { slug } = await params
+  const { lesson: requestedLesson } = await searchParams
 
   const user = await getCurrentUser()
-  if (!user) redirect("/login")
+  if (!user) redirect(`/login?redirect=${encodeURIComponent(`/dashboard/cursos/${slug}`)}`)
 
   const supabase = await createServerClient()
   const courseQuery = () =>
@@ -37,12 +41,24 @@ export default async function CoursePlayerPage({
       .single()
 
   // Fetch course + lessons + instructor
-  const { data: initialCourse } = await courseQuery()
+  const { data: initialCourse, error: courseError } = await courseQuery()
+  if (courseError && courseError.code !== "PGRST116") throw new Error("No se pudo cargar el curso.")
 
   let course = initialCourse
 
   if (!course) redirect("/cursos")
   const courseId = course.id
+
+  // Enrollment is the access authority, including historical unpublished courses.
+  // Verify it before media-health work can contact a provider.
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("enrollments")
+    .select("id, enrolled_at")
+    .eq("user_id", user.id)
+    .eq("course_id", courseId)
+    .maybeSingle()
+  if (enrollmentError) throw new Error("No se pudo verificar el acceso al curso.")
+  if (!enrollment) redirect(`/cursos/${slug}`)
 
   const initialLessons = (course.lessons ?? []) as Lesson[]
   const shouldEnsureFreshMedia = shouldRefreshCourseMediaHealth(
@@ -70,16 +86,6 @@ export default async function CoursePlayerPage({
     }
   }
 
-  // Verify enrollment
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", course.id)
-    .maybeSingle()
-
-  if (!enrollment) redirect(`/cursos/${slug}`)
-
   // Sort lessons by sort_order
   const lessons = ((course.lessons ?? []) as Lesson[]).sort(
     (a, b) => a.sort_order - b.sort_order
@@ -90,10 +96,11 @@ export default async function CoursePlayerPage({
       <section className="space-y-4">
         <h1 className="text-2xl font-bold">{course.title}</h1>
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/30 py-16 px-6 text-center">
-          <h2 className="text-lg font-semibold">Contenido en actualizacion</h2>
+          <h2 className="text-lg font-semibold">Contenido en actualización</h2>
           <p className="mt-2 text-sm text-muted-foreground max-w-xs">
-            Estamos preparando el contenido de este curso. Te notificaremos cuando este listo.
+            Estamos preparando las lecciones. Conservas tu acceso; vuelve a Mi aprendizaje para consultar tus cursos.
           </p>
+          <Link href="/dashboard" className="mt-4 text-sm text-primary underline underline-offset-4">Volver a Mi aprendizaje</Link>
         </div>
       </section>
     )
@@ -103,10 +110,10 @@ export default async function CoursePlayerPage({
 
   // Fetch course progress + lesson progress in parallel.
   // lesson_progress includes video_position so we can restore playback.
-  const [{ data: progress }, { data: lessonProgressData }] = await Promise.all([
+  const [{ data: progress, error: progressError }, { data: lessonProgressData, error: lessonProgressError }] = await Promise.all([
     supabase
       .from("course_progress")
-      .select("last_lesson_id")
+      .select("last_lesson_id, last_accessed_at")
       .eq("user_id", user.id)
       .eq("course_id", course.id)
       .maybeSingle(),
@@ -137,6 +144,7 @@ export default async function CoursePlayerPage({
 
   // Determine active lesson (resume from last accessed, or first lesson)
   const activeLessonId =
+    (lessons.some((lesson) => lesson.id === requestedLesson) ? requestedLesson : null) ??
     (lastLessonExists ? progress?.last_lesson_id : null) ??
     resumeLessonFromVideoProgress?.id ??
     lessons[0]?.id
@@ -151,7 +159,7 @@ export default async function CoursePlayerPage({
       initialSignedUrl = generateSignedUrl(playbackState.videoId)
     } else {
       initialPlaybackMessage =
-        playbackState.message ?? "El video todavia no esta listo."
+        playbackState.message ?? "El video todavía no está listo."
     }
   }
 
@@ -159,9 +167,12 @@ export default async function CoursePlayerPage({
   const initialPosition = activeLesson
     ? (videoPositionMap.get(activeLesson.id) ?? 0)
     : 0
+  if (lessonProgressError) {
+    initialSignedUrl = ""
+    initialPlaybackMessage = "No pudimos recuperar dónde ibas. Recarga tu progreso antes de continuar."
+  }
 
-  const whatsappNumber =
-    process.env.WHATSAPP_NUMBER ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
+  const whatsappNumber = env.WHATSAPP_NUMBER()
   const whatsappUrl = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
         `Hola, necesito ayuda con el curso ${course.title}`
@@ -216,25 +227,27 @@ export default async function CoursePlayerPage({
           durationSeconds: l.duration_seconds,
           isFree: l.is_free,
           isCompleted: completedLessonIds.has(l.id),
+          isNew: new Date(l.created_at).getTime() > new Date(progress?.last_accessed_at ?? enrollment.enrolled_at).getTime(),
         }))}
         activeLessonId={activeLesson?.id ?? ""}
         initialSignedUrl={initialSignedUrl}
         initialPlaybackMessage={initialPlaybackMessage}
         initialPosition={initialPosition}
+        initialProgressError={progressError || lessonProgressError ? "No pudimos recuperar todo tu progreso. Recarga la página para volver a intentarlo." : ""}
         thumbnailUrl={course.thumbnail_url}
         supportUrl={whatsappUrl}
       />
 
       {whatsappUrl && (
         <p className="text-sm text-muted-foreground">
-          Necesitas ayuda?{" "}
+          ¿Necesitas ayuda?{" "}
           <a
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary hover:underline"
           >
-            Escribenos por WhatsApp
+            Escríbenos por WhatsApp
           </a>
         </p>
       )}

@@ -22,11 +22,11 @@ export default function RecoverPasswordPage() {
     <Card>
       <CardContent className="pt-6">
         <h2 className="mb-2 font-heading text-xl font-semibold">
-          Recuperar contrasena
+          Recuperar contraseña
         </h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          Ingresa tu email y te enviaremos un enlace para restablecer tu
-          contrasena.
+          Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu
+          contraseña.
         </p>
 
         {csrfError && (
@@ -37,8 +37,8 @@ export default function RecoverPasswordPage() {
 
         {state.success ? (
           <div className="rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
-            Si existe una cuenta con ese email, recibiras un enlace para
-            restablecer tu contrasena. Revisa tu bandeja de entrada.
+            Si existe una cuenta con ese correo, recibirás un enlace para
+            restablecer tu contraseña. Revisa tu bandeja de entrada.
           </div>
         ) : (
           <form action={formAction} className="space-y-4">
@@ -50,7 +50,7 @@ export default function RecoverPasswordPage() {
             <input type="hidden" name="csrfToken" value={csrfToken} />
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Correo electrónico</Label>
               <Input
                 id="email"
                 name="email"
@@ -76,7 +76,7 @@ export default function RecoverPasswordPage() {
           href="/login"
           className="text-sm text-muted-foreground hover:text-primary"
         >
-          Volver al inicio de sesion
+          Volver al inicio de sesión
         </Link>
       </CardFooter>
     </Card>

@@ -54,6 +54,7 @@ function LoginForm() {
   return (
     <Card>
       <CardContent className="pt-6">
+        {message === "account-deletion-requested" && <p role="status" className="mb-4 rounded-md bg-primary/10 p-3 text-sm">Cuenta desactivada. La eliminación fue solicitada y cerraremos el proceso de forma segura.</p>}
         {message === "password-updated" && (
           <div className="mb-4 rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
             Contraseña actualizada. Inicia sesión con tu nueva contraseña.
@@ -110,13 +111,13 @@ function LoginForm() {
                 fill="#EA4335"
               />
             </svg>
-            Iniciar sesion con Google
+            Iniciar sesión con Google
           </Button>
         </form>
 
         <div className="my-6 flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-xs text-muted-foreground">o con email</span>
+          <span className="text-xs text-muted-foreground">o con correo electrónico</span>
           <Separator className="flex-1" />
         </div>
 
@@ -142,7 +143,7 @@ function LoginForm() {
           <input type="hidden" name="csrfToken" value={csrfToken} />
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
               name="email"
@@ -155,12 +156,12 @@ function LoginForm() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Contrasena</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Link
                 href="/recuperar-password"
                 className="text-xs text-muted-foreground hover:text-primary"
               >
-                Olvidaste tu contrasena?
+                Olvidaste tu contraseña?
               </Link>
             </div>
             <Input
@@ -177,7 +178,7 @@ function LoginForm() {
             className="w-full"
             disabled={isPending || isCsrfLoading || !csrfToken}
           >
-            {isPending ? "Ingresando..." : "Iniciar sesion"}
+            {isPending ? "Ingresando..." : "Iniciar sesión"}
           </Button>
         </form>
       </CardContent>

@@ -32,16 +32,6 @@ function getRelatedCourseSlug(
   return value.slug
 }
 
-async function assertMutationSucceeded<T extends { error: Error | null }>(
-  operation: PromiseLike<T>
-) {
-  const { error } = await operation
-
-  if (error) {
-    throw error
-  }
-}
-
 export async function resolveEnrolledLessonAccess({
   supabase,
   userId,
@@ -90,18 +80,28 @@ export async function persistLessonVideoPosition(input: {
   lessonId: string
   position: number
 }) {
+  if (!Number.isFinite(input.position) || input.position < 0 || input.position > 2147483647) {
+    throw new Error("Invalid video position")
+  }
   const adminClient = createServiceRoleClient()
 
-  await assertMutationSucceeded(
-    adminClient.from("lesson_progress").upsert(
-      {
-        user_id: input.userId,
-        lesson_id: input.lessonId,
-        video_position: Math.floor(input.position),
-      },
-      { onConflict: "user_id,lesson_id" }
-    )
-  )
+  const { error } = await adminClient.rpc("record_student_lesson_progress", {
+    p_user_id: input.userId, p_lesson_id: input.lessonId,
+    p_video_position: Math.floor(input.position),
+  })
+  if (error) throw error
+}
+
+export async function persistLessonCompletion(input: {
+  userId: string
+  lessonId: string
+  completed: boolean
+}) {
+  const adminClient = createServiceRoleClient()
+  const { error } = await adminClient.rpc("record_student_lesson_progress", {
+    p_user_id: input.userId, p_lesson_id: input.lessonId, p_completed: input.completed,
+  })
+  if (error) throw error
 }
 
 export async function persistCourseLastAccess(input: {
@@ -126,27 +126,7 @@ export async function persistExitVideoProgress(input: {
   lessonId: string
   position: number
 }) {
-  const adminClient = createServiceRoleClient()
-  const videoPosition = Math.floor(input.position)
-
-  await assertMutationSucceeded(
-    adminClient.from("lesson_progress").upsert(
-      {
-        user_id: input.userId,
-        lesson_id: input.lessonId,
-        video_position: videoPosition,
-      },
-      { onConflict: "user_id,lesson_id" }
-    )
-  )
-
-  await syncCourseProgressSnapshot({
-    supabase: adminClient,
-    userId: input.userId,
-    courseId: input.courseId,
-    lastLessonId: input.lessonId,
-    touchLastAccess: true,
-  })
+  await persistLessonVideoPosition(input)
 }
 
 export function revalidateVideoProgressPaths(courseSlug: string | null) {

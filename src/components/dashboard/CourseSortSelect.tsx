@@ -11,10 +11,10 @@ import {
 } from "@/components/ui/select"
 
 const SORT_OPTIONS = [
-  { value: "lastAccessed", label: "Ultimo acceso" },
+  { value: "lastAccessed", label: "Último acceso" },
   { value: "progressDesc", label: "Mayor progreso" },
   { value: "progressAsc", label: "Menor progreso" },
-  { value: "enrolledAt", label: "Fecha de inscripcion" },
+  { value: "enrolledAt", label: "Fecha de inscripción" },
 ] as const
 
 type SortValue = (typeof SORT_OPTIONS)[number]["value"]
@@ -37,6 +37,7 @@ export function CourseSortSelect({ currentSort }: CourseSortSelectProps) {
     if (!isValidSort(value)) return
 
     const params = new URLSearchParams(searchParams.toString())
+    params.delete("page")
 
     if (value === "lastAccessed") {
       params.delete("sort")
@@ -52,7 +53,7 @@ export function CourseSortSelect({ currentSort }: CourseSortSelectProps) {
     <div className="flex items-center gap-2">
       <span className="text-sm text-muted-foreground whitespace-nowrap">Ordenar por:</span>
       <Select value={activeSort} onValueChange={handleSortChange}>
-        <SelectTrigger size="sm" className="w-[180px]">
+        <SelectTrigger size="sm" className="min-h-11 w-[180px]" aria-label="Ordenar cursos por">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

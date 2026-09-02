@@ -35,6 +35,15 @@ export function mapWompiStatus(wompiStatus: string): WebhookOrderStatus | null {
   return WOMPI_STATUS_MAP[normalizedStatus]
 }
 
+export function mapBoldStatus(status: string): WebhookOrderStatus | null {
+  const map: Record<string, WebhookOrderStatus> = {
+    SALE_APPROVED: "approved", APPROVED: "approved", SALE_REJECTED: "declined",
+    REJECTED: "declined", FAILED: "declined", PROCESSING: "pending", PENDING: "pending",
+    VOID_APPROVED: "voided", VOIDED: "voided",
+  }
+  return map[status] ?? null
+}
+
 export function isValidTransition(
   current: OrderStatus,
   next: WebhookOrderStatus
@@ -43,9 +52,10 @@ export function isValidTransition(
     pending: ["pending", "approved", "declined", "voided"],
     // Self-transitions allowed for idempotent webhook retries.
     // H-10: approved can transition to refunded or chargeback per CA-022.6.
-    approved: ["approved", "refunded", "chargeback"],
-    declined: ["declined"],
-    voided: ["voided"],
+    approved: ["approved", "voided", "refunded", "chargeback"],
+    // A rejected attempt may later be followed by authoritative approval.
+    declined: ["declined", "approved"],
+    voided: [],
     // Terminal states — no transitions out
     refunded: [],
     chargeback: [],

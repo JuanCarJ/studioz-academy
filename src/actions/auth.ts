@@ -23,6 +23,8 @@ import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
 import { isValidCsrfToken } from "@/lib/security/csrf"
 import { clearSupabaseAuthTokenCookies } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
+import { env } from "@/lib/env"
+import { enforcePublicRateLimit, enforceRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit"
 
 export interface AuthActionState {
   error?: string
@@ -62,6 +64,10 @@ export async function register(
   const fullNameError = validateFullName(fullName)
   if (fullNameError) {
     return { error: fullNameError }
+  }
+
+  if (!(await enforcePublicRateLimit("auth:register", email, 5, 900)).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
   }
 
   await clearSupabaseAuthTokenCookies()
@@ -129,6 +135,10 @@ export async function login(
     return { error: "Correo y contraseña son obligatorios." }
   }
 
+  if (!(await enforcePublicRateLimit("auth:login", email, 10, 900)).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
+  }
+
   await clearSupabaseAuthTokenCookies()
   const supabase = await createServerClient()
 
@@ -147,6 +157,12 @@ export async function login(
 
   if (user) {
     const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+
+    if (accountStatus.state === "suspended") {
+      await supabase.auth.signOut()
+      await clearSupabaseAuthTokenCookies()
+      redirect("/login?error=account-suspended")
+    }
 
     if (accountStatus.state === "deleted") {
       await supabase.auth.signOut()
@@ -193,9 +209,13 @@ export async function loginWithGoogle(formData: FormData) {
     redirect("/login?error=csrf")
   }
 
+  if (!(await enforcePublicRateLimit("auth:oauth", "", 5, 900)).allowed) {
+    redirect("/login?error=rate-limit")
+  }
+
   const supabase = await createServerClient()
   const nextPath = buildOAuthNextPath(formData)
-  const redirectUrl = new URL("/auth/callback", process.env.NEXT_PUBLIC_APP_URL)
+  const redirectUrl = new URL("/auth/callback", env.APP_URL())
   redirectUrl.searchParams.set("next", nextPath)
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -235,14 +255,18 @@ export async function resetPassword(
 
   const supabase = await createServerClient()
 
-  const email = formData.get("email") as string
+  const email = normalizeEmail((formData.get("email") as string) ?? "")
 
   if (!email) {
     return { error: "El correo es obligatorio." }
   }
 
+  if (!(await enforcePublicRateLimit("auth:reset", email, 3, 900)).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
+  }
+
   await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/recuperar-password/confirmar`,
+    redirectTo: `${env.APP_URL()}/recuperar-password/confirmar`,
   })
 
   // Always return success to avoid leaking user existence
@@ -272,6 +296,12 @@ export async function updatePassword(
 
   if (password.length < 8) {
     return { error: "La contraseña debe tener al menos 8 caracteres." }
+  }
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "La sesión venció. Solicita un nuevo enlace de recuperación." }
+  if (!(await enforceRateLimit({ scope: "auth:password", key: user.id, limit: 5, windowSeconds: 900 })).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
   }
 
   const { error } = await supabase.auth.updateUser({ password })

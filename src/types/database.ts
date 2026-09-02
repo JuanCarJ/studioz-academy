@@ -14,6 +14,18 @@ export type Database = {
   }
   public: {
     Tables: {
+      bunny_cleanup_queue: {
+        Row: { library_id: string; video_id: string; status: "deferred"; requested_at: string }
+        Insert: { library_id: string; video_id: string; status?: "deferred"; requested_at?: string }
+        Update: { library_id?: string; video_id?: string; status?: "deferred"; requested_at?: string }
+        Relationships: []
+      }
+      user_support_notes: {
+        Row: { id: string; user_id: string; admin_user_id: string; note: string; created_at: string }
+        Insert: { id?: string; user_id: string; admin_user_id: string; note: string; created_at?: string }
+        Update: { note?: string }
+        Relationships: []
+      }
       admin_audit_logs: {
         Row: {
           action: string
@@ -99,6 +111,10 @@ export type Database = {
       }
       contact_messages: {
         Row: {
+          status: string
+          assigned_to: string | null
+          notes: string
+          updated_at: string
           created_at: string
           email: string
           id: string
@@ -108,6 +124,10 @@ export type Database = {
           subject: string | null
         }
         Insert: {
+          status?: string
+          assigned_to?: string | null
+          notes?: string
+          updated_at?: string
           created_at?: string
           email: string
           id?: string
@@ -117,6 +137,10 @@ export type Database = {
           subject?: string | null
         }
         Update: {
+          status?: string
+          assigned_to?: string | null
+          notes?: string
+          updated_at?: string
           created_at?: string
           email?: string
           id?: string
@@ -220,6 +244,7 @@ export type Database = {
       }
       courses: {
         Row: {
+          archived_at: string | null
           category: string
           course_discount_enabled: boolean
           course_discount_type: string | null
@@ -253,6 +278,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           category: string
           course_discount_enabled?: boolean
           course_discount_type?: string | null
@@ -286,6 +312,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           category?: string
           course_discount_enabled?: boolean
           course_discount_type?: string | null
@@ -758,6 +785,10 @@ export type Database = {
       }
       order_email_outbox: {
         Row: {
+          lease_token: string | null
+          leased_until: string | null
+          delivery_version: number
+          delivery_started_at: string | null
           attempts: number
           created_at: string
           email_type: string
@@ -770,6 +801,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          lease_token?: string | null
+          leased_until?: string | null
+          delivery_version?: number
+          delivery_started_at?: string | null
           attempts?: number
           created_at?: string
           email_type?: string
@@ -782,6 +817,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          lease_token?: string | null
+          leased_until?: string | null
+          delivery_version?: number
+          delivery_started_at?: string | null
           attempts?: number
           created_at?: string
           email_type?: string
@@ -862,6 +901,11 @@ export type Database = {
       }
       orders: {
         Row: {
+          payment_provider: "bold" | "wompi" | "internal"
+          payment_environment: "sandbox" | "production" | "legacy"
+          provider_transaction_id: string | null
+          provider_status: string | null
+          payment_checked_at: string | null
           anonymized_at: string | null
           approved_at: string | null
           cart_hash: string | null
@@ -891,6 +935,11 @@ export type Database = {
           wompi_transaction_id: string | null
         }
         Insert: {
+          payment_provider?: "bold" | "wompi" | "internal"
+          payment_environment?: "sandbox" | "production" | "legacy"
+          provider_transaction_id?: string | null
+          provider_status?: string | null
+          payment_checked_at?: string | null
           anonymized_at?: string | null
           approved_at?: string | null
           cart_hash?: string | null
@@ -920,6 +969,11 @@ export type Database = {
           wompi_transaction_id?: string | null
         }
         Update: {
+          payment_provider?: "bold" | "wompi" | "internal"
+          payment_environment?: "sandbox" | "production" | "legacy"
+          provider_transaction_id?: string | null
+          provider_status?: string | null
+          payment_checked_at?: string | null
           anonymized_at?: string | null
           approved_at?: string | null
           cart_hash?: string | null
@@ -967,6 +1021,9 @@ export type Database = {
       }
       payment_events: {
         Row: {
+          payment_provider: string
+          provider_event_id: string | null
+          provider_transaction_id: string | null
           external_status: string
           id: string
           is_applied: boolean
@@ -980,6 +1037,9 @@ export type Database = {
           wompi_transaction_id: string | null
         }
         Insert: {
+          payment_provider?: string
+          provider_event_id?: string | null
+          provider_transaction_id?: string | null
           external_status: string
           id?: string
           is_applied?: boolean
@@ -993,6 +1053,9 @@ export type Database = {
           wompi_transaction_id?: string | null
         }
         Update: {
+          payment_provider?: string
+          provider_event_id?: string | null
+          provider_transaction_id?: string | null
           external_status?: string
           id?: string
           is_applied?: boolean
@@ -1091,6 +1154,11 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auth_cleanup_completed_at: string | null
+          auth_cleanup_started_at: string | null
+          auth_cleanup_attempts: number
+          auth_cleanup_error: string | null
+          suspended_at: string | null
           avatar_url: string | null
           created_at: string
           deleted_at: string | null
@@ -1103,6 +1171,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auth_cleanup_completed_at?: string | null
+          auth_cleanup_started_at?: string | null
+          auth_cleanup_attempts?: number
+          auth_cleanup_error?: string | null
+          suspended_at?: string | null
           avatar_url?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1115,6 +1188,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auth_cleanup_completed_at?: string | null
+          auth_cleanup_started_at?: string | null
+          auth_cleanup_attempts?: number
+          auth_cleanup_error?: string | null
+          suspended_at?: string | null
           avatar_url?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1205,6 +1283,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_queue_health: { Args: Record<string, never>; Returns: Json }
+      record_student_lesson_progress: { Args: { p_user_id: string; p_lesson_id: string; p_video_position?: number | null; p_completed?: boolean | null }; Returns: Json }
+      admin_reviews_page: { Args: { p_search?: string; p_course?: string; p_visibility?: string; p_rating?: number | null; p_page?: number }; Returns: Json }
+      admin_audit_page: { Args: { p_action?: string; p_admin_search?: string; p_entity_type?: string; p_result?: string; p_from?: string | null; p_to?: string | null; p_page?: number }; Returns: Json }
+      moderate_review_audited: { Args: { p_admin_id: string; p_review_id: string; p_operation: string }; Returns: Json }
+      search_public_courses: { Args: { p_category?: string; p_search?: string; p_instructor?: string | null; p_sort?: string; p_page?: number; p_page_size?: number }; Returns: Json }
+      public_catalog_instructors: { Args: Record<string, never>; Returns: Json }
+      admin_student_progress: { Args: { p_user_id: string; p_course_ids: string[] }; Returns: Json }
+      consume_rate_limit: {
+        Args: { p_key: string; p_limit: number; p_window_seconds: number }
+        Returns: { allowed: boolean; retry_after_seconds: number }[]
+      }
+      can_review_course: { Args: { p_course_id: string }; Returns: boolean }
+      get_student_courses: {
+        Args: { p_filter?: string; p_sort?: string; p_page?: number; p_page_size?: number }
+        Returns: Json
+      }
+      reset_course_progress: { Args: { p_course_id: string }; Returns: undefined }
+      sync_student_course_progress: {
+        Args: { p_user_id: string; p_course_id: string; p_last_lesson_id?: string | null; p_set_last_lesson?: boolean; p_touch_last_access?: boolean; p_last_accessed_at?: string | null }
+        Returns: Json
+      }
+      admin_operate: { Args: { p_admin_id: string; p_action: string; p_target_id: string; p_input?: Json }; Returns: Json }
+      admin_sales_summary: { Args: { p_from?: string | null; p_to?: string | null }; Returns: Json }
+      admin_courses_page: { Args: { p_search?: string; p_state?: string; p_page?: number }; Returns: Json }
       anonymize_user_data: {
         Args: { target_user_id: string }
         Returns: undefined

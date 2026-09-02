@@ -1,4 +1,5 @@
 "use server"
+import type { TablesUpdate } from "@/types/database"
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
@@ -10,6 +11,8 @@ import {
   createBunnyTusUploadSession,
   createBunnyVideo,
   deleteBunnyVideo,
+  isManagedBunnyVideoId,
+  updateBunnyMediaSnapshot,
 } from "@/lib/bunny"
 import { env } from "@/lib/env"
 import { decorateCourseWithPricing, type PriceableCourse } from "@/lib/pricing"
@@ -592,7 +595,7 @@ export async function updateCourse(
     shouldAssignFeaturedPosition &&
     current.home_featured_position === homeFeaturedPosition
 
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"courses"> = {
     title: title.trim(),
     description,
     short_description: shortDescription,
@@ -752,14 +755,14 @@ export async function commitCoursePreviewUpload(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  if (!videoId?.trim()) {
+  if (!isManagedBunnyVideoId(videoId)) {
     return { error: "Vista previa invalida." }
   }
 
   const supabase = createServiceRoleClient()
   const { data: course } = await supabase
     .from("courses")
-    .select("id, slug, preview_video_url, preview_bunny_video_id, preview_status")
+    .select("id, slug, preview_video_url, preview_bunny_video_id, preview_status, pending_preview_bunny_video_id, preview_last_state_changed_at")
     .eq("id", courseId)
     .single()
 
@@ -794,13 +797,16 @@ export async function commitCoursePreviewUpload(
         preview_last_state_changed_at: now,
       }
 
-  const { error } = await supabase
-    .from("courses")
-    .update(updateData)
-    .eq("id", courseId)
+  const { applied } = await updateBunnyMediaSnapshot(supabase, "courses", courseId, {
+    preview_video_url: course.preview_video_url,
+    preview_bunny_video_id: course.preview_bunny_video_id,
+    preview_status: course.preview_status,
+    pending_preview_bunny_video_id: course.pending_preview_bunny_video_id,
+    preview_last_state_changed_at: course.preview_last_state_changed_at,
+  }, updateData)
 
-  if (error) {
-    return { error: "No se pudo guardar la vista previa del curso." }
+  if (!applied) {
+    return { error: "La vista previa cambio. Actualiza la pagina e intenta de nuevo." }
   }
 
   revalidatePath(`/admin/cursos/${courseId}/editar`)
@@ -816,12 +822,13 @@ export async function discardCoursePreviewUpload(
 ): Promise<CoursePreviewActionState> {
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
+  if (!isManagedBunnyVideoId(videoId)) return { error: "Vista previa invalida." }
 
   const supabase = createServiceRoleClient()
   const { data: course } = await supabase
     .from("courses")
     .select(
-      "slug, preview_video_url, preview_bunny_video_id, pending_preview_bunny_video_id"
+      "slug, preview_video_url, preview_bunny_video_id, pending_preview_bunny_video_id, preview_status, preview_last_state_changed_at"
     )
     .eq("id", courseId)
     .single()
@@ -830,7 +837,7 @@ export async function discardCoursePreviewUpload(
     return { error: "Curso no encontrado." }
   }
 
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"courses"> = {
     preview_upload_error: "No se pudo completar la subida del archivo.",
     preview_last_checked_at: null,
     preview_last_state_changed_at: new Date().toISOString(),
@@ -840,13 +847,23 @@ export async function discardCoursePreviewUpload(
     updateData.pending_preview_bunny_video_id = null
     updateData.pending_preview_bunny_library_id = null
     updateData.pending_preview_status = "none"
-  } else if (course.preview_bunny_video_id === videoId) {
+  } else if (course.preview_bunny_video_id === videoId && course.preview_status !== "ready") {
     updateData.preview_bunny_video_id = null
     updateData.preview_bunny_library_id = null
     updateData.preview_status = course.preview_video_url ? "legacy" : "none"
+  } else {
+    // A delayed cancellation must not detach an already-promoted active video.
+    return { error: "La vista previa ya cambio. Actualiza la pagina." }
   }
 
-  await supabase.from("courses").update(updateData).eq("id", courseId)
+  const { applied } = await updateBunnyMediaSnapshot(supabase, "courses", courseId, {
+    preview_video_url: course.preview_video_url,
+    preview_bunny_video_id: course.preview_bunny_video_id,
+    pending_preview_bunny_video_id: course.pending_preview_bunny_video_id,
+    preview_status: course.preview_status,
+    preview_last_state_changed_at: course.preview_last_state_changed_at,
+  }, updateData)
+  if (!applied) return { error: "La vista previa cambio. Actualiza la pagina." }
   await deleteBunnyVideo(videoId).catch(() => undefined)
 
   revalidatePath(`/admin/cursos/${courseId}/editar`)
@@ -870,99 +887,10 @@ export async function getCourseEnrollmentCount(
   return count ?? 0
 }
 
-/**
- * US-033: Delete a course with full cascade.
- *
- * Unlike the previous implementation this no longer blocks when enrollments
- * exist. The admin UI shows a warning with the student count and requests
- * explicit confirmation before calling this action.
- *
- * Cascade order (manual where DB cascades are not configured):
- *   1. Fetch lesson IDs + Bunny video IDs + course preview assets
- *   2. Delete lesson_progress for all lessons
- *   3. Delete course_progress for the course
- *   4. Delete lessons
- *   5. Delete cart_items referencing this course
- *   6. Delete enrollments
- *   7. Delete the course row (preserves orders/order_items — historical data)
- *   8. Delete Bunny videos (best-effort, non-blocking)
- *   9. Revalidate + redirect
- */
-export async function deleteCourse(
-  courseId: string
-): Promise<{ error?: string }> {
-  const admin = await verifyAdmin()
-  if (!admin) return { error: "No autorizado." }
-
-  const adminSupabase = createServiceRoleClient()
-
-  // Step 1: Fetch lessons for this course (need IDs + Bunny video IDs)
-  const [{ data: lessons }, { data: course }] = await Promise.all([
-    adminSupabase
-      .from("lessons")
-      .select("id, bunny_video_id, pending_bunny_video_id")
-      .eq("course_id", courseId),
-    adminSupabase
-      .from("courses")
-      .select("preview_bunny_video_id, pending_preview_bunny_video_id")
-      .eq("id", courseId)
-      .single(),
-  ])
-
-  const lessonIds = (lessons ?? []).map((l: { id: string }) => l.id)
-  const lessonVideoIds = (lessons ?? [])
-    .flatMap(
-      (l: { bunny_video_id: string | null; pending_bunny_video_id: string | null }) =>
-        [l.bunny_video_id, l.pending_bunny_video_id].filter(Boolean)
-    )
-    .filter(Boolean) as string[]
-  const previewVideoIds = [
-    course?.preview_bunny_video_id ?? null,
-    course?.pending_preview_bunny_video_id ?? null,
-  ].filter(Boolean) as string[]
-  const bunnyVideoIds = [...new Set([...lessonVideoIds, ...previewVideoIds])]
-
-  // Step 2: Delete lesson_progress for all lessons in this course
-  if (lessonIds.length > 0) {
-    await adminSupabase
-      .from("lesson_progress")
-      .delete()
-      .in("lesson_id", lessonIds)
-  }
-
-  // Step 3: Delete course_progress for the course
-  await adminSupabase
-    .from("course_progress")
-    .delete()
-    .eq("course_id", courseId)
-
-  // Step 4: Delete lessons
-  if (lessonIds.length > 0) {
-    await adminSupabase.from("lessons").delete().eq("course_id", courseId)
-  }
-
-  // Step 5: Delete cart_items referencing this course
-  await adminSupabase.from("cart_items").delete().eq("course_id", courseId)
-
-  // Step 6: Delete enrollments
-  await adminSupabase.from("enrollments").delete().eq("course_id", courseId)
-
-  // Step 7: Delete the course row
-  const { error: deleteCourseError } = await adminSupabase
-    .from("courses")
-    .delete()
-    .eq("id", courseId)
-
-  if (deleteCourseError) {
-    return { error: "No se pudo eliminar el curso. Intenta de nuevo." }
-  }
-
-  // Step 8: Delete Bunny videos (best-effort — do not block the action)
-  await Promise.allSettled(bunnyVideoIds.map((vid) => deleteBunnyVideo(vid)))
-
-  revalidatePath("/admin/cursos")
-  revalidatePath("/cursos")
-  redirect("/admin/cursos")
+/** Hard deletion is deliberately retired: purchases and progress are historical records. */
+export async function deleteCourse(_courseId: string): Promise<{ error?: string }> {
+  void _courseId
+  return { error: "La eliminación definitiva no está disponible. Archiva el curso para conservar las compras y el progreso." }
 }
 
 export type AdminCourseRow = Omit<Course, "instructor"> & {
@@ -970,22 +898,14 @@ export type AdminCourseRow = Omit<Course, "instructor"> & {
   enrollment_count: number
 }
 
-export async function getAdminCourses(): Promise<AdminCourseRow[]> {
-  const supabase = await createServerClient()
-
-  const { data, error } = await supabase
-    .from("courses")
-    .select("*, instructors(id, full_name), enrollments(id)")
-    .order("home_featured_position", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false })
-
-  if (error) return []
-
-  return (data ?? []).map((c) => ({
-    ...decorateCourseWithPricing(c as unknown as PriceableCourse),
-    instructor: Array.isArray(c.instructors) ? c.instructors[0] : c.instructors,
-    enrollment_count: Array.isArray(c.enrollments) ? c.enrollments.length : 0,
-  })) as AdminCourseRow[]
+export async function getAdminCourses(filters: { search?: string; state?: string; page?: number } = {}): Promise<{ courses: AdminCourseRow[]; totalCount: number; page: number; error?: string }> {
+  const page = Math.max(1, Math.min(10000, Math.floor(filters.page || 1)))
+  const admin = await verifyAdmin()
+  if (!admin) return { courses: [], totalCount: 0, page, error: "No autorizado." }
+  const { data, error } = await createServiceRoleClient().rpc("admin_courses_page", { p_search: filters.search?.trim() || "", p_state: filters.state || "", p_page: page })
+  if (error) return { courses: [], totalCount: 0, page, error: "No pudimos cargar los cursos. Inténtalo de nuevo." }
+  const result = data as unknown as { courses: AdminCourseRow[]; totalCount: number }
+  return { courses: result.courses.map(c => ({ ...c, ...decorateCourseWithPricing(c as unknown as PriceableCourse) })) as AdminCourseRow[], totalCount: result.totalCount, page }
 }
 
 export async function getHomeFeaturedAssignments(): Promise<

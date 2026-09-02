@@ -48,6 +48,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      <Button asChild variant="outline"><Link href="/admin/usuarios/eliminaciones">Eliminaciones pendientes</Link></Button>
       <UsersFilters search={search} />
 
       {result.users.length === 0 ? (

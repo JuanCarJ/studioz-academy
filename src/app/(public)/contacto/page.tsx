@@ -4,6 +4,7 @@ import { Instagram, MapPin, MessageCircle } from "lucide-react"
 import { buildMapsUrl, buildWhatsAppUrl, studioZLines } from "@/content/studio-z"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { ContactForm } from "@/components/public/ContactForm"
 
 export const metadata: Metadata = {
   title: "Contacto — Studio Z Academy",
@@ -27,11 +28,11 @@ export default function ContactoPage() {
           id="contacto-heading"
           className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl"
         >
-          Datos de contacto de Studio Z.
+          Hablemos de tu próxima clase o tatuaje.
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">
-          Aqui encuentras los accesos directos a WhatsApp, Instagram y Google
-          Maps de Studio Z. Esperamos tu mensaje.
+          Escríbenos para conocer las clases, reservar una cita o recibir ayuda
+          con tus cursos.
         </p>
       </section>
 
@@ -114,6 +115,7 @@ export default function ContactoPage() {
           ))}
         </div>
       </section>
+      <ContactForm />
     </main>
   )
 }

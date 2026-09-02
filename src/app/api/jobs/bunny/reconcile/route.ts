@@ -1,18 +1,13 @@
-import { NextRequest, NextResponse } from "next/server"
+import { runCronJob } from "@/lib/cron"
 
 import {
   reconcilePendingBunnyAssets,
   revalidateTouchedCoursePaths,
 } from "@/lib/bunny"
 
-export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get("authorization")
-  const cronSecret = process.env.CRON_SECRET
-
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
+export const maxDuration = 60
+export async function GET(request: Request) {
+  return runCronJob(request, "bunny-reconcile", async () => {
   const result = await reconcilePendingBunnyAssets({
     source: "cron",
     force: true,
@@ -29,9 +24,12 @@ export async function POST(request: NextRequest) {
     touchedCourseIds: result.touchedCourses.map((course) => course.id),
   })
 
-  return NextResponse.json({
+  return {
     ok: true,
     ...result,
     timestamp: new Date().toISOString(),
+  }
   })
 }
+
+export const POST = GET

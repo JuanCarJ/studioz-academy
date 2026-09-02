@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
+import { assertStagingQaAuthority } from "./staging-guard.mjs"
+assertStagingQaAuthority()
 
 function requiredEnv(name) {
   const value = process.env[name]

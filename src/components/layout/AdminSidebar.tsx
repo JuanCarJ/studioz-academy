@@ -12,6 +12,8 @@ import {
   CalendarDays,
   Image,
   ClipboardList,
+  MessagesSquare,
+  Video,
   ExternalLink,
   LogOut,
   Menu,
@@ -33,13 +35,15 @@ const adminLinks = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/cursos", label: "Cursos", icon: GraduationCap },
   { href: "/admin/ventas", label: "Ventas", icon: DollarSign },
+  { href: "/admin/contactos", label: "Mensajes", icon: MessagesSquare },
+  { href: "/admin/videos", label: "Videos", icon: Video },
   { href: "/admin/usuarios", label: "Usuarios", icon: Users },
   { href: "/admin/instructores", label: "Instructores", icon: UserCog },
   { href: "/admin/resenas", label: "Reseñas", icon: Star },
   { href: "/admin/eventos", label: "Eventos", icon: CalendarDays },
   { href: "/admin/galeria", label: "Galeria", icon: Image },
   { href: "/admin/combos", label: "Combos", icon: ClipboardList },
-  { href: "/admin/auditoria", label: "Auditoria", icon: ClipboardList },
+  { href: "/admin/auditoria", label: "Auditoría", icon: ClipboardList },
 ]
 
 interface AdminUserInfo {
@@ -58,7 +62,7 @@ function SidebarContent({ userInfo }: SidebarContentProps) {
     <div className="flex h-full flex-col">
       <div className="p-4">
         <h2 className="font-heading text-lg font-bold">Studio Z</h2>
-        <p className="text-xs text-muted-foreground">Panel de administracion</p>
+        <p className="text-xs text-muted-foreground">Panel de administración</p>
       </div>
 
       <Separator />
@@ -127,7 +131,7 @@ function SidebarContent({ userInfo }: SidebarContentProps) {
         >
           <>
             <LogOut className="h-4 w-4" />
-            Cerrar sesion
+            Cerrar sesión
           </>
         </LogoutForm>
       </div>

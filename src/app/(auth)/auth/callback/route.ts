@@ -3,21 +3,18 @@ import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 
 import { resolveAccountStatusByUserId } from "@/lib/auth/account"
-import { resolveAuthIntent, stripAuthIntentParams } from "@/lib/auth-intent"
+import { getSafeRedirectPath, resolveAuthIntent, stripAuthIntentParams } from "@/lib/auth-intent"
 import { resolvePostAuthIntentRedirect } from "@/lib/auth-intent-server"
 import { isSupabaseAuthTokenCookieName } from "@/lib/supabase/cookies"
 import { createServerClient } from "@/lib/supabase/server"
+import { env } from "@/lib/env"
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = new URL(env.APP_URL()).origin
   const code = searchParams.get("code")
   const providedNext = searchParams.get("next")
-  let next = providedNext ?? "/dashboard"
-
-  // Prevent open redirect: only allow relative paths, block protocol-relative URLs
-  if (!next.startsWith("/") || next.startsWith("//")) {
-    next = "/dashboard"
-  }
+  let next = getSafeRedirectPath(providedNext) ?? "/dashboard"
 
   // No code provided — redirect to login with error
   if (!code) {
@@ -46,6 +43,15 @@ export async function GET(request: Request) {
 
   if (user) {
     const accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
+
+    if (accountStatus.state === "suspended") {
+      await supabase.auth.signOut()
+      const response = NextResponse.redirect(`${origin}/login?error=account-suspended`)
+      for (const cookie of cookieStore.getAll()) {
+        if (isSupabaseAuthTokenCookieName(cookie.name)) response.cookies.delete(cookie.name)
+      }
+      return response
+    }
 
     if (accountStatus.state === "deleted") {
       await supabase.auth.signOut()
@@ -93,14 +99,6 @@ export async function GET(request: Request) {
 
   revalidatePath("/", "layout")
 
-  const forwardedHost = request.headers.get("x-forwarded-host")
-  const isLocalEnv = process.env.NODE_ENV === "development"
-
-  if (isLocalEnv) {
-    return NextResponse.redirect(`${origin}${next}`)
-  } else if (forwardedHost) {
-    return NextResponse.redirect(`https://${forwardedHost}${next}`)
-  } else {
-    return NextResponse.redirect(`${origin}${next}`)
-  }
+  // Redirect only to the configured application, never a client-supplied host.
+  return NextResponse.redirect(new URL(getSafeRedirectPath(next) ?? "/dashboard", origin))
 }

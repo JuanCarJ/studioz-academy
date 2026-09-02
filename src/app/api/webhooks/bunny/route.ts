@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import {
+  isManagedBunnyVideoId,
   reconcileBunnyVideoWebhook,
   revalidateTouchedCoursePaths,
 } from "@/lib/bunny"
@@ -36,9 +37,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  const videoId = typeof body.VideoGuid === "string" ? body.VideoGuid.trim() : ""
-  if (!videoId) {
-    return NextResponse.json({ error: "Missing VideoGuid" }, { status: 400 })
+  const videoId = body && typeof body.VideoGuid === "string" ? body.VideoGuid.trim() : ""
+  if (!isManagedBunnyVideoId(videoId)) {
+    return NextResponse.json({ error: "Invalid VideoGuid" }, { status: 400 })
   }
 
   const result = await reconcileBunnyVideoWebhook(videoId)

@@ -1,279 +1,40 @@
-import { createHash } from "crypto"
-import { NextRequest, NextResponse } from "next/server"
-
-import { createServiceRoleClient } from "@/lib/supabase/admin"
+import { createHash } from "node:crypto"
 import { env } from "@/lib/env"
-import { applyApprovedOrderEffects } from "@/lib/order-approval"
-import { verifyWebhookSignature, type WompiWebhookEvent } from "@/lib/wompi"
-import { mapWompiStatus, isValidTransition } from "@/lib/payments"
-import { enqueuePurchaseConfirmation } from "@/actions/email"
-
+import { verifyWebhookSignature, queryWompiTransactionById, type WompiWebhookEvent } from "@/lib/wompi"
+import { createServiceRoleClient } from "@/lib/supabase/admin"
+import { paymentRpc } from "@/lib/payment-rpc"
+import { readPaymentWebhookBody } from "@/lib/payment-webhook-body"
 import type { Json } from "@/types/database"
 
-export async function POST(request: NextRequest) {
-  // 1. Parse body
+export async function POST(request: Request) {
+  // Drain historical Wompi orders only when explicitly enabled. Never create one.
+  if (!env.WOMPI_LEGACY_SETTLEMENT_ENABLED()) return Response.json({ error: "Legacy settlement disabled" }, { status: 503 })
+  const raw = await readPaymentWebhookBody(request)
+  if (raw === null) return Response.json({ error: "Payload too large" }, { status: 413 })
   let body: WompiWebhookEvent
+  try { body = JSON.parse(raw) } catch { return Response.json({ error: "Invalid JSON" }, { status: 400 }) }
+  let verified = false
+  try { verified = verifyWebhookSignature(body, env.WOMPI_EVENTS_SECRET()) } catch { /* malformed */ }
+  if (!verified) return Response.json({ error: "Invalid signature" }, { status: 401 })
+  const tx = body.data?.transaction
+  if (!tx || typeof tx.reference !== "string" || typeof tx.id !== "string" ||
+    !Number.isSafeInteger(tx.amount_in_cents) || tx.amount_in_cents < 0 || tx.currency !== "COP") {
+    return Response.json({ error: "Invalid transaction" }, { status: 400 })
+  }
+  // Wompi's signed properties need not include reference/currency. Resolve the
+  // signed transaction ID authoritatively before trusting either field.
+  const canonical = await queryWompiTransactionById(tx.id)
+  if (!canonical) return Response.json({ error: "Cannot verify legacy transaction" }, { status: 503 })
+  if (canonical.transactionId !== tx.id || canonical.reference !== tx.reference ||
+      canonical.amountInCents !== tx.amount_in_cents || canonical.currency !== tx.currency) {
+    return Response.json({ error: "Transaction identity mismatch" }, { status: 400 })
+  }
   try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
-  }
-
-  // 2. Validate payload is an object
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
-  }
-
-  // 3. Verify signature (guards inside verifyWebhookSignature handle malformed structure)
-  const eventsSecret = env.WOMPI_EVENTS_SECRET()
-  let signatureValid: boolean
-  try {
-    signatureValid = verifyWebhookSignature(body, eventsSecret)
-  } catch {
-    return NextResponse.json({ error: "Malformed payload" }, { status: 400 })
-  }
-
-  if (!signatureValid) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
-  }
-
-  // 4. Extract transaction data
-  const transaction = body.data?.transaction
-  if (!transaction) {
-    return NextResponse.json({ error: "No transaction data" }, { status: 400 })
-  }
-
-  const {
-    reference,
-    status: wompiStatus,
-    id: transactionId,
-    payment_method_type,
-    amount_in_cents,
-    currency,
-  } = transaction
-
-  // 5. Map Wompi status to internal status
-  const mappedStatus = mapWompiStatus(String(wompiStatus))
-
-  const supabase = createServiceRoleClient()
-
-  // H-10: If status is unknown, persist event for traceability before returning
-  if (!mappedStatus) {
-    const rawBody = JSON.stringify(body)
-    const payloadHash = createHash("sha256").update(rawBody).digest("hex")
-    const payloadJson = JSON.parse(rawBody) as Json
-
-    const { data: existingDup, error: duplicateCheckError } = await supabase
-      .from("payment_events")
-      .select("id")
-      .eq("payload_hash", payloadHash)
-      .maybeSingle()
-
-    if (duplicateCheckError) {
-      return NextResponse.json(
-        { error: "Failed to check duplicate payment event" },
-        { status: 500 }
-      )
-    }
-
-    if (!existingDup) {
-      const { data: relatedOrder, error: relatedOrderError } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("reference", reference)
-        .maybeSingle()
-
-      if (relatedOrderError) {
-        return NextResponse.json(
-          { error: "Failed to resolve related order" },
-          { status: 500 }
-        )
-      }
-
-      if (relatedOrder) {
-        const { error: unknownEventError } = await supabase.from("payment_events").insert({
-          order_id: relatedOrder.id,
-          source: "webhook",
-          payload_hash: payloadHash,
-          payload_json: payloadJson,
-          external_status: String(wompiStatus),
-          mapped_status: "unknown",
-          wompi_transaction_id: transactionId,
-          is_applied: false,
-          reason: `Unknown Wompi status: ${wompiStatus}`,
-        })
-
-        if (unknownEventError) {
-          return NextResponse.json(
-            { error: "Failed to persist unknown payment event" },
-            { status: 500 }
-          )
-        }
-      }
-    }
-
-    return NextResponse.json({ received: true, note: "Unknown status persisted" })
-  }
-
-  // 6. Idempotency: hash payload and check for duplicates
-  const rawBody = JSON.stringify(body)
-  const payloadHash = createHash("sha256").update(rawBody).digest("hex")
-
-  const { data: existingEvent } = await supabase
-    .from("payment_events")
-    .select("id")
-    .eq("payload_hash", payloadHash)
-    .maybeSingle()
-
-  if (existingEvent) {
-    return NextResponse.json({ received: true, duplicate: true })
-  }
-
-  const payloadJson = JSON.parse(rawBody) as Json
-
-  // 7. Find order by reference
-  const { data: order, error: orderError } = await supabase
-    .from("orders")
-    .select("id, status, user_id, total, currency")
-    .eq("reference", reference)
-    .maybeSingle()
-
-  if (orderError || !order) {
-    return NextResponse.json(
-      { error: "Order not found", reference },
-      { status: 400 }
-    )
-  }
-
-  const amountMatches =
-    typeof amount_in_cents === "number" && amount_in_cents === order.total
-  const currencyMatches =
-    typeof currency === "string" &&
-    currency.toUpperCase() === String(order.currency).toUpperCase()
-
-  if (!amountMatches || !currencyMatches) {
-    const { error: paymentEventError } = await supabase.from("payment_events").insert({
-      order_id: order.id,
-      source: "webhook",
-      payload_hash: payloadHash,
-      payload_json: payloadJson,
-      external_status: String(wompiStatus),
-      mapped_status: mappedStatus,
-      wompi_transaction_id: transactionId,
-      is_applied: false,
-      reason: `Order mismatch: expected ${order.total} ${order.currency}, received ${String(amount_in_cents)} ${String(currency)}`,
-    })
-
-    if (paymentEventError) {
-      return NextResponse.json(
-        { error: "Failed to persist mismatched payment event" },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ received: true, applied: false, reason: "order_mismatch" })
-  }
-
-  // 8. Validate state transition
-  const transitionValid = isValidTransition(
-    order.status as Parameters<typeof isValidTransition>[0],
-    mappedStatus
-  )
-
-  // 9. If transition is not valid, persist event and skip processing
-  if (!transitionValid) {
-    const { error: paymentEventError } = await supabase.from("payment_events").insert({
-      order_id: order.id,
-      source: "webhook",
-      payload_hash: payloadHash,
-      payload_json: payloadJson,
-      external_status: wompiStatus,
-      mapped_status: mappedStatus,
-      wompi_transaction_id: transactionId,
-      is_applied: false,
-      reason: `Invalid transition: ${order.status} -> ${mappedStatus}`,
-    })
-
-    if (paymentEventError) {
-      return NextResponse.json(
-        { error: "Failed to persist payment event" },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ received: true, applied: false })
-  }
-
-  // 10. If approved: create enrollments + clear cart (idempotent and retry-safe)
-  if (mappedStatus === "approved" && order.user_id) {
-    try {
-      await applyApprovedOrderEffects({
-        supabase,
-        orderId: order.id,
-        userId: order.user_id,
-      })
-    } catch {
-      return NextResponse.json(
-        { error: "Failed to apply approved order side effects" },
-        { status: 500 }
-      )
-    }
-  }
-
-  // 11. Update order status
-  const now = new Date().toISOString()
-  const updateData: Record<string, unknown> = {
-    status: mappedStatus,
-    wompi_transaction_id: transactionId,
-    payment_method: payment_method_type ?? null,
-    updated_at: now,
-  }
-
-  if (mappedStatus === "approved" && order.status !== "approved") {
-    updateData.approved_at = now
-  }
-
-  const { error: updateOrderError } = await supabase
-    .from("orders")
-    .update(updateData)
-    .eq("id", order.id)
-
-  if (updateOrderError) {
-    return NextResponse.json(
-      { error: "Failed to update order" },
-      { status: 500 }
-    )
-  }
-
-  // 12. Persist payment event after successful state application
-  const { error: paymentEventError } = await supabase.from("payment_events").insert({
-    order_id: order.id,
-    source: "webhook",
-    payload_hash: payloadHash,
-    payload_json: payloadJson,
-    external_status: wompiStatus,
-    mapped_status: mappedStatus,
-    wompi_transaction_id: transactionId,
-    is_applied: true,
-    reason: null,
-  })
-
-  if (paymentEventError) {
-    return NextResponse.json(
-      { error: "Failed to persist payment event" },
-      { status: 500 }
-    )
-  }
-
-  // 13. Enqueue purchase confirmation email (non-blocking, idempotent)
-  // Must be the last operation before returning so it never blocks the 200 response.
-  if (mappedStatus === "approved") {
-    try {
-      await enqueuePurchaseConfirmation(order.id)
-    } catch {
-      // Email enqueue failure must NOT block the 200 response
-    }
-  }
-
-  return NextResponse.json({ received: true, applied: true })
+    await paymentRpc(createServiceRoleClient(), "receive_payment_notification", { p_event: {
+      provider: "wompi", environment: "legacy", eventId: createHash("sha256").update(raw).digest("hex"),
+      reference: canonical.reference, transactionId: canonical.transactionId, status: canonical.status, amountInCents: canonical.amountInCents,
+      currency: canonical.currency, paymentMethod: canonical.paymentMethodType, source: "webhook",
+    } as Json })
+    return Response.json({ received: true })
+  } catch { return Response.json({ error: "Receipt failed" }, { status: 503 }) }
 }

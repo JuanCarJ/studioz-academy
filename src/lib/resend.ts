@@ -1,39 +1,18 @@
-import { Resend } from "resend"
-
+import "server-only"
+import { render } from "@react-email/components"
 import { env } from "@/lib/env"
 
-let resendClient: Resend | null = null
-
-function getResendClient(): Resend {
-  if (!resendClient) {
-    resendClient = new Resend(env.RESEND_API_KEY())
-  }
-  return resendClient
-}
-
-/**
- * Send an email using Resend.
- * Returns the email ID on success, null on failure (logs the error).
- */
 export async function sendEmail(params: {
-  to: string
-  subject: string
-  react: React.ReactElement
-  from?: string
+  to: string; subject: string; react: React.ReactElement; from?: string; idempotencyKey: string
 }): Promise<{ id: string } | null> {
-  const resend = getResendClient()
-
-  const { data, error } = await resend.emails.send({
-    from: params.from ?? "Studio Z Academy <no-reply@studiozacademy.com>",
-    to: params.to,
-    subject: params.subject,
-    react: params.react,
+  const html = await render(params.react)
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY()}`, "Content-Type": "application/json", "Idempotency-Key": params.idempotencyKey },
+    body: JSON.stringify({ from: params.from ?? "Studio Z Academy <no-reply@studiozacademy.com>", to: params.to, subject: params.subject, html }),
+    signal: AbortSignal.timeout(8_000),
   })
-
-  if (error) {
-    console.error("[resend] Failed to send email:", error)
-    return null
-  }
-
-  return data
+  if (!response.ok) return null
+  const body = await response.json()
+  return typeof body?.id === "string" ? { id: body.id } : null
 }

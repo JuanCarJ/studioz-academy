@@ -23,9 +23,7 @@ export function formatCOP(amountInCents: number): string {
  * Generate a unique payment reference.
  */
 export function generateReference(prefix = "SZ"): string {
-  const timestamp = Date.now().toString(36)
-  const random = Math.random().toString(36).substring(2, 8)
-  return `${prefix}-${timestamp}-${random}`.toUpperCase()
+  return `${prefix}-${crypto.randomUUID()}`.toUpperCase()
 }
 
 /**

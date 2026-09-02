@@ -16,11 +16,11 @@ function formatRelativeDate(isoString: string): string {
   const date = new Date(isoString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
 
   if (diffDays === 0) return "Hoy"
   if (diffDays === 1) return "Ayer"
-  if (diffDays < 7) return `Hace ${diffDays} dias`
+  if (diffDays < 7) return `Hace ${diffDays} días`
   if (diffDays < 30) {
     const weeks = Math.floor(diffDays / 7)
     return `Hace ${weeks} ${weeks === 1 ? "semana" : "semanas"}`
@@ -61,14 +61,14 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
     isCompleted,
     hasResumeState: Boolean(lastLessonId) || hasVideoProgress,
   })
-  const courseUrl = `/dashboard/cursos/${course.slug}`
+  const courseUrl = `/dashboard/cursos/${course.slug}${lastLessonId ? `?lesson=${encodeURIComponent(lastLessonId)}` : ""}`
   const hasBeenAccessed = lastAccessedAt !== enrolledAt
 
   const categoryLabel = course.category === "baile" ? "Baile" : "Tatuaje"
   const CategoryIcon = course.category === "baile" ? BookOpen : Palette
 
   return (
-    <Link href={courseUrl} prefetch={false} className="block">
+    <Link href={courseUrl} prefetch={false} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring" aria-label={`${buttonLabel}: ${course.title}`}>
     <Card
       className="overflow-hidden py-0 gap-0 transition-shadow hover:shadow-md"
       data-testid={`enrolled-course-card-${course.slug}`}
@@ -78,7 +78,7 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
         {course.thumbnail_url ? (
           <Image
             src={course.thumbnail_url}
-            alt={course.title}
+            alt=""
             fill
             className="object-cover"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -119,10 +119,10 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
         </div>
 
         {/* Free badge overlay */}
-        {course.is_free && (
+        {item.source === "free" && (
           <div className="absolute right-2 top-2">
             <Badge className="bg-emerald-600 text-white border-transparent text-xs">
-              Gratis
+              Acceso gratuito
             </Badge>
           </div>
         )}
@@ -147,10 +147,15 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
             <div
               className={cn(
-                "h-full rounded-full transition-all",
+                "h-full rounded-full transition-[width]",
                 isCompleted ? "bg-emerald-500" : "bg-primary"
               )}
               style={{ width: `${percentage}%` }}
+              role="progressbar"
+              aria-label={`Progreso de ${course.title}`}
+              aria-valuenow={percentage}
+              aria-valuemin={0}
+              aria-valuemax={100}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -174,6 +179,16 @@ export function EnrolledCourseCard({ item }: EnrolledCourseCardProps) {
         {isCompleted && (
           <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 w-fit text-xs">
             Completado
+          </Badge>
+        )}
+        {progress.lastLessonTitle && (
+          <p className="text-xs text-muted-foreground">
+            Última lección: <span className="text-foreground">{progress.lastLessonTitle}</span>
+          </p>
+        )}
+        {progress.newLessons > 0 && (
+          <Badge variant="secondary" className="w-fit">
+            {progress.newLessons === 1 ? "1 lección nueva" : `${progress.newLessons} lecciones nuevas`}
           </Badge>
         )}
       </CardContent>

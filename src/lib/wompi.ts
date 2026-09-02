@@ -73,6 +73,8 @@ export function verifyWebhookSignature(
     !event?.signature?.checksum ||
     typeof event.signature.checksum !== "string" ||
     !Array.isArray(event.signature?.properties) ||
+    !event.signature.properties.every((property) => typeof property === "string") ||
+    !["transaction.id", "transaction.status", "transaction.amount_in_cents"].every((property) => event.signature.properties.includes(property)) ||
     !event?.data ||
     event.timestamp == null
   ) {
@@ -101,53 +103,6 @@ export function verifyWebhookSignature(
     result |= expected.charCodeAt(i) ^ received.charCodeAt(i)
   }
   return result === 0
-}
-
-/**
- * Create a Wompi Web Checkout URL for an order.
- *
- * Integrity signature = SHA256(reference + amountInCents + currency + integrityKey)
- * URL: https://checkout.wompi.co/p/?public-key=...&currency=COP&amount-in-cents=...&reference=...&redirect-url=...&signature:integrity=...
- */
-export function createCheckoutUrl(params: {
-  reference: string
-  amountInCents: number
-  currency?: string
-  redirectUrl: string
-  customerEmail?: string | null
-  customerFullName?: string | null
-  customerPhoneNumber?: string | null
-  customerPhoneNumberPrefix?: string | null
-}): string {
-  const currency = params.currency ?? "COP"
-  const integrityString = `${params.reference}${params.amountInCents}${currency}${env.WOMPI_INTEGRITY_KEY()}`
-  const signature = createHash("sha256").update(integrityString).digest("hex")
-
-  const url = new URL(env.WOMPI_CHECKOUT_URL())
-  url.searchParams.set("public-key", env.WOMPI_PUBLIC_KEY())
-  url.searchParams.set("currency", currency)
-  url.searchParams.set("amount-in-cents", String(params.amountInCents))
-  url.searchParams.set("reference", params.reference)
-  url.searchParams.set("redirect-url", params.redirectUrl)
-  url.searchParams.set("signature:integrity", signature)
-
-  if (params.customerEmail) {
-    url.searchParams.set("customer-data:email", params.customerEmail)
-  }
-
-  if (params.customerFullName) {
-    url.searchParams.set("customer-data:full-name", params.customerFullName)
-  }
-
-  if (params.customerPhoneNumber && params.customerPhoneNumberPrefix) {
-    url.searchParams.set("customer-data:phone-number", params.customerPhoneNumber)
-    url.searchParams.set(
-      "customer-data:phone-number-prefix",
-      params.customerPhoneNumberPrefix
-    )
-  }
-
-  return url.toString()
 }
 
 function parseTransaction(

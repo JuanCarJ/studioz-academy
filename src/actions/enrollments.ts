@@ -40,32 +40,36 @@ function getEnrollFreeErrorMessage(code?: EnrollFreeCourseErrorCode): string {
     case "COURSE_NOT_FOUND":
       return "Curso no encontrado."
     case "COURSE_UNAVAILABLE":
-      return "Este curso no esta disponible."
+      return "Este curso no está disponible."
     case "COURSE_NOT_FREE":
       return "Este curso no es gratuito."
     case "ENROLL_FAILED":
     default:
-      return "No se pudo completar la inscripcion."
+      return "No se pudo completar la inscripción. Inténtalo de nuevo."
   }
 }
 
-export async function getEnrollments(): Promise<
+export async function getEnrollments(input: { page?: number; pageSize?: number } = {}): Promise<
   (Enrollment & { course: Course })[]
 > {
   const user = await getCurrentUser()
   if (!user) return []
 
   const supabase = await createServerClient()
+  const page = Number.isFinite(input.page) ? Math.max(1, Math.min(10000, Math.floor(input.page!))) : 1
+  const pageSize = Number.isFinite(input.pageSize) ? Math.max(1, Math.min(48, Math.floor(input.pageSize!))) : 12
 
   const { data, error } = await supabase
     .from("enrollments")
     .select("*, courses(*)")
     .eq("user_id", user.id)
     .order("enrolled_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range((page - 1) * pageSize, page * pageSize - 1)
 
   if (error || !data) return []
 
-  return data.map((e) => ({
+  return data.filter((e) => e.courses).map((e) => ({
     ...e,
     course: decorateCourseWithPricing(
       (Array.isArray(e.courses) ? e.courses[0] : e.courses) as Course

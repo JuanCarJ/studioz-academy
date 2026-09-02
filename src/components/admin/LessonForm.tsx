@@ -80,7 +80,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           const file = fileRef.current?.files?.[0]
           if (!file) {
             if (createResult.lessonId) {
-              await markLessonUploadFailed(createResult.lessonId)
+              await markLessonUploadFailed(createResult.lessonId, createResult.videoId!)
             }
             setErrorMsg("Debes seleccionar un archivo de video para la leccion.")
             setPhase("error")
@@ -90,7 +90,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
           const uploadError = getBunnyUploadError(file)
           if (uploadError) {
             if (createResult.lessonId) {
-              await markLessonUploadFailed(createResult.lessonId)
+              await markLessonUploadFailed(createResult.lessonId, createResult.videoId!)
             }
             setErrorMsg(uploadError)
             setPhase("error")
@@ -105,7 +105,7 @@ export function LessonForm({ courseId, lesson, onSuccess }: LessonFormProps) {
             })
           } catch {
             if (createResult.lessonId) {
-              await markLessonUploadFailed(createResult.lessonId)
+              await markLessonUploadFailed(createResult.lessonId, createResult.videoId!)
             }
             setErrorMsg(
               "La leccion fue creada pero el video no pudo ser cargado. Intenta subir el video de nuevo."

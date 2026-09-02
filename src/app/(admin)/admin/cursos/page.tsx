@@ -1,4 +1,6 @@
 import { Suspense } from "react"
+import { AdminPagination } from "@/components/admin/AdminPagination"
+import { Input } from "@/components/ui/input"
 import Link from "next/link"
 
 import { getAdminCourses } from "@/actions/admin/courses"
@@ -18,19 +20,20 @@ import {
 
 export const metadata = { title: "Cursos — Admin | Studio Z" }
 
-async function CoursesTable() {
-  const courses = await getAdminCourses()
+async function CoursesTable({ filters }: { filters: { search?: string; state?: string; page?: number } }) {
+  const { courses, totalCount, page, error } = await getAdminCourses(filters)
+  if (error) return <p role="alert">{error}</p>
 
   return (
-    <Table>
+    <><Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Titulo</TableHead>
-          <TableHead>Categoria</TableHead>
+          <TableHead>Título</TableHead>
+          <TableHead>Categoría</TableHead>
           <TableHead>Instructor</TableHead>
           <TableHead>Precio</TableHead>
           <TableHead>Estado</TableHead>
-          <TableHead>Home</TableHead>
+          <TableHead>Portada</TableHead>
           <TableHead>Inscritos</TableHead>
           <TableHead className="text-right">Acciones</TableHead>
         </TableRow>
@@ -61,15 +64,15 @@ async function CoursesTable() {
             </TableCell>
             <TableCell>
               <Badge variant={course.is_published ? "default" : "secondary"}>
-                {course.is_published ? "Publicado" : "Borrador"}
+                {course.archived_at ? "Archivado" : course.is_published ? "Publicado" : "Borrador"}
               </Badge>
             </TableCell>
             <TableCell>
               {course.home_featured_position ? (
                 <Badge variant="outline">
                   {course.home_featured_position === 1
-                    ? "Hero"
-                    : `Pos ${course.home_featured_position}`}
+                    ? "Principal"
+                    : `Posición ${course.home_featured_position}`}
                 </Badge>
               ) : (
                 <span className="text-sm text-muted-foreground">No</span>
@@ -87,22 +90,24 @@ async function CoursesTable() {
                   courseId={course.id}
                   courseTitle={course.title}
                   enrollmentCount={course.enrollment_count}
+                  archived={Boolean(course.archived_at)}
                 />
               </div>
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </Table><AdminPagination page={page} totalCount={totalCount} pageSize={25} /></>
   )
 }
 
-export default function AdminCoursesPage() {
+export default async function AdminCoursesPage({ searchParams }: { searchParams: Promise<{ search?: string; state?: string; page?: string }> }) {
+  const params = await searchParams
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Gestion de cursos</h1>
+          <h1 className="text-3xl font-bold">Gestión de cursos</h1>
           <p className="mt-2 text-muted-foreground">
             Listado de todos los cursos.
           </p>
@@ -112,8 +117,9 @@ export default function AdminCoursesPage() {
         </Button>
       </div>
 
+      <form className="flex flex-wrap items-end gap-3"><div><label htmlFor="course-search">Buscar curso</label><Input id="course-search" name="search" defaultValue={params.search} maxLength={100} /></div><div><label className="block" htmlFor="course-state">Estado</label><select id="course-state" name="state" defaultValue={params.state} className="h-11 rounded-md border bg-background px-3"><option value="">Todos</option><option value="published">Publicados</option><option value="draft">Borradores</option><option value="archived">Archivados</option></select></div><Button className="min-h-11">Filtrar</Button></form>
       <Suspense fallback={<AdminTableSkeleton />}>
-        <CoursesTable />
+        <CoursesTable filters={{ search: params.search, state: params.state, page: Number(params.page) }} />
       </Suspense>
     </section>
   )

@@ -396,9 +396,7 @@ test.describe.serial("commercial guardrails", () => {
         approved_at: new Date().toISOString(),
       }
       const { error: legacyOrderError } = await e2eSupabase.from("orders").insert(
-        hasSnapshotColumn
-          ? { ...legacyOrderPayload, discount_rule_name_snapshot: null }
-          : legacyOrderPayload
+        { ...legacyOrderPayload, ...(hasSnapshotColumn ? { discount_rule_name_snapshot: null } : {}) }
       )
 
       if (legacyOrderError) {

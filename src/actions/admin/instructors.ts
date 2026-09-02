@@ -1,4 +1,5 @@
 "use server"
+import type { TablesUpdate } from "@/types/database"
 
 import { revalidatePath } from "next/cache"
 
@@ -376,7 +377,7 @@ export async function updateInstructor(
     }
   }
 
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"instructors"> = {
     full_name: fullName.trim(),
     bio,
     specialties: specialtyNames,

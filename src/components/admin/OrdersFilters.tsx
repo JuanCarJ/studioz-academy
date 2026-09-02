@@ -24,7 +24,7 @@ const STATUS_OPTIONS = [
 ]
 
 const PAYMENT_METHOD_OPTIONS = [
-  { value: "all", label: "Todos los metodos" },
+  { value: "all", label: "Todos los métodos" },
   { value: "CARD", label: "Tarjeta" },
   { value: "NEQUI", label: "Nequi" },
   { value: "PSE", label: "PSE" },
@@ -173,7 +173,7 @@ export function OrdersFilters({
       >
         <Input
           name="search"
-          placeholder="Referencia, nombre, email o ID Wompi..."
+          placeholder="Referencia, nombre, correo o transacción…"
           defaultValue={search}
           className="w-full"
         />

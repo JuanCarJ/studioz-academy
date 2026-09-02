@@ -45,7 +45,7 @@ export default function PrivacyPolicyPage() {
               contenido, seguimiento de progreso).
             </li>
             <li>
-              Procesamiento de pagos a traves de Wompi (pasarela de pagos
+              Procesamiento de pagos a traves de Bold (pasarela de pagos
               autorizada en Colombia).
             </li>
             <li>
@@ -155,7 +155,7 @@ export default function PrivacyPolicyPage() {
             proteger los datos personales contra acceso no autorizado,
             perdida, alteracion o destruccion. Los datos se almacenan en
             servidores de Supabase con cifrado en transito y en reposo. Los
-            pagos son procesados exclusivamente por Wompi; Studio Z no
+            pagos son procesados exclusivamente por Bold; Studio Z no
             almacena datos de tarjetas de credito ni debito.
           </p>
         </div>
@@ -170,7 +170,7 @@ export default function PrivacyPolicyPage() {
           </p>
           <ul className="mt-2 list-inside list-disc space-y-1">
             <li>
-              <strong>Wompi:</strong> para procesamiento de pagos.
+              <strong>Bold:</strong> para procesamiento de pagos.
             </li>
             <li>
               <strong>Supabase:</strong> para almacenamiento de datos.

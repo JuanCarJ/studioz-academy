@@ -1,4 +1,5 @@
 "use server"
+import type { TablesUpdate } from "@/types/database"
 
 import { revalidatePath } from "next/cache"
 
@@ -9,6 +10,8 @@ import {
   createBunnyTusUploadSession,
   createBunnyVideo,
   deleteBunnyVideo,
+  isManagedBunnyVideoId,
+  updateBunnyMediaSnapshot,
 } from "@/lib/bunny"
 import { syncCourseProgressForEnrolledUsers } from "@/lib/course-progress"
 import { env } from "@/lib/env"
@@ -181,7 +184,7 @@ export async function updateLesson(
 
   if (!lesson) return { error: "Leccion no encontrada." }
 
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"lessons"> = {
     title,
     description,
     is_free: isFree,
@@ -245,7 +248,7 @@ export async function prepareLessonVideoReplacement(
 
 /**
  * Step 2 of video replacement:
- * After successful upload, persist the new video ID in DB and delete old video.
+ * After upload, persist the candidate; reconciliation promotes it when ready.
  */
 export async function commitLessonVideoReplacement(
   lessonId: string,
@@ -254,14 +257,14 @@ export async function commitLessonVideoReplacement(
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
 
-  if (!newVideoId?.trim()) {
+  if (!isManagedBunnyVideoId(newVideoId)) {
     return { error: "Video invalido para reemplazo." }
   }
 
   const adminSupabase = createServiceRoleClient()
   const { data: lesson } = await adminSupabase
     .from("lessons")
-    .select("course_id, bunny_video_id, bunny_status")
+    .select("course_id, bunny_video_id, bunny_status, pending_bunny_video_id, bunny_last_state_changed_at")
     .eq("id", lessonId)
     .single()
 
@@ -292,13 +295,15 @@ export async function commitLessonVideoReplacement(
           video_upload_error: null,
         }
 
-  const { error } = await adminSupabase
-    .from("lessons")
-    .update(updateData)
-    .eq("id", lessonId)
+  const { applied } = await updateBunnyMediaSnapshot(adminSupabase, "lessons", lessonId, {
+    bunny_video_id: lesson.bunny_video_id,
+    bunny_status: lesson.bunny_status,
+    pending_bunny_video_id: lesson.pending_bunny_video_id,
+    bunny_last_state_changed_at: lesson.bunny_last_state_changed_at,
+  }, updateData)
 
-  if (error) {
-    return { error: "No se pudo confirmar el reemplazo de video." }
+  if (!applied) {
+    return { error: "El video cambio mientras se guardaba. Actualiza la pagina e intenta de nuevo." }
   }
 
   revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
@@ -308,29 +313,36 @@ export async function commitLessonVideoReplacement(
 }
 
 export async function markLessonUploadFailed(
-  lessonId: string
+  lessonId: string,
+  videoId: string
 ): Promise<LessonActionState> {
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
+  if (!isManagedBunnyVideoId(videoId)) return { error: "Video invalido." }
 
   const adminSupabase = createServiceRoleClient()
   const { data: lesson } = await adminSupabase
     .from("lessons")
-    .select("course_id")
+    .select("course_id, bunny_video_id, bunny_status, pending_bunny_video_id")
     .eq("id", lessonId)
     .single()
 
   if (!lesson) return { error: "Leccion no encontrada." }
 
-  await adminSupabase
-    .from("lessons")
-    .update({
+  if (lesson.bunny_video_id !== videoId || lesson.bunny_status !== "processing") {
+    return { error: "El video ya cambio. Actualiza la pagina." }
+  }
+  const { applied } = await updateBunnyMediaSnapshot(adminSupabase, "lessons", lessonId, {
+    bunny_video_id: videoId,
+    bunny_status: "processing",
+    pending_bunny_video_id: lesson.pending_bunny_video_id,
+  }, {
       bunny_status: "error",
       bunny_last_checked_at: null,
       bunny_last_state_changed_at: new Date().toISOString(),
       video_upload_error: "No se pudo completar la subida del archivo.",
     })
-    .eq("id", lessonId)
+  if (!applied) return { error: "No se pudo actualizar el estado de la subida." }
 
   revalidatePath(`/admin/cursos/${lesson.course_id}/editar`)
   revalidatePath(`/cursos`)

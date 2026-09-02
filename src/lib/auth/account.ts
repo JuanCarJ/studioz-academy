@@ -4,7 +4,7 @@ import type { Database } from "@/types/database"
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"]
 
-export type AccountState = "active" | "deleted" | "missing_profile"
+export type AccountState = "active" | "deleted" | "suspended" | "missing_profile"
 
 export interface AccountStatus {
   state: AccountState
@@ -50,7 +50,7 @@ export async function resolveAccountStatusByUserId(
 ): Promise<AccountStatus> {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, deleted_at")
+    .select("role, deleted_at, suspended_at")
     .eq("id", userId)
     .maybeSingle()
 
@@ -62,5 +62,6 @@ export async function resolveAccountStatusByUserId(
     return { state: "deleted", role: profile.role }
   }
 
+  if (profile.suspended_at) return { state: "suspended", role: profile.role }
   return { state: "active", role: profile.role }
 }

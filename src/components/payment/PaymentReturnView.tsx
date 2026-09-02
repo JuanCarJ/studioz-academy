@@ -1,19 +1,18 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 
 import { getOrderStatusWithFallback } from "@/actions/payments"
 import type { OrderItem } from "@/actions/payments"
 import { Button } from "@/components/ui/button"
 
-import type { Order } from "@/types"
+import type { PaymentReturnOrder } from "@/types/payment"
 
 interface PaymentReturnViewProps {
   reference: string
   transactionId?: string
-  initialOrder: Order | null
+  initialOrder: PaymentReturnOrder | null
   orderItems?: OrderItem[]
   isFirstPurchase?: boolean
 }
@@ -27,8 +26,7 @@ export function PaymentReturnView({
   orderItems: initialOrderItems,
   isFirstPurchase: initialIsFirst,
 }: PaymentReturnViewProps) {
-  const router = useRouter()
-  const [order, setOrder] = useState<Order | null>(initialOrder)
+  const [order, setOrder] = useState<PaymentReturnOrder | null>(initialOrder)
   const [orderItems, setOrderItems] = useState<OrderItem[]>(
     initialOrderItems ?? []
   )
@@ -36,39 +34,52 @@ export function PaymentReturnView({
     initialIsFirst ?? false
   )
   const [isPending, startTransition] = useTransition()
+  const [refreshFailed, setRefreshFailed] = useState(false)
 
   // Auto-refresh every 5s while pending
   useEffect(() => {
     if (order?.status !== "pending") return
 
-    const interval = setInterval(() => {
-      router.refresh()
-    }, 5000)
+    let active = true
+    let querying = false
+    const interval = setInterval(async () => {
+      if (querying) return
+      querying = true
+      try {
+        const result = await getOrderStatusWithFallback(reference, transactionId)
+        if (!active) return
+        setOrder(result.order)
+        setOrderItems(result.orderItems ?? [])
+        setIsFirstPurchase(result.isFirstPurchase ?? false)
+        setRefreshFailed(false)
+      } catch { if (active) setRefreshFailed(true) }
+      finally { querying = false }
+    }, 10000)
 
-    return () => clearInterval(interval)
-  }, [order?.status, router])
+    return () => { active = false; clearInterval(interval) }
+  }, [order?.status, reference, transactionId])
 
   function handleRefresh() {
     startTransition(async () => {
-      const result = await getOrderStatusWithFallback(reference, transactionId)
-      if (result.order) {
+      try {
+        const result = await getOrderStatusWithFallback(reference, transactionId)
         setOrder(result.order)
-        if (result.orderItems) setOrderItems(result.orderItems)
-        if (result.isFirstPurchase !== undefined)
-          setIsFirstPurchase(result.isFirstPurchase)
-      }
+        setOrderItems(result.orderItems ?? [])
+        setIsFirstPurchase(result.isFirstPurchase ?? false)
+        setRefreshFailed(false)
+      } catch { setRefreshFailed(true) }
     })
   }
 
   if (!order) {
     return (
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Orden no encontrada</h2>
+        <h2 className="text-2xl font-bold">Consulta tu compra</h2>
         <p className="mt-2 text-muted-foreground">
-          No encontramos una orden con la referencia {reference}.
+          Inicia sesión con la cuenta que hizo la compra para consultar su estado.
         </p>
         <Button className="mt-6" asChild>
-          <Link href="/cursos">Explorar cursos</Link>
+          <Link href={`/login?redirect=${encodeURIComponent(`/pago/retorno?reference=${reference}`)}`}>Iniciar sesión</Link>
         </Button>
       </div>
     )
@@ -91,6 +102,7 @@ export function PaymentReturnView({
 
   return (
     <div className="mx-auto max-w-lg text-center">
+      {refreshFailed && <p role="alert" className="mb-4 text-sm text-destructive">No pudimos actualizar el estado. Inténtalo nuevamente; no necesitas repetir el pago.</p>}
       {/* Reference always visible */}
       <p className="mb-6 text-sm text-muted-foreground">
         Referencia: <span className="font-mono font-medium">{reference}</span>
@@ -111,15 +123,15 @@ export function PaymentReturnView({
           {/* H-09: Course list */}
           {orderItems.length > 0 && (
             <ul className="mx-auto mt-4 max-w-sm space-y-2 text-left">
-              {orderItems.map((item) => (
-                <li key={item.courseSlug}>
-                  <Link
+              {orderItems.map((item, index) => (
+                <li key={`${item.courseSlug || item.courseTitle}-${index}`}>
+                  {item.courseSlug ? <Link
                     href={`/dashboard/cursos/${item.courseSlug}`}
                     prefetch={false}
                     className="block rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
                   >
                     {item.courseTitle}
-                  </Link>
+                  </Link> : <span className="block rounded-md border px-4 py-2 text-sm">{item.courseTitle} · Consulta con soporte</span>}
                 </li>
               ))}
             </ul>
@@ -219,8 +231,9 @@ export function PaymentReturnView({
             {order.status === "chargeback" && "Contracargo registrado"}
           </h2>
           <p className="mt-2 text-muted-foreground">
-            Tu transaccion ha sido procesada como {order.status}. Si tienes dudas,
-            contactanos.
+            {order.status === "voided" && "Este pago fue anulado. Puedes revisar tus compras o contactar a soporte."}
+            {order.status === "refunded" && "Se registró la confirmación del reembolso. El plazo para verlo depende de tu entidad financiera."}
+            {order.status === "chargeback" && "Se registró un contracargo para este pago. Contacta a soporte si necesitas aclararlo."}
           </p>
           {whatsappUrl && (
             <a

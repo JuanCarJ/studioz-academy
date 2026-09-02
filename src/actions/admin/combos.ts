@@ -1,10 +1,11 @@
 "use server"
+import type { TablesInsert } from "@/types/database"
 
 import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
-import { recordAdminAuditLog } from "@/actions/admin/audit"
+import { recordAdminAuditLog } from "@/lib/admin-audit"
 import {
   COP_MAX_PESOS,
   getLengthError,
@@ -243,7 +244,7 @@ export async function createCombo(
 
   const { data, error } = await supabase
     .from("discount_rules")
-    .insert(parsed.payload)
+    .insert(parsed.payload as TablesInsert<"discount_rules">)
     .select("*")
     .single()
 

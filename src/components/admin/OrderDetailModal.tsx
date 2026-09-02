@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 
+import { PaymentOperations } from "@/components/admin/PaymentOperations"
 import { getOrderDetail, resendPurchaseEmail } from "@/actions/admin/orders"
 import { formatCOP } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -100,25 +101,21 @@ export function OrderDetailModal({
   const [detail, setDetail] = useState<OrderDetailResult | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [emailMessage, setEmailMessage] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [requestKey, setRequestKey] = useState(`${order.id}:${open}`)
+  const nextRequestKey = `${order.id}:${open}`
+  if (requestKey !== nextRequestKey) {
+    setRequestKey(nextRequestKey)
+    setDetail(null)
+    setLoadError(null)
+    setEmailMessage(null)
+  }
+  const isLoading = open && !detail && !loadError
   const [isPendingEmail, startEmail] = useTransition()
 
   useEffect(() => {
-    if (!open) {
-      setEmailMessage(null)
-      setLoadError(null)
-      return
-    }
-
-    if (detail?.order.id === order.id) {
-      return
-    }
+    if (!open) return
 
     let cancelled = false
-
-    setIsLoading(true)
-    setLoadError(null)
-    setDetail(null)
 
     ;(async () => {
       try {
@@ -136,17 +133,13 @@ export function OrderDetailModal({
         if (!cancelled) {
           setLoadError("No se pudo cargar el detalle de la orden.")
         }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false)
-        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [detail?.order.id, open, order.id])
+  }, [open, order.id])
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
@@ -161,13 +154,13 @@ export function OrderDetailModal({
       try {
         const result = await resendPurchaseEmail(order.id)
         if (result.success) {
-          setEmailMessage("El email fue encolado para reenvio.")
+          setEmailMessage("El correo se enviará en unos minutos.")
         } else {
-          setEmailMessage("Error al reenviar el email.")
+          setEmailMessage("No pudimos preparar el correo. Inténtalo de nuevo.")
         }
       } catch (error) {
         console.error("[OrderDetailModal] resend failed", error)
-        setEmailMessage("Error al reenviar el email.")
+        setEmailMessage("No pudimos preparar el correo. Inténtalo de nuevo.")
       }
     })
   }
@@ -217,6 +210,7 @@ export function OrderDetailModal({
 
         {d && !isLoading && (
           <div className="space-y-5">
+            <PaymentOperations orderId={d.id} status={d.status} onUpdated={() => { void getOrderDetail(order.id).then(setDetail).catch(() => setLoadError("No pudimos actualizar la compra.")) }} />
             {/* Header row */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
@@ -251,7 +245,7 @@ export function OrderDetailModal({
                 {payerEmail && (
                   <p>
                     <span className="text-muted-foreground">
-                      Email pagador Wompi:
+                      Correo del pagador:
                     </span>{" "}
                     {payerEmail}
                   </p>
@@ -375,10 +369,10 @@ export function OrderDetailModal({
 
             {/* Payment info */}
             <div>
-              <h3 className="mb-2 text-sm font-semibold">Informacion de pago</h3>
+              <h3 className="mb-2 text-sm font-semibold">Información de pago</h3>
               <div className="space-y-1 text-sm">
                 <p>
-                  <span className="text-muted-foreground">Metodo:</span>{" "}
+                  <span className="text-muted-foreground">Método:</span>{" "}
                   {formatPaymentMethod(d.payment_method)}
                 </p>
                 {d.payment_detail && (
@@ -387,13 +381,13 @@ export function OrderDetailModal({
                     {d.payment_detail}
                   </p>
                 )}
-                {d.wompi_transaction_id && (
+                {(d.provider_transaction_id || d.wompi_transaction_id) && (
                   <p>
                     <span className="text-muted-foreground">
-                      ID transaccion Wompi:
+                      Transacción {d.payment_provider === "bold" ? "Bold" : "histórica"}:
                     </span>{" "}
                     <span className="font-mono text-xs">
-                      {d.wompi_transaction_id}
+                      {d.provider_transaction_id || d.wompi_transaction_id}
                     </span>
                   </p>
                 )}
@@ -417,11 +411,14 @@ export function OrderDetailModal({
                         <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-muted-foreground" />
                         <div>
                           <p className="font-medium">
-                            {event.source} — {event.mapped_status}
+                            {({webhook:"Notificación del proveedor",reconciliation:"Comprobación automática",manual:"Revisión de soporte",polling:"Consulta de estado"})[event.source] ?? "Comprobación de pago"} — {STATUS_LABELS[event.mapped_status] ?? "En revisión"}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Estado externo: {event.external_status}
-                            {event.reason ? ` — ${event.reason}` : ""}
+                            {event.is_applied ? "Cambio aplicado a la compra" : "Sin cambio en la compra"}
+                            <details className="mt-1"><summary>Referencia de la comprobación</summary>
+                              <p>Estado del proveedor: {event.external_status}</p>
+                              {event.reason && <p>Resultado: {event.reason}</p>}
+                            </details>
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {formatDate(event.processed_at)}
@@ -445,10 +442,10 @@ export function OrderDetailModal({
               <Button
                 variant="outline"
                 size="sm"
-                disabled={isPendingEmail}
+                disabled={isPendingEmail || d.status !== "approved"}
                 onClick={handleResendEmail}
               >
-                {isPendingEmail ? "Reenviando..." : "Reenviar email de compra"}
+                {isPendingEmail ? "Preparando envío…" : "Reenviar confirmación"}
               </Button>
             </div>
           </div>

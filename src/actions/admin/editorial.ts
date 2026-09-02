@@ -2,7 +2,7 @@
 
 import { revalidatePath, unstable_noStore as noStore } from "next/cache"
 
-import { recordAdminAuditLog } from "@/actions/admin/audit"
+import { recordAdminAuditLog } from "@/lib/admin-audit"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { createServerClient } from "@/lib/supabase/server"

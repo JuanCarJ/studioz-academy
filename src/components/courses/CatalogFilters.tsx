@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { catalogHref, normalizeCatalogFilters } from "@/lib/catalog"
 
 const CATEGORIES = [
   { value: "", label: "Todos" },
@@ -35,13 +36,20 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
 
-  const currentCategory = searchParams.get("category") ?? ""
-  const currentSearch = searchParams.get("search") ?? ""
-  const currentSort = searchParams.get("sort") ?? "newest"
-  const currentInstructor = searchParams.get("instructor") ?? ""
+  const current = normalizeCatalogFilters(Object.fromEntries(searchParams))
+  const currentCategory = current.category
+  const currentSearch = current.search
+  const currentSort = current.sort
+  const currentInstructor = current.instructor
 
   const [searchInput, setSearchInput] = useState(currentSearch)
+  const [previousSearch, setPreviousSearch] = useState(currentSearch)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // URL navigation (including Back) owns the committed filter state.
+  if (previousSearch !== currentSearch) {
+    setPreviousSearch(currentSearch)
+    setSearchInput(currentSearch)
+  }
 
   const updateParams = useCallback(
     (updates: Record<string, string>) => {
@@ -56,7 +64,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
       })
 
       startTransition(() => {
-        router.push(`/cursos?${params.toString()}`)
+        router.push(catalogHref(normalizeCatalogFilters(Object.fromEntries(params)), 1))
       })
     },
     [router, searchParams]
@@ -67,7 +75,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     debounceRef.current = setTimeout(() => {
-      if (searchInput !== currentSearch) {
+      if (searchInput.trim().slice(0, 120) !== currentSearch) {
         updateParams({ search: searchInput })
       }
     }, 400)
@@ -89,6 +97,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
             onClick={() => updateParams({ category: cat.value })}
             disabled={isPending}
             className="w-full min-[420px]:w-auto"
+            aria-pressed={currentCategory === cat.value}
           >
             {cat.label}
           </Button>
@@ -100,6 +109,9 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            type="search"
+            aria-label="Buscar cursos o instructores"
+            maxLength={120}
             placeholder="Buscar cursos o instructores..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -115,7 +127,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
               updateParams({ instructor: value === "all" ? "" : value })
             }
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label="Filtrar por instructor">
               <SelectValue placeholder="Instructor" />
             </SelectTrigger>
             <SelectContent>
@@ -133,7 +145,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
           value={currentSort}
           onValueChange={(value) => updateParams({ sort: value })}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="w-full" aria-label="Ordenar cursos">
             <SelectValue placeholder="Ordenar por" />
           </SelectTrigger>
           <SelectContent>
@@ -148,7 +160,7 @@ export function CatalogFilters({ instructors }: CatalogFiltersProps) {
 
       {/* Pending indicator */}
       {isPending && (
-        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+        <div role="status" aria-label="Buscando cursos" className="h-1 w-full overflow-hidden rounded-full bg-muted">
           <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
         </div>
       )}

@@ -98,7 +98,7 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">Correo electrónico</Label>
           <Input
             id="email"
             value={defaultValues.email}
@@ -106,7 +106,7 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
             className="bg-muted"
           />
           <p className="text-xs text-muted-foreground">
-            El email no se puede cambiar.
+            Para cambiar tu correo, contacta a soporte.
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
           />
           <div>
             <Label htmlFor="emailNotifications" className="font-medium">
-              Notificaciones por email
+              Avisos de cursos y nuevas lecciones
             </Label>
             <p className="text-sm text-muted-foreground">
               Recibe actualizaciones sobre tus cursos y novedades.
@@ -182,7 +182,7 @@ export function ProfileForm({ defaultValues }: ProfileFormProps) {
         ) : (
           <div className="mt-4 space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-4">
             <p className="text-sm font-medium">
-              Estas seguro? Esta accion no se puede deshacer.
+              ¿Estás seguro? Esta acción no se puede deshacer.
             </p>
             <div className="flex gap-3">
               <Button

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache"
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { createServerClient } from "@/lib/supabase/server"
+import { decodeAdminPage, normalizeReviewFilters } from "@/lib/admin-review-audit"
+import { UUID_PATTERN } from "@/lib/admin-operations"
 
 import type { Review } from "@/types"
 
@@ -21,78 +22,45 @@ async function verifyAdmin() {
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-export async function listAllReviews(filters?: {
-  courseId?: string
-}): Promise<AdminReview[]> {
+export async function listAllReviews(query: Record<string, string | string[] | undefined> = {}) {
   const admin = await verifyAdmin()
-  if (!admin) return []
-
-  const supabase = await createServerClient()
-
-  let query = supabase
-    .from("reviews")
-    .select(
-      "*, profiles(id, full_name), courses(id, title, slug)"
-    )
-    .order("created_at", { ascending: false })
-
-  if (filters?.courseId) {
-    query = query.eq("course_id", filters.courseId)
-  }
-
-  const { data, error } = await query
-
-  if (error || !data) return []
-
-  return data.map((r) => ({
-    ...r,
-    user: Array.isArray(r.profiles)
-      ? (r.profiles[0] ?? null)
-      : (r.profiles ?? null),
-    course: Array.isArray(r.courses)
-      ? (r.courses[0] ?? null)
-      : (r.courses ?? null),
-  })) as AdminReview[]
+  if (!admin) throw new Error("admin_required")
+  const filters = normalizeReviewFilters(query)
+  const { data, error } = await createServiceRoleClient().rpc("admin_reviews_page", {
+    p_search: filters.search, p_course: filters.course, p_visibility: filters.visibility,
+    p_rating: filters.rating, p_page: filters.page,
+  })
+  if (error) throw new Error("reviews_unavailable")
+  return decodeAdminPage<AdminReview>(data)
 }
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-export async function moderateReview(
-  reviewId: string,
-  isVisible: boolean
-): Promise<{ error?: string; success?: boolean }> {
+async function applyModeration(reviewId: string, operation: "show" | "hide" | "delete") {
   const admin = await verifyAdmin()
   if (!admin) return { error: "No autorizado." }
-
-  const supabase = await createServerClient()
-
-  const { error } = await supabase
-    .from("reviews")
-    .update({ is_visible: isVisible })
-    .eq("id", reviewId)
-
-  if (error) return { error: "No se pudo actualizar la visibilidad." }
-
+  if (!UUID_PATTERN.test(reviewId)) return { error: "Reseña no encontrada." }
+  const { data, error } = await createServiceRoleClient().rpc("moderate_review_audited", {
+    p_admin_id: admin.id, p_review_id: reviewId, p_operation: operation,
+  })
+  if (error) return { error: "No se pudo guardar el cambio. Inténtalo de nuevo." }
   revalidatePath("/admin/resenas")
+  revalidatePath("/admin/auditoria")
+  const result = data as { course_slug?: string } | null
+  if (result?.course_slug) {
+    revalidatePath(`/cursos/${result.course_slug}`)
+    revalidatePath(`/dashboard/cursos/${result.course_slug}`)
+  }
   return { success: true }
+}
+
+export async function moderateReview(reviewId: string, isVisible: boolean) {
+  if (typeof isVisible !== "boolean") return { error: "Elige si la reseña debe mostrarse." }
+  return applyModeration(reviewId, isVisible ? "show" : "hide")
 }
 
 export async function deleteReviewAdmin(
   reviewId: string
 ): Promise<{ error?: string; success?: boolean }> {
-  const admin = await verifyAdmin()
-  if (!admin) return { error: "No autorizado." }
-
-  // Use service role for hard delete to bypass any RLS restrictions
-  const adminClient = createServiceRoleClient()
-
-  const { error } = await adminClient
-    .from("reviews")
-    .delete()
-    .eq("id", reviewId)
-
-  if (error) return { error: "No se pudo eliminar la reseña." }
-
-  revalidatePath("/admin/resenas")
-  return { success: true }
+  return applyModeration(reviewId, "delete")
 }

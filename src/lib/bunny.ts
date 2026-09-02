@@ -5,6 +5,7 @@ import { env } from "@/lib/env"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
 import type { BunnyUploadSession, Course, Lesson } from "@/types"
+import type { Database } from "@/types/database"
 
 const BUNNY_API_BASE_URL = "https://video.bunnycdn.com"
 const BUNNY_TUS_ENDPOINT = `${BUNNY_API_BASE_URL}/tusupload`
@@ -13,6 +14,8 @@ const DEFAULT_BUNNY_CHECK_THROTTLE_MS = 30_000
 export const COURSE_MEDIA_HEALTH_THROTTLE_MS = 5 * 60_000
 const PROCESSING_WARNING_THRESHOLD_MS = 30 * 60_000
 const STALE_CHECK_WARNING_THRESHOLD_MS = 2 * 60_000
+const RECONCILE_BATCH_SIZE = 20
+const RECONCILE_BUDGET_MS = 30_000
 const BUNNY_VIDEO_ID_PATTERN =
   /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 
@@ -129,7 +132,10 @@ export function generateSignedUrl(
     .update(securityKey + videoId + expirationEpoch)
     .digest("hex")
 
-  return `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}?token=${token}&expires=${expirationEpoch}`
+  const host = env.BUNNY_PLAYER_VERSION() === "v2"
+    ? "player.mediadelivery.net"
+    : "iframe.mediadelivery.net"
+  return `https://${host}/embed/${libraryId}/${videoId}?token=${token}&expires=${expirationEpoch}`
 }
 
 /**
@@ -180,18 +186,44 @@ export function createBunnyTusUploadSession(
 }
 
 /**
- * Delete a video from Bunny Stream library.
- * Silently succeeds if the video does not exist (404 is ignored).
+ * Request deferred cleanup, never DELETE inline. A reference recheck alone
+ * cannot make a database update + remote DELETE atomic. Cleanup stays deferred
+ * until a separately authorized worker can prevent reattachment during deletion.
  */
 export async function deleteBunnyVideo(videoId: string): Promise<void> {
-  const res = await fetch(buildBunnyApiUrl(`/videos/${videoId}`), {
-    method: "DELETE",
-    headers: buildBunnyHeaders(),
-  })
+  if (!isManagedBunnyVideoId(videoId)) return
+  const supabase = createServiceRoleClient()
+  const [courses, lessons] = await Promise.all([
+    supabase.from("courses").select("id")
+      .or(`preview_bunny_video_id.eq.${videoId},pending_preview_bunny_video_id.eq.${videoId}`).limit(1),
+    supabase.from("lessons").select("id")
+      .or(`bunny_video_id.eq.${videoId},pending_bunny_video_id.eq.${videoId}`).limit(1),
+  ])
+  if (courses.error || lessons.error) throw new Error("Bunny cleanup reference check failed")
+  if (courses.data?.length || lessons.data?.length) return
+  const { error } = await supabase.from("bunny_cleanup_queue").upsert({
+    library_id: env.BUNNY_LIBRARY_ID(),
+    video_id: videoId,
+    status: "deferred",
+  }, { onConflict: "library_id,video_id", ignoreDuplicates: true })
+  if (error) throw new Error("Bunny cleanup could not be queued")
+}
 
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`Bunny: Failed to delete video ${videoId} (${res.status})`)
+/** Compare-and-swap: zero matching rows means the media changed while in flight. */
+export async function updateBunnyMediaSnapshot(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  table: "courses" | "lessons",
+  id: string,
+  expected: Record<string, string | number | boolean | null>,
+  changes: Record<string, unknown>
+): Promise<{ applied: boolean; error: boolean }> {
+  const patch = changes as Database["public"]["Tables"][typeof table]["Update"]
+  let query = supabase.from(table).update(patch).eq("id", id)
+  for (const [column, value] of Object.entries(expected)) {
+    query = value === null ? query.is(column, null) : query.eq(column, value)
   }
+  const { data, error } = await query.select("id").maybeSingle()
+  return { applied: !error && !!data, error: !!error }
 }
 
 /**
@@ -219,6 +251,7 @@ export async function getVideoStatusOrNull(
   const res = await fetch(buildBunnyApiUrl(`/videos/${videoId}`), {
     method: "GET",
     headers: buildBunnyHeaders(),
+    signal: AbortSignal.timeout(8_000),
   })
 
   if (res.status === 404) {
@@ -256,12 +289,12 @@ export function getLessonStateMessage(
 ): string | null {
   if (state === "ready") return null
   if (state === "processing") {
-    return "Este video todavia se esta procesando en Bunny."
+    return "Estamos preparando este video. Intenta de nuevo en unos minutos."
   }
   if (state === "missing") {
-    return "El video no esta disponible en Bunny en este momento."
+    return "El video no esta disponible en este momento. Intenta de nuevo mas tarde."
   }
-  return fallbackError ?? "Bunny reporto un error al procesar este video."
+  return fallbackError ?? "No pudimos preparar este video. Contacta a soporte si el problema continua."
 }
 
 export function resolveLessonAssetState(
@@ -285,7 +318,7 @@ export function resolveLessonAssetState(
 
   const invalidReadyMessage =
     lesson.bunny_status === "ready" && !hasManagedVideoId
-      ? "Este video no tiene un asset valido en Bunny en este momento."
+      ? "Este video no esta disponible. Contacta a soporte si el problema continua."
       : null
 
   return {
@@ -323,7 +356,7 @@ export function resolveCoursePreview(
     return {
       kind: "error",
       url: null,
-      message: "La vista previa no tiene un asset valido en Bunny en este momento.",
+      message: "La vista previa no esta disponible en este momento.",
       isPlayable: false,
       videoId: course.preview_bunny_video_id,
     }
@@ -345,7 +378,7 @@ export function resolveCoursePreview(
       url: null,
       message:
         course.preview_upload_error ??
-        "La vista previa no esta disponible porque Bunny reporto un error.",
+        "No pudimos preparar la vista previa. Intenta de nuevo mas tarde.",
       isPlayable: false,
       videoId: course.preview_bunny_video_id,
     }
@@ -355,7 +388,7 @@ export function resolveCoursePreview(
     return {
       kind: "processing",
       url: null,
-      message: "La vista previa se esta procesando en Bunny.",
+      message: "Estamos preparando la vista previa. Estara disponible en unos minutos.",
       isPlayable: false,
       videoId: course.preview_bunny_video_id,
     }
@@ -407,7 +440,7 @@ function isMediaCheckStale(
   return elapsedMs == null || elapsedMs >= throttleMs
 }
 
-function isManagedBunnyVideoId(videoId: string | null | undefined): videoId is string {
+export function isManagedBunnyVideoId(videoId: string | null | undefined): videoId is string {
   return typeof videoId === "string" && BUNNY_VIDEO_ID_PATTERN.test(videoId)
 }
 
@@ -459,7 +492,7 @@ function shouldSkipRemoteCheck(input: {
   throttleMs: number
   force: boolean
 }): boolean {
-  if (!input.hasRelevantMedia || input.force) {
+  if (input.force) {
     return false
   }
 
@@ -582,7 +615,7 @@ async function readRemoteBunnyState(videoId: string): Promise<BunnyRemoteState> 
       return {
         state: "missing",
         length: 0,
-        message: "El video ya no existe en Bunny.",
+        message: "El video no esta disponible. Contacta a soporte si el problema continua.",
         requestFailed: false,
       }
     }
@@ -603,7 +636,7 @@ async function readRemoteBunnyState(videoId: string): Promise<BunnyRemoteState> 
     return {
       state: "error",
       length: 0,
-      message: "No se pudo consultar el estado del video en Bunny.",
+      message: "No pudimos comprobar el video. Intenta de nuevo en unos minutos.",
       requestFailed: true,
     }
   }
@@ -611,6 +644,7 @@ async function readRemoteBunnyState(videoId: string): Promise<BunnyRemoteState> 
 
 export async function reconcilePendingBunnyAssets(options?: {
   courseId?: string
+  videoId?: string
   source?: BunnyFreshnessSource
   throttleMs?: number
   force?: boolean
@@ -621,6 +655,8 @@ export async function reconcilePendingBunnyAssets(options?: {
   const throttleMs = Math.max(1_000, options?.throttleMs ?? DEFAULT_BUNNY_CHECK_THROTTLE_MS)
   const force = options?.force ?? (source === "cron" || source === "webhook")
   const nowIso = new Date().toISOString()
+  const deadline = Date.now() + RECONCILE_BUDGET_MS
+  const previewDeadline = Date.now() + RECONCILE_BUDGET_MS / 2
   let previewUpdates = 0
   let lessonUpdates = 0
   let errors = 0
@@ -644,7 +680,10 @@ export async function reconcilePendingBunnyAssets(options?: {
       ].join(", ")
     )
 
-  if (options?.courseId) {
+  if (options?.videoId) {
+    if (!isManagedBunnyVideoId(options.videoId)) throw new Error("Invalid Bunny video ID")
+    courseQuery = courseQuery.or(`preview_bunny_video_id.eq.${options.videoId},pending_preview_bunny_video_id.eq.${options.videoId}`)
+  } else if (options?.courseId) {
     courseQuery = courseQuery.eq("id", options.courseId)
   } else {
     courseQuery = courseQuery.or(
@@ -652,10 +691,36 @@ export async function reconcilePendingBunnyAssets(options?: {
     )
   }
 
-  const { data: courseRows } = await courseQuery
+  const { data: courseRows, error: courseError } = await courseQuery
+    .order("preview_last_checked_at", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: true }).limit(RECONCILE_BATCH_SIZE)
+  if (courseError) throw new Error("Bunny course work lookup failed")
   const courses = ((courseRows ?? []) as unknown) as CoursePreviewRow[]
 
   for (const course of courses) {
+    if (Date.now() >= previewDeadline) break
+    const updateCourse = async (changes: Record<string, unknown>) => {
+      const result = await updateBunnyMediaSnapshot(supabase, "courses", course.id, {
+        preview_bunny_video_id: course.preview_bunny_video_id,
+        preview_bunny_library_id: course.preview_bunny_library_id,
+        pending_preview_bunny_video_id: course.pending_preview_bunny_video_id,
+        pending_preview_bunny_library_id: course.pending_preview_bunny_library_id,
+        preview_video_url: course.preview_video_url,
+        preview_status: course.preview_status,
+        pending_preview_status: course.pending_preview_status,
+        preview_last_checked_at: course.preview_last_checked_at,
+        preview_last_state_changed_at: course.preview_last_state_changed_at,
+      }, changes)
+      if (result.error) errors++
+      return result.applied
+    }
+    const previewLibrary = course.pending_preview_bunny_video_id
+      ? course.pending_preview_bunny_library_id : course.preview_bunny_library_id
+    if (previewLibrary && previewLibrary !== env.BUNNY_LIBRARY_ID()) {
+      await updateCourse({ preview_last_checked_at: nowIso })
+      errors++
+      continue
+    }
     warnIfChecksAreStale({
       kind: "preview",
       courseId: course.id,
@@ -710,7 +775,7 @@ export async function reconcilePendingBunnyAssets(options?: {
       }
 
       if (pendingState.requestFailed) {
-        await supabase.from("courses").update(updateData).eq("id", course.id)
+        await updateCourse(updateData)
         errors++
         continue
       }
@@ -728,10 +793,13 @@ export async function reconcilePendingBunnyAssets(options?: {
         updateData.preview_upload_error = null
         updateData.preview_last_state_changed_at = nowIso
 
-        await supabase.from("courses").update(updateData).eq("id", course.id)
+        if (!await updateCourse(updateData)) continue
 
         if (oldVideoId && oldVideoId !== course.pending_preview_bunny_video_id) {
-          await deleteBunnyVideo(oldVideoId).catch(() => undefined)
+          await deleteBunnyVideo(oldVideoId).catch(() => {
+            errors++
+            logBunnyMedia("error", "cleanup_queue_failed", { videoId: oldVideoId, courseId: course.id })
+          })
         }
 
         previewUpdates++
@@ -753,7 +821,7 @@ export async function reconcilePendingBunnyAssets(options?: {
           shouldTouch = true
         }
 
-        await supabase.from("courses").update(updateData).eq("id", course.id)
+        if (!await updateCourse(updateData)) continue
 
         if (shouldTouch) {
           previewUpdates++
@@ -778,7 +846,7 @@ export async function reconcilePendingBunnyAssets(options?: {
         shouldTouch = true
       }
 
-      await supabase.from("courses").update(updateData).eq("id", course.id)
+      if (!await updateCourse(updateData)) continue
 
       if (shouldTouch) {
         previewUpdates++
@@ -806,7 +874,7 @@ export async function reconcilePendingBunnyAssets(options?: {
       }
 
       if (activeState.requestFailed) {
-        await supabase.from("courses").update(updateData).eq("id", course.id)
+        await updateCourse(updateData)
         errors++
         continue
       }
@@ -832,7 +900,7 @@ export async function reconcilePendingBunnyAssets(options?: {
         shouldTouch = true
       }
 
-      await supabase.from("courses").update(updateData).eq("id", course.id)
+      if (!await updateCourse(updateData)) continue
 
       if (shouldTouch) {
         previewUpdates++
@@ -845,13 +913,10 @@ export async function reconcilePendingBunnyAssets(options?: {
     }
 
     if (course.preview_video_url && course.preview_status !== "legacy") {
-      await supabase
-        .from("courses")
-        .update({
+      if (!await updateCourse({
           preview_status: "legacy",
           preview_last_state_changed_at: nowIso,
-        })
-        .eq("id", course.id)
+        })) continue
       previewUpdates++
       addTouchedCourse(touchedCourses, course.id, course.slug)
       continue
@@ -862,14 +927,11 @@ export async function reconcilePendingBunnyAssets(options?: {
       course.preview_status !== "none" &&
       !course.preview_bunny_video_id
     ) {
-      await supabase
-        .from("courses")
-        .update({
+      if (!await updateCourse({
           preview_status: "none",
           preview_upload_error: null,
           preview_last_state_changed_at: nowIso,
-        })
-        .eq("id", course.id)
+        })) continue
       previewUpdates++
       addTouchedCourse(touchedCourses, course.id, course.slug)
     }
@@ -896,7 +958,9 @@ export async function reconcilePendingBunnyAssets(options?: {
       ].join(", ")
     )
 
-  if (options?.courseId) {
+  if (options?.videoId) {
+    lessonQuery = lessonQuery.or(`bunny_video_id.eq.${options.videoId},pending_bunny_video_id.eq.${options.videoId}`)
+  } else if (options?.courseId) {
     lessonQuery = lessonQuery.eq("course_id", options.courseId)
   } else {
     lessonQuery = lessonQuery.or(
@@ -904,10 +968,35 @@ export async function reconcilePendingBunnyAssets(options?: {
     )
   }
 
-  const { data: lessonRows } = await lessonQuery
+  const { data: lessonRows, error: lessonError } = await lessonQuery
+    .order("bunny_last_checked_at", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: true }).limit(RECONCILE_BATCH_SIZE)
+  if (lessonError) throw new Error("Bunny lesson work lookup failed")
   const lessons = ((lessonRows ?? []) as unknown) as LessonMediaRow[]
 
   for (const lesson of lessons) {
+    if (Date.now() >= deadline) break
+    const updateLesson = async (changes: Record<string, unknown>) => {
+      const result = await updateBunnyMediaSnapshot(supabase, "lessons", lesson.id, {
+        bunny_video_id: lesson.bunny_video_id,
+        bunny_library_id: lesson.bunny_library_id,
+        pending_bunny_video_id: lesson.pending_bunny_video_id,
+        pending_bunny_library_id: lesson.pending_bunny_library_id,
+        bunny_status: lesson.bunny_status,
+        pending_bunny_status: lesson.pending_bunny_status,
+        bunny_last_checked_at: lesson.bunny_last_checked_at,
+        bunny_last_state_changed_at: lesson.bunny_last_state_changed_at,
+      }, changes)
+      if (result.error) errors++
+      return result.applied
+    }
+    const lessonLibrary = lesson.pending_bunny_video_id
+      ? lesson.pending_bunny_library_id : lesson.bunny_library_id
+    if (lessonLibrary && lessonLibrary !== env.BUNNY_LIBRARY_ID()) {
+      await updateLesson({ bunny_last_checked_at: nowIso })
+      errors++
+      continue
+    }
     const course = Array.isArray(lesson.courses)
       ? lesson.courses[0]
       : lesson.courses
@@ -971,7 +1060,7 @@ export async function reconcilePendingBunnyAssets(options?: {
       }
 
       if (pendingState.requestFailed) {
-        await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+        await updateLesson(updateData)
         errors++
         continue
       }
@@ -994,10 +1083,13 @@ export async function reconcilePendingBunnyAssets(options?: {
           promotionData.duration_seconds = Math.round(pendingState.length)
         }
 
-        await supabase.from("lessons").update(promotionData).eq("id", lesson.id)
+        if (!await updateLesson(promotionData)) continue
 
         if (oldVideoId && oldVideoId !== lesson.pending_bunny_video_id) {
-          await deleteBunnyVideo(oldVideoId).catch(() => undefined)
+          await deleteBunnyVideo(oldVideoId).catch(() => {
+            errors++
+            logBunnyMedia("error", "cleanup_queue_failed", { videoId: oldVideoId, lessonId: lesson.id })
+          })
         }
 
         lessonUpdates++
@@ -1019,7 +1111,7 @@ export async function reconcilePendingBunnyAssets(options?: {
           shouldTouch = true
         }
 
-        await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+        if (!await updateLesson(updateData)) continue
 
         if (shouldTouch) {
           lessonUpdates++
@@ -1044,7 +1136,7 @@ export async function reconcilePendingBunnyAssets(options?: {
         shouldTouch = true
       }
 
-      await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+      if (!await updateLesson(updateData)) continue
 
       if (shouldTouch) {
         lessonUpdates++
@@ -1066,6 +1158,7 @@ export async function reconcilePendingBunnyAssets(options?: {
     }
 
     if (!isManagedBunnyVideoId(lesson.bunny_video_id)) {
+      await updateLesson({ bunny_last_checked_at: nowIso })
       continue
     }
 
@@ -1075,7 +1168,7 @@ export async function reconcilePendingBunnyAssets(options?: {
     }
 
     if (activeState.requestFailed) {
-      await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+      await updateLesson(updateData)
       errors++
       continue
     }
@@ -1110,7 +1203,7 @@ export async function reconcilePendingBunnyAssets(options?: {
       shouldUpdate = true
     }
 
-    await supabase.from("lessons").update(updateData).eq("id", lesson.id)
+    if (!await updateLesson(updateData)) continue
 
     if (shouldUpdate) {
       lessonUpdates++
@@ -1158,76 +1251,8 @@ export async function ensureCourseMediaFresh(
 export async function reconcileBunnyVideoWebhook(
   videoId: string
 ): Promise<BunnyReconcileResult> {
-  const supabase = createServiceRoleClient()
-  const affectedCourseIds = new Set<string>()
-
-  const [{ data: previewCourses }, { data: lessonCourses }] = await Promise.all([
-    supabase
-      .from("courses")
-      .select("id")
-      .or(
-        `preview_bunny_video_id.eq.${videoId},pending_preview_bunny_video_id.eq.${videoId}`
-      ),
-    supabase
-      .from("lessons")
-      .select("course_id")
-      .or(`bunny_video_id.eq.${videoId},pending_bunny_video_id.eq.${videoId}`),
-  ])
-
-  for (const course of previewCourses ?? []) {
-    if (course.id) {
-      affectedCourseIds.add(course.id)
-    }
-  }
-
-  for (const lesson of lessonCourses ?? []) {
-    if (lesson.course_id) {
-      affectedCourseIds.add(lesson.course_id)
-    }
-  }
-
-  if (affectedCourseIds.size === 0) {
-    return {
-      reconciled: 0,
-      previewUpdates: 0,
-      lessonUpdates: 0,
-      errors: 0,
-      touchedCourses: [],
-    }
-  }
-
-  const results = await Promise.all(
-    [...affectedCourseIds].map((courseId) =>
-      reconcilePendingBunnyAssets({
-        courseId,
-        source: "webhook",
-        force: true,
-      })
-    )
-  )
-
-  const touchedCourses = new Map<string, { id: string; slug: string }>()
-  let reconciled = 0
-  let previewUpdates = 0
-  let lessonUpdates = 0
-  let errors = 0
-
-  for (const result of results) {
-    reconciled += result.reconciled
-    previewUpdates += result.previewUpdates
-    lessonUpdates += result.lessonUpdates
-    errors += result.errors
-
-    for (const course of result.touchedCourses) {
-      touchedCourses.set(course.id, course)
-    }
-  }
-
-  return {
-    reconciled,
-    previewUpdates,
-    lessonUpdates,
-    errors,
-    touchedCourses: [...touchedCourses.values()],
-  }
+  if (!isManagedBunnyVideoId(videoId)) throw new Error("Invalid Bunny video ID")
+  // Provider state is fetched again: webhook Status may be delayed or replayed.
+  // Match only this asset instead of scanning all lessons in each affected course.
+  return reconcilePendingBunnyAssets({ videoId, source: "webhook", force: true })
 }

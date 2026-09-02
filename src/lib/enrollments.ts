@@ -1,12 +1,11 @@
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { enqueuePurchaseConfirmation } from "@/actions/email"
-import { applyApprovedOrderEffects } from "@/lib/order-approval"
+import { createCheckoutOrder } from "@/lib/checkout-order"
+import { paymentRpc } from "@/lib/payment-rpc"
 import { decorateCourseWithPricing } from "@/lib/pricing"
 import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { generateReference } from "@/lib/utils"
 
 import type { Database } from "@/types/database"
 
@@ -92,11 +91,10 @@ export async function enrollFreeCourseForUser(input: {
   }
 
   if (!course.is_free) {
-    const now = new Date().toISOString()
-    const orderReference = generateReference("SZFREE")
     const {
       data: { user },
     } = await input.supabase.auth.getUser()
+    if (!user || user.id !== input.userId) return { success: false, code: "ENROLL_FAILED", courseSlug: course.slug }
     const pricingSnapshot = {
       listSubtotal: decoratedCourse.list_price,
       subtotal: decoratedCourse.list_price,
@@ -132,100 +130,18 @@ export async function enrollFreeCourseForUser(input: {
         },
       ],
     }
-    const orderInsert: Database["public"]["Tables"]["orders"]["Insert"] = {
-      user_id: input.userId,
-      customer_name_snapshot:
-        typeof user?.user_metadata?.full_name === "string"
-          ? user.user_metadata.full_name
-          : "",
-      customer_email_snapshot: user?.email ?? "",
-      customer_phone_snapshot:
-        typeof user?.user_metadata?.phone === "string"
-          ? user.user_metadata.phone
-          : null,
-      reference: orderReference,
-      list_subtotal: decoratedCourse.list_price,
-      subtotal: decoratedCourse.list_price,
-      course_discount_amount: decoratedCourse.course_discount_amount,
-      combo_discount_amount: 0,
-      discount_amount: decoratedCourse.course_discount_amount,
-      total: 0,
-      discount_rule_name_snapshot: "Promocion del curso",
-      pricing_snapshot_json: pricingSnapshot,
-      status: "approved",
-      currency: "COP",
-      payment_method: "promo",
-      approved_at: now,
-    }
-
-    const { data: order, error: orderError } = await adminClient
-      .from("orders")
-      .insert(orderInsert)
-      .select("id")
-      .single()
-
-    if (orderError || !order) {
-      return {
-        success: false,
-        code: "ENROLL_FAILED",
-        courseSlug: course.slug,
-      }
-    }
-
-    const { error: orderItemError } = await adminClient.from("order_items").insert({
-      order_id: order.id,
-      course_id: course.id,
-      course_title_snapshot: course.title,
-      price_at_purchase: decoratedCourse.list_price,
-      list_price_snapshot: decoratedCourse.list_price,
-      course_discount_amount_snapshot: decoratedCourse.course_discount_amount,
-      price_after_course_discount_snapshot: 0,
-      combo_discount_amount_snapshot: 0,
-      final_price_snapshot: 0,
-    })
-
-    if (orderItemError) {
-      return {
-        success: false,
-        code: "ENROLL_FAILED",
-        courseSlug: course.slug,
-      }
-    }
-
-    const { error: lineError } = await adminClient
-      .from("order_discount_lines")
-      .insert({
-        order_id: order.id,
-        scope: "course",
-        kind: "course_discount",
-        source_id: course.id,
-        source_name_snapshot: course.title,
-        course_id: course.id,
-        course_title_snapshot: course.title,
-        amount: decoratedCourse.course_discount_amount,
-        metadata_json: {
-          label: decoratedCourse.course_discount_label,
-        },
-      })
-
-    if (lineError) {
-      return {
-        success: false,
-        code: "ENROLL_FAILED",
-        courseSlug: course.slug,
-      }
-    }
-
-    await applyApprovedOrderEffects({
-      supabase: adminClient,
-      orderId: order.id,
-      userId: input.userId,
-    })
-
     try {
-      await enqueuePurchaseConfirmation(order.id)
-    } catch (error) {
-      console.error("[enrollFreeCourseForUser] failed to enqueue promo email", error)
+      await createCheckoutOrder({
+        userId: input.userId,
+        customerName: typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "",
+        customerEmail: user.email ?? "",
+        items: pricingSnapshot.items,
+        discountRuleName: "Promoción del curso",
+        pricingSnapshot,
+        discountLines: pricingSnapshot.appliedDiscountLines,
+      })
+    } catch {
+      return { success: false, code: "ENROLL_FAILED", courseSlug: course.slug }
     }
 
     revalidatePath(`/cursos/${course.slug}`)
@@ -234,27 +150,16 @@ export async function enrollFreeCourseForUser(input: {
     return { success: true, courseSlug: course.slug }
   }
 
-  const { error: enrollError } = await adminClient.from("enrollments").insert({
-    user_id: input.userId,
-    course_id: input.courseId,
-    source: "free",
-  })
-
-  if (enrollError) {
+  try {
+    const enrolled = await paymentRpc<boolean>(adminClient, "enroll_native_free_course", { p_user_id: input.userId, p_course_id: input.courseId })
+    if (!enrolled) return { success: false, code: "ENROLL_FAILED", courseSlug: course.slug }
+  } catch {
     return {
       success: false,
       code: "ENROLL_FAILED",
       courseSlug: course.slug,
     }
   }
-
-  await syncCourseProgressSnapshot({
-    supabase: adminClient,
-    userId: input.userId,
-    courseId: input.courseId,
-    courseSlug: course.slug,
-    touchLastAccess: true,
-  })
 
   revalidatePath(`/cursos/${course.slug}`)
   revalidatePath("/dashboard")

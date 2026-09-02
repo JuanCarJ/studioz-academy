@@ -37,6 +37,7 @@ export interface InstructorSpecialtyOption {
 
 // ── Courses ──────────────────────────────────────────────
 export interface Course {
+  archived_at?: string | null
   id: string
   title: string
   slug: string
@@ -173,6 +174,8 @@ export interface Order {
   discount_rule_name_snapshot: string | null
   pricing_snapshot_json: Json | null
   status: "pending" | "approved" | "declined" | "voided" | "refunded" | "chargeback"
+  payment_provider?: "bold" | "wompi" | "internal"
+  provider_transaction_id?: string | null
   wompi_transaction_id: string | null
   payment_method: string | null
   payment_detail: string | null
@@ -219,6 +222,8 @@ export interface PaymentEvent {
   id: string
   order_id: string
   source: "webhook" | "reconciliation" | "manual" | "polling"
+  payment_provider?: "bold" | "wompi" | "internal"
+  provider_transaction_id?: string | null
   wompi_transaction_id: string | null
   external_status: string
   mapped_status: string

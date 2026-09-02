@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { getSalesSummary } from "@/actions/admin/orders"
 
 export interface AdminDashboardData {
+  queues: { stalePayments: number; failedEmails: number; unprocessedNotifications: number; videoIssues: number }
   metrics: {
     pendingOrders: number
     publishedCourses: number
@@ -35,28 +36,11 @@ async function verifyAdmin() {
   return user
 }
 
-export async function getAdminDashboardData(): Promise<AdminDashboardData> {
+export async function getAdminDashboardData(filters?: { dateFrom?: string; dateTo?: string }): Promise<AdminDashboardData> {
   const admin = await verifyAdmin()
   if (!admin) {
-    return {
-      metrics: {
-        pendingOrders: 0,
-        publishedCourses: 0,
-        publishedEvents: 0,
-        galleryItems: 0,
-        unreadContacts: 0,
-      },
-      sales: {
-        totalOrders: 0,
-        totalRevenue: 0,
-        averageOrderValue: 0,
-        totalDiscountGiven: 0,
-        topPaymentMethod: null,
-        statusDistribution: {},
-      },
-      recentOrders: [],
-      recentAuditLogs: [],
-    }
+    throw new Error("No tienes permiso para consultar el panel.")
+
   }
 
   const supabase = createServiceRoleClient()
@@ -64,6 +48,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
 
   const [
     sales,
+    queues,
     pendingOrders,
     publishedCourses,
     publishedEvents,
@@ -72,7 +57,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     recentOrders,
     recentAuditLogs,
   ] = await Promise.all([
-    getSalesSummary(),
+    getSalesSummary(filters),
+    supabase.rpc("admin_queue_health", {}),
     supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -90,7 +76,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     supabase
       .from("contact_messages")
       .select("id", { count: "exact", head: true })
-      .eq("is_read", false),
+      .neq("status", "resolved"),
     supabase
       .from("orders")
       .select("id, reference, status, total, created_at")
@@ -103,7 +89,10 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .limit(6),
   ])
 
+  const results = [queues,pendingOrders,publishedCourses,publishedEvents,galleryItems,unreadContacts,recentOrders,recentAuditLogs]
+  if (results.some(result => result.error) || !queues.data) throw new Error("No pudimos cargar el panel. Vuelve a intentarlo.")
   return {
+    queues: queues.data as unknown as AdminDashboardData["queues"],
     metrics: {
       pendingOrders: pendingOrders.count ?? 0,
       publishedCourses: publishedCourses.count ?? 0,

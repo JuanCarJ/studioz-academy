@@ -110,7 +110,7 @@ function RegisterForm() {
 
         <div className="my-6 flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-xs text-muted-foreground">o con email</span>
+          <span className="text-xs text-muted-foreground">o con correo electrónico</span>
           <Separator className="flex-1" />
         </div>
 
@@ -148,7 +148,7 @@ function RegisterForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
               name="email"
@@ -160,7 +160,7 @@ function RegisterForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Contrasena</Label>
+            <Label htmlFor="password">Contraseña</Label>
             <Input
               id="password"
               name="password"
@@ -197,7 +197,7 @@ function RegisterForm() {
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                Politica de Privacidad
+                Política de Privacidad
               </a>
             </Label>
           </div>
@@ -215,7 +215,7 @@ function RegisterForm() {
         <p className="text-sm text-muted-foreground">
           Ya tienes cuenta?{" "}
           <Link href={loginHref} className="text-primary hover:underline">
-            Inicia sesion
+            Inicia sesión
           </Link>
         </p>
       </CardFooter>

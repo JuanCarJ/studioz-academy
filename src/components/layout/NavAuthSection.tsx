@@ -30,9 +30,11 @@ interface NavAuthSectionProps {
 function useCartCountState(cartCount: number) {
   const [localCartCount, setLocalCartCount] = useState(cartCount)
 
-  useEffect(() => {
+  const [previousInput, setPreviousInput] = useState(cartCount)
+  if (cartCount !== previousInput) {
+    setPreviousInput(cartCount)
     setLocalCartCount(cartCount)
-  }, [cartCount])
+  }
 
   useEffect(() => {
     return subscribeToCartCountUpdated((nextCount) => {

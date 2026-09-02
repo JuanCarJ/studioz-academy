@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import Link from "next/link"
 import { ChevronDown, ChevronUp, MessageCircle, RefreshCw } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -24,7 +25,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   declined: "Rechazado",
   voided: "Anulado",
   refunded: "Reembolsado",
-  chargeback: "Contracargo",
+  chargeback: "Pago revertido",
 }
 
 const STATUS_VARIANT: Record<
@@ -66,9 +67,9 @@ function formatPaymentMethod(method: string | null): string {
     BANCOLOMBIA_TRANSFER: "Bancolombia",
     BANCOLOMBIA_COLLECT: "Bancolombia Collect",
     EFECTY: "Efecty",
-    PROMO: "Promocion interna",
+    PROMO: "Promoción (sin cobro)",
   }
-  return labels[method.toUpperCase()] ?? method
+  return labels[method.toUpperCase()] ?? "Otro medio de pago"
 }
 
 export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
@@ -87,6 +88,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
   function handleRecheck() {
     setRecheckMsg(null)
     startTransition(async () => {
+      try {
       const result = await getOrderStatusWithFallback(order.reference)
       if (result.order) {
         const newStatus = result.order.status as OrderStatus
@@ -94,10 +96,13 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
           setCurrentStatus(newStatus)
           setRecheckMsg("Estado actualizado.")
         } else {
-          setRecheckMsg("El estado no ha cambiado aun.")
+          setRecheckMsg("El pago sigue pendiente. No necesitas pagar de nuevo.")
         }
       } else {
         setRecheckMsg("No se pudo consultar el estado. Intenta de nuevo.")
+      }
+      } catch {
+        setRecheckMsg("No pudimos consultar tu pago. Revisa tu conexión y vuelve a intentarlo.")
       }
     })
   }
@@ -108,7 +113,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
   >((acc, line) => {
     const label =
       line.kind === "course_discount"
-        ? `Promo curso: ${line.course_title_snapshot ?? line.source_name_snapshot}`
+        ? `Descuento: ${line.course_title_snapshot ?? line.source_name_snapshot}`
         : `Combo: ${line.source_name_snapshot}`
     const key = `${line.kind}:${label}`
     const existing = acc.find((entry) => entry.key === key)
@@ -128,6 +133,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
         onClick={() => setExpanded((prev) => !prev)}
         className="w-full text-left"
         aria-expanded={expanded}
+        aria-controls={`order-details-${order.id}`}
       >
         <div className="flex items-center justify-between gap-4 p-4">
           <div className="min-w-0 flex-1 space-y-1">
@@ -169,7 +175,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
 
       {/* Expanded detail */}
       {expanded && (
-        <CardContent className="border-t px-4 pb-4 pt-4 space-y-4">
+        <CardContent id={`order-details-${order.id}`} className="border-t px-4 pb-4 pt-4 space-y-4">
           {/* Items list */}
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -186,10 +192,10 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
                       {(item.course_discount_amount_snapshot > 0 ||
                         item.combo_discount_amount_snapshot > 0) && (
                         <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                          <div>Lista: {formatCOP(item.list_price_snapshot)}</div>
+                          <div>Precio original: {formatCOP(item.list_price_snapshot)}</div>
                           {item.course_discount_amount_snapshot > 0 && (
                             <div>
-                              Promo curso: -{formatCOP(item.course_discount_amount_snapshot)}
+                              Descuento del curso: -{formatCOP(item.course_discount_amount_snapshot)}
                             </div>
                           )}
                           {item.combo_discount_amount_snapshot > 0 && (
@@ -214,7 +220,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
           {/* Subtotals */}
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
-              <span>Subtotal lista</span>
+              <span>Subtotal antes de descuentos</span>
               <span>{formatCOP(order.list_subtotal)}</span>
             </div>
             {order.course_discount_amount > 0 && (
@@ -253,7 +259,7 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
 
           {/* Payment method */}
           <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Metodo de pago</span>
+            <span>Medio de pago</span>
             <span>{formatPaymentMethod(order.payment_method)}</span>
           </div>
 
@@ -268,25 +274,24 @@ export function OrderCard({ order, whatsappNumber }: OrderCardProps) {
                   size="sm"
                   onClick={handleRecheck}
                   disabled={isPending}
-                  className="gap-2"
+                  className="min-h-11 gap-2"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
-                  {isPending ? "Consultando..." : "Reconsultar estado"}
+                  {isPending ? "Consultando..." : "Consultar mi pago"}
                 </Button>
-                {recheckMsg && (
-                  <p className="text-xs text-muted-foreground">{recheckMsg}</p>
-                )}
               </div>
             )}
+            {currentStatus === "approved" && <Button asChild className="min-h-11"><Link href="/dashboard">Ir a mis cursos</Link></Button>}
             {whatsappUrl && (
-              <Button asChild variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+              <Button asChild variant="ghost" size="sm" className="min-h-11 gap-2 text-muted-foreground">
                 <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="h-3.5 w-3.5" />
-                  Solicitar soporte
+                  Pedir ayuda con esta compra
                 </a>
               </Button>
             )}
           </div>
+          {recheckMsg && <p role="status" className="text-xs text-muted-foreground">{recheckMsg}</p>}
         </CardContent>
       )}
     </Card>

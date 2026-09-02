@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
 
 import { createClient } from "@supabase/supabase-js"
+import { assertStagingQaAuthority } from "../../scripts/qa/staging-guard.mjs"
 
 import { loadLocalEnv, requiredEnv } from "./env"
 
 loadLocalEnv()
+assertStagingQaAuthority()
 
 const sampleImage =
   "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1200&q=80"
@@ -168,10 +170,10 @@ function slugify(value: string) {
     .replace(/(^-|-$)/g, "")
 }
 
-async function upsertBy<T extends Record<string, unknown>>(
+async function upsertBy(
   table: string,
   match: Record<string, unknown>,
-  payload: T
+  payload: Record<string, unknown>
 ) {
   let query = supabase.from(table).select("id")
   for (const [key, value] of Object.entries(match)) {

@@ -8,14 +8,15 @@ import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { clearSupabaseAuthTokenCookies } from "@/lib/supabase/cookies"
+import { MAX_AVATAR_SIZE, normalizeAvatar } from "@/lib/security/avatar"
+import { enforceRateLimit, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit"
+import { completeAccountAuthCleanup } from "@/lib/account-cleanup"
+import type { Database } from "@/types/database"
 
 export interface ProfileActionState {
   error?: string
   success?: boolean
 }
-
-const MAX_AVATAR_SIZE = 2 * 1024 * 1024 // 2MB
-const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"]
 
 export async function updateProfile(
   _prevState: ProfileActionState,
@@ -23,6 +24,9 @@ export async function updateProfile(
 ): Promise<ProfileActionState> {
   const user = await getCurrentUser()
   if (!user) return { error: "Debes iniciar sesión." }
+  if (!(await enforceRateLimit({ scope: "profile:update", key: user.id, limit: 10, windowSeconds: 600 })).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
+  }
 
   const fullName = normalizeFullName((formData.get("fullName") as string) ?? "")
   const phone = (formData.get("phone") as string) || null
@@ -35,30 +39,32 @@ export async function updateProfile(
 
   const supabase = await createServerClient()
 
-  const updateData: Record<string, unknown> = {
+  const updateData: Database["public"]["Tables"]["profiles"]["Update"] = {
     full_name: fullName,
     phone,
     email_notifications: emailNotifications,
   }
 
   // H-07: Handle avatar upload
-  const avatarFile = formData.get("avatar") as File | null
-  if (avatarFile && avatarFile.size > 0) {
-    if (!ALLOWED_AVATAR_TYPES.includes(avatarFile.type)) {
-      return { error: "Solo se permiten imagenes JPG, PNG o WebP." }
-    }
+  const avatarFile = formData.get("avatar")
+  if (avatarFile instanceof File && avatarFile.size > 0) {
     if (avatarFile.size > MAX_AVATAR_SIZE) {
       return { error: "La imagen no puede superar 2 MB." }
     }
 
-    const ext = avatarFile.name.split(".").pop() ?? "jpg"
-    const path = `${user.id}/avatar.${ext}`
+    let avatar: Buffer
+    try {
+      avatar = await normalizeAvatar(avatarFile)
+    } catch {
+      return { error: "La imagen no es válida. Elige una foto JPG, PNG o WebP." }
+    }
+    const path = `${user.id}/avatar.webp`
 
     const adminSupabase = createServiceRoleClient()
 
     const { error: uploadError } = await adminSupabase.storage
       .from("avatars")
-      .upload(path, avatarFile, { upsert: true, contentType: avatarFile.type })
+      .upload(path, avatar, { upsert: true, contentType: "image/webp" })
 
     if (uploadError) {
       return { error: "No se pudo subir la imagen. Inténtalo de nuevo." }
@@ -92,9 +98,11 @@ export async function updateProfile(
 export async function requestAccountDeletion(): Promise<ProfileActionState> {
   const user = await getCurrentUser()
   if (!user) return { error: "Debes iniciar sesión." }
+  if (!(await enforceRateLimit({ scope: "profile:delete", key: user.id, limit: 3, windowSeconds: 3600 })).allowed) {
+    return { error: RATE_LIMIT_MESSAGE }
+  }
 
   const supabase = await createServerClient()
-  const adminSupabase = createServiceRoleClient()
 
   const { error: rpcError } = await supabase.rpc("anonymize_user_data", {
     target_user_id: user.id,
@@ -104,16 +112,12 @@ export async function requestAccountDeletion(): Promise<ProfileActionState> {
     return { error: "No se pudo procesar la eliminación. Contacta soporte." }
   }
 
-  const { error: deleteAuthError } = await adminSupabase.auth.admin.deleteUser(user.id, true)
-  if (deleteAuthError) {
-    return {
-      error: "No se pudo eliminar la cuenta. Inténtalo de nuevo o contacta soporte.",
-    }
-  }
-
-  await supabase.auth.signOut()
+  // deleted_at is the durable request. An Auth outage must not strand a user
+  // behind getCurrentUser's deleted-account guard or leave their session open.
+  await completeAccountAuthCleanup(user.id)
+  try { await supabase.auth.signOut() } catch { /* Local cookies still must clear. */ }
   await clearSupabaseAuthTokenCookies()
 
   revalidatePath("/", "layout")
-  redirect("/")
+  redirect("/login?message=account-deletion-requested")
 }

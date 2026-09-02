@@ -43,7 +43,7 @@ function resolveDiscountRuleName(input: {
 }): string | null {
   if (input.snapshotName) return input.snapshotName
   if (input.joinedName) return input.joinedName
-  if (input.discountAmount > 0) return "Descuento historico"
+  if (input.discountAmount > 0) return "Descuento aplicado"
   return null
 }
 
@@ -51,12 +51,18 @@ function resolveDiscountRuleName(input: {
  * Get all orders for the currently authenticated user, newest first.
  * Used by the "Mis Compras" dashboard page (US-040).
  */
-export async function getUserOrders(): Promise<{
+export async function getUserOrders(input: { page?: number; pageSize?: number } = {}): Promise<{
   orders: OrderSummary[]
+  total: number
+  page: number
+  pageSize: number
   error?: string
 }> {
+  const page = Number.isFinite(input.page) ? Math.max(1, Math.min(10000, Math.floor(input.page!))) : 1
+  const pageSize = Number.isFinite(input.pageSize) ? Math.max(1, Math.min(48, Math.floor(input.pageSize!))) : 12
+  const from = (page - 1) * pageSize
   const user = await getCurrentUser()
-  if (!user) return { orders: [], error: "AUTH_REQUIRED" }
+  if (!user) return { orders: [], total: 0, page, pageSize, error: "AUTH_REQUIRED" }
 
   const supabase = await createServerClient()
   const baseSelect = `
@@ -87,36 +93,45 @@ export async function getUserOrders(): Promise<{
 
   let data: Array<Record<string, unknown>> | null = null
   let error: unknown = null
+  let total = 0
 
   const snapshotQuery = await supabase
     .from("orders")
-    .select(`${baseSelect}, discount_rule_name_snapshot`)
+    .select(`${baseSelect}, discount_rule_name_snapshot`, { count: "exact" })
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false }) as {
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + pageSize - 1) as {
     data: Array<Record<string, unknown>> | null
     error: unknown
+    count: number | null
   }
 
   data = snapshotQuery.data
   error = snapshotQuery.error
+  total = snapshotQuery.count ?? 0
 
   if (isMissingDiscountRuleNameSnapshotColumn(error as Record<string, unknown> | null)) {
     const legacyQuery = await supabase
       .from("orders")
-      .select(baseSelect)
+      .select(baseSelect, { count: "exact" })
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false }) as {
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + pageSize - 1) as {
       data: Array<Record<string, unknown>> | null
       error: unknown
+      count: number | null
     }
 
     data = legacyQuery.data
     error = legacyQuery.error
+    total = legacyQuery.count ?? 0
   }
 
   if (error) {
     console.error("[purchases] Failed to fetch user orders:", error)
-    return { orders: [], error: "FETCH_ERROR" }
+    return { orders: [], total: 0, page, pageSize, error: "FETCH_ERROR" }
   }
 
   const orders: OrderSummary[] = (data ?? []).map((row) => ({
@@ -143,5 +158,5 @@ export async function getUserOrders(): Promise<{
     discount_lines: (row.discount_lines as OrderDiscountLine[]) ?? [],
   }))
 
-  return { orders }
+  return { orders, total, page, pageSize }
 }

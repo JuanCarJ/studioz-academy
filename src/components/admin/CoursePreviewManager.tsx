@@ -35,9 +35,11 @@ export function CoursePreviewManager({ course }: CoursePreviewManagerProps) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  useEffect(() => {
+  const [previousInput, setPreviousInput] = useState(course)
+  if (course !== previousInput) {
+    setPreviousInput(course)
     setCurrentCourse(course)
-  }, [course])
+  }
 
   const status = getPreviewStatus(currentCourse, phase)
   const isBusy = isPending || phase === "preparing" || phase === "uploading"

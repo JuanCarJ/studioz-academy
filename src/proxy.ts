@@ -67,10 +67,33 @@ function redirectWithSupabaseCookies(
 }
 
 export async function proxy(request: NextRequest) {
+  const nonce = btoa(crypto.randomUUID())
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://checkout.bold.co https://assets.mediadelivery.net`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.bold.co https://*.bunnycdn.com https://*.mediadelivery.net https://vitals.vercel-insights.com",
+    "frame-src https://*.bold.co https://*.mediadelivery.net https://www.google.com https://maps.google.com",
+    "frame-ancestors 'none'", "base-uri 'self'", "object-src 'none'",
+    "form-action 'self' https://checkout.bold.co",
+  ].join("; ")
+  request.headers.set("x-nonce", nonce)
+  request.headers.set("Content-Security-Policy", csp)
+  const response = await routeRequest(request)
+  response.headers.set("Content-Security-Policy", csp)
+  return response
+}
+
+async function routeRequest(request: NextRequest) {
   const path = request.nextUrl.pathname
   const hasAuthCookies = hasSupabaseAuthCookies(request.cookies)
 
-  // Create Supabase client and refresh auth session for ALL routes.
+  // Anonymous public traffic needs no authentication roundtrip. Server actions still enforce their own authorization.
+  if (!hasAuthCookies && (isPublicRoute(path) || isAuthRoute(path))) return NextResponse.next({ request })
+
+  // Refresh existing authentication cookies before protected routing.
   // This follows the Supabase recommended pattern: session refresh must
   // happen before any route-matching logic.
   let supabaseResponse = NextResponse.next({ request })
@@ -114,10 +137,10 @@ export async function proxy(request: NextRequest) {
   if (user) {
     accountStatus = await resolveAccountStatusByUserId(supabase, user.id)
 
-    if (accountStatus.state === "deleted") {
+    if (accountStatus.state === "deleted" || accountStatus.state === "suspended") {
       await supabase.auth.signOut()
       const loginUrl = new URL("/login", request.url)
-      loginUrl.searchParams.set("error", "account-deleted")
+      loginUrl.searchParams.set("error", accountStatus.state === "suspended" ? "account-suspended" : "account-deleted")
       return redirectWithSupabaseCookies(loginUrl, supabaseResponse)
     }
 

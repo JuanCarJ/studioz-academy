@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Check, Loader2, ShoppingCart } from "lucide-react"
@@ -36,9 +36,11 @@ export function CourseCardAction({
   const [localIsInCart, setLocalIsInCart] = useState(isInCart)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const [previousInput, setPreviousInput] = useState(isInCart)
+  if (isInCart !== previousInput) {
+    setPreviousInput(isInCart)
     setLocalIsInCart(isInCart)
-  }, [isInCart])
+  }
 
   function requireAuth(intentKind: "add_to_cart" | "enroll_free") {
     router.push(

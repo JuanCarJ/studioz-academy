@@ -3,6 +3,7 @@
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 
+import { normalizePage } from "@/lib/admin-operations"
 import type { OrderItem, Course } from "@/types"
 
 const PAGE_SIZE = 20
@@ -62,7 +63,12 @@ export interface UserCartItem {
 }
 
 export interface UserDetail {
+  pagination: { page: number; pageSize: number; totalCount: number }
   profile: {
+    deleted_at: string | null
+    auth_cleanup_completed_at: string | null
+    auth_cleanup_attempts: number
+    suspended_at: string | null
     id: string
     full_name: string
     email: string
@@ -86,18 +92,18 @@ export async function getUsers(filters?: {
   if (!admin) return { users: [], totalCount: 0, page: 1, pageSize: PAGE_SIZE }
 
   const supabase = createServiceRoleClient()
-  const page = Math.max(1, filters?.page ?? 1)
+  const page = normalizePage(filters?.page)
   const from = (page - 1) * PAGE_SIZE
 
   const { data, error } = await supabase.rpc("search_users_with_email", {
-    search_term: filters?.search?.trim() || undefined,
+    search_term: filters?.search?.trim().slice(0,120) || undefined,
     page_offset: from,
     page_limit: PAGE_SIZE,
   })
 
   if (error) {
     console.error("[admin.getUsers] rpc error:", error)
-    return { users: [], totalCount: 0, page, pageSize: PAGE_SIZE }
+    throw new Error("No pudimos cargar los usuarios. Inténtalo de nuevo.")
   }
 
   const rows = data ?? []
@@ -125,7 +131,9 @@ export async function getUsers(filters?: {
   return { users, totalCount, page, pageSize: PAGE_SIZE }
 }
 
-export async function getUserDetail(userId: string): Promise<UserDetail | null> {
+export async function getUserDetail(userId: string, pageInput = 1): Promise<UserDetail | null> {
+  const page = normalizePage(pageInput)
+  const from = (page - 1) * PAGE_SIZE
   const admin = await verifyAdmin()
   if (!admin) return null
 
@@ -135,7 +143,7 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select(
-      "id, full_name, phone, role, avatar_url, email_notifications, last_login_at, created_at"
+      "id, full_name, phone, role, avatar_url, email_notifications, last_login_at, created_at, suspended_at, deleted_at, auth_cleanup_completed_at, auth_cleanup_attempts"
     )
     .eq("id", userId)
     .single()
@@ -150,11 +158,11 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   const email = authError ? "" : (authUser.user?.email ?? "")
 
   // 3. Orders with items
-  const { data: ordersRaw } = await supabase
+  const { data: ordersRaw, count: ordersCount } = await supabase
     .from("orders")
-    .select("id, reference, total, status, created_at")
+    .select("id, reference, total, status, created_at", { count: "exact" })
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: false }).order("id").range(from, from + PAGE_SIZE - 1)
 
   const orderIds = (ordersRaw ?? []).map((o) => o.id)
   const itemsByOrder: Record<string, OrderItem[]> = {}
@@ -183,11 +191,11 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   }))
 
   // 4. Enrollments with course info and progress
-  const { data: enrollmentsRaw } = await supabase
+  const { data: enrollmentsRaw, count: enrollmentCount } = await supabase
     .from("enrollments")
-    .select("id, course_id, enrolled_at")
+    .select("id, course_id, enrolled_at", { count: "exact" })
     .eq("user_id", userId)
-    .order("enrolled_at", { ascending: false })
+    .order("enrolled_at", { ascending: false }).order("id").range(from, from + PAGE_SIZE - 1)
 
   const courseIds = (enrollmentsRaw ?? []).map((e) => e.course_id)
   const coursesMap: Record<
@@ -209,15 +217,6 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
       >
     }
 
-    // Lesson counts per course
-    const { data: lessonsRaw } = await supabase
-      .from("lessons")
-      .select("course_id")
-      .in("course_id", courseIds)
-
-    for (const l of lessonsRaw ?? []) {
-      lessonCountMap[l.course_id] = (lessonCountMap[l.course_id] ?? 0) + 1
-    }
   }
 
   // Course progress
@@ -227,18 +226,11 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   > = {}
 
   if (courseIds.length > 0) {
-    const { data: progressRaw } = await supabase
-      .from("course_progress")
-      .select("course_id, completed_lessons, is_completed, last_accessed_at")
-      .eq("user_id", userId)
-      .in("course_id", courseIds)
-
-    for (const p of progressRaw ?? []) {
-      progressMap[p.course_id] = {
-        completed_lessons: p.completed_lessons,
-        is_completed: p.is_completed,
-        last_accessed_at: p.last_accessed_at,
-      }
+    const { data, error } = await supabase.rpc("admin_student_progress", { p_user_id: userId, p_course_ids: courseIds })
+    if (error) throw new Error("No pudimos cargar el avance del estudiante.")
+    for (const p of (data ?? []) as unknown as { course_id: string; total_lessons: number; completed_lessons: number; is_completed: boolean; last_accessed_at: string }[]) {
+      progressMap[p.course_id] = p
+      lessonCountMap[p.course_id] = p.total_lessons
     }
   }
 
@@ -252,11 +244,11 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   }))
 
   // 5. Cart items
-  const { data: cartRaw } = await supabase
+  const { data: cartRaw, count: cartCount } = await supabase
     .from("cart_items")
-    .select("id, course_id, added_at")
+    .select("id, course_id, added_at", { count: "exact" })
     .eq("user_id", userId)
-    .order("added_at", { ascending: false })
+    .order("added_at", { ascending: false }).order("id").range(from, from + PAGE_SIZE - 1)
 
   const cartCourseIds = (cartRaw ?? []).map((c) => c.course_id)
   const cartCoursesMap: Record<
@@ -283,7 +275,12 @@ export async function getUserDetail(userId: string): Promise<UserDetail | null> 
   }))
 
   return {
+    pagination: { page, pageSize: PAGE_SIZE, totalCount: Math.max(ordersCount ?? 0, enrollmentCount ?? 0, cartCount ?? 0) },
     profile: {
+      deleted_at: profile.deleted_at,
+      auth_cleanup_completed_at: profile.auth_cleanup_completed_at,
+      auth_cleanup_attempts: profile.auth_cleanup_attempts,
+      suspended_at: profile.suspended_at,
       id: profile.id,
       full_name: profile.full_name,
       email,

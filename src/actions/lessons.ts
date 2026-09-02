@@ -2,13 +2,13 @@
 
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { ensureCourseMediaFresh, resolveLessonAssetState } from "@/lib/bunny"
-import { syncCourseProgressSnapshot } from "@/lib/course-progress"
 import { createServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
 import { generateSignedUrl } from "@/lib/bunny"
+import { enforcePublicRateLimit, enforceRateLimit } from "@/lib/security/rate-limit"
 import {
   persistLessonVideoPosition,
-  persistCourseLastAccess,
+  persistLessonCompletion,
   revalidateVideoProgressPaths,
   resolveEnrolledLessonAccess,
 } from "@/lib/video-progress"
@@ -21,7 +21,7 @@ export async function getSignedVideoUrl(
     adminClient
       .from("lessons")
       .select(
-        "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, slug)"
+        "id, bunny_video_id, bunny_status, video_upload_error, is_free, course_id, courses(id, is_published, archived_at, slug)"
       )
       .eq("id", lessonId)
       .single()
@@ -31,25 +31,47 @@ export async function getSignedVideoUrl(
 
   if (!lesson) return { url: "", error: "Leccion no encontrada." }
 
-  let course = Array.isArray(lesson.courses)
-    ? lesson.courses[0]
-    : lesson.courses
-
-  if (!course?.is_published) {
-    return { url: "", error: "Curso no disponible." }
+  // Public samples require a published course. Enrollment remains the access
+  // authority for existing students after a course is unpublished/archived.
+  const user = await getCurrentUser()
+  const canPlay = async (candidate: typeof lesson) => {
+    if (!candidate) return false
+    const candidateCourse = Array.isArray(candidate.courses)
+      ? candidate.courses[0] : candidate.courses
+    if (!candidateCourse) return false
+    if (candidate.is_free && candidateCourse.is_published && !candidateCourse.archived_at) return true
+    if (!user) return false
+    const supabase = await createServerClient()
+    const { data: enrollment, error } = await supabase.from("enrollments")
+      .select("id").eq("user_id", user.id)
+      .eq("course_id", candidate.course_id).maybeSingle()
+    return !error && !!enrollment
   }
+  if (!await canPlay(lesson)) {
+    return { url: "", error: user ? "No tienes acceso a esta leccion." : "Inicia sesion para acceder a esta leccion." }
+  }
+  const rate = user
+    ? await enforceRateLimit({ scope: "video-url", key: user.id, limit: 60, windowSeconds: 60 })
+    : await enforcePublicRateLimit("video-preview", "", 15, 60)
+  if (!rate.allowed) return { url: "", error: "Espera un minuto antes de volver a cargar el video." }
 
   let playbackState = resolveLessonAssetState(lesson)
   if (!playbackState.isPlayable) {
-    await ensureCourseMediaFresh(lesson.course_id, {
-      source: "lesson_playback",
-    })
+    try {
+      await ensureCourseMediaFresh(lesson.course_id, { source: "lesson_playback" })
+    } catch {
+      return { url: "", error: "No pudimos comprobar el video. Intenta de nuevo en unos minutos." }
+    }
 
     const { data: refreshedLesson } = await fetchLesson()
     if (refreshedLesson) {
       lesson = refreshedLesson
-      course = Array.isArray(lesson.courses) ? lesson.courses[0] : lesson.courses
+      if (!await canPlay(lesson)) {
+        return { url: "", error: "No tienes acceso a esta leccion." }
+      }
       playbackState = resolveLessonAssetState(lesson)
+    } else {
+      return { url: "", error: "Leccion no disponible." }
     }
   }
 
@@ -69,29 +91,6 @@ export async function getSignedVideoUrl(
     }
   }
 
-  // Free lessons: no auth required
-  if (lesson.is_free) {
-    const signedUrl = generateSignedUrl(playbackState.videoId)
-    return { url: signedUrl, state: playbackState.state }
-  }
-
-  // Paid lessons: require auth + enrollment
-  const user = await getCurrentUser()
-  if (!user) return { url: "", error: "Debes iniciar sesion." }
-
-  const supabase = await createServerClient()
-
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", lesson.course_id)
-    .maybeSingle()
-
-  if (!enrollment) {
-    return { url: "", error: "No estas inscrito en este curso." }
-  }
-
   const signedUrl = generateSignedUrl(playbackState.videoId)
   return { url: signedUrl, state: playbackState.state }
 }
@@ -104,6 +103,9 @@ export async function saveVideoPosition(
   lessonId: string,
   position: number
 ): Promise<{ error?: string }> {
+  if (!Number.isFinite(position) || position < 0 || position > 2147483647) {
+    return { error: "La posición del video no es válida. Vuelve a cargar la lección." }
+  }
   const user = await getCurrentUser()
   if (!user) return { error: "AUTH_REQUIRED" }
 
@@ -116,28 +118,17 @@ export async function saveVideoPosition(
 
   if (!lessonAccess.ok) {
     if (lessonAccess.reason === "lesson_not_found") {
-      return { error: "Leccion no encontrada." }
+      return { error: "Lección no encontrada." }
     }
 
-    return { error: "No estas inscrito en este curso." }
+    return { error: "No estás inscrito en este curso." }
   }
 
   try {
-    await Promise.all([
-      persistLessonVideoPosition({
-        userId: user.id,
-        lessonId,
-        position,
-      }),
-      persistCourseLastAccess({
-        userId: user.id,
-        courseId: lessonAccess.courseId,
-        lessonId,
-      }),
-    ])
+    await persistLessonVideoPosition({ userId: user.id, lessonId, position })
   } catch (error) {
     console.error("[lessons] Failed to save video position:", error)
-    return { error: "Error al guardar el progreso del video." }
+    return { error: "No pudimos guardar tu avance. Inténtalo de nuevo." }
   }
 
   revalidateVideoProgressPaths(lessonAccess.courseSlug)
@@ -150,113 +141,42 @@ export async function saveVideoPosition(
  */
 export async function getLastPosition(
   lessonId: string
-): Promise<{ position: number }> {
+): Promise<{ position: number; error?: string }> {
   const user = await getCurrentUser()
-  if (!user) return { position: 0 }
+  if (!user) return { position: 0, error: "Inicia sesión de nuevo para recuperar tu progreso." }
 
   const supabase = await createServerClient()
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("lesson_progress")
     .select("video_position")
     .eq("user_id", user.id)
     .eq("lesson_id", lessonId)
     .maybeSingle()
 
+  if (error) return { position: 0, error: "No pudimos recuperar dónde ibas." }
   return { position: data?.video_position ?? 0 }
 }
 
-export async function markComplete(
-  lessonId: string
-): Promise<{ error?: string }> {
+async function changeLessonCompletion(lessonId: string, completed: boolean): Promise<{ error?: string }> {
   const user = await getCurrentUser()
-  if (!user) return { error: "AUTH_REQUIRED" }
-
+  if (!user) return { error: "Inicia sesión de nuevo para guardar tu progreso." }
   const supabase = await createServerClient()
-  const lessonAccess = await resolveEnrolledLessonAccess({
-    supabase,
-    userId: user.id,
-    lessonId,
-  })
-
-  if (!lessonAccess.ok) {
-    if (lessonAccess.reason === "lesson_not_found") {
-      return { error: "Leccion no encontrada." }
-    }
-
-    return { error: "No estas inscrito." }
+  const access = await resolveEnrolledLessonAccess({ supabase, userId: user.id, lessonId })
+  if (!access.ok) return { error: "No pudimos verificar tu acceso a esta lección. Recarga la página." }
+  try {
+    await persistLessonCompletion({ userId: user.id, lessonId, completed })
+  } catch {
+    return { error: "No pudimos actualizar esta lección. Vuelve a pulsar el botón para intentarlo." }
   }
-
-  const adminClient = createServiceRoleClient()
-  const now = new Date().toISOString()
-
-  // Upsert lesson progress
-  await adminClient.from("lesson_progress").upsert(
-    {
-      user_id: user.id,
-      lesson_id: lessonId,
-      completed: true,
-      completed_at: now,
-    },
-    { onConflict: "user_id,lesson_id" }
-  )
-
-  await syncCourseProgressSnapshot({
-    supabase: adminClient,
-    userId: user.id,
-    courseId: lessonAccess.courseId,
-    courseSlug: lessonAccess.courseSlug,
-    lastLessonId: lessonId,
-    lastAccessedAt: now,
-  })
-  revalidateVideoProgressPaths(lessonAccess.courseSlug)
-
+  revalidateVideoProgressPaths(access.courseSlug)
   return {}
 }
 
-/**
- * Mark a lesson as incomplete (toggle back).
- * Recalculates course progress.
- */
-export async function markIncomplete(
-  lessonId: string
-): Promise<{ error?: string }> {
-  const user = await getCurrentUser()
-  if (!user) return { error: "AUTH_REQUIRED" }
+export async function markComplete(lessonId: string): Promise<{ error?: string }> {
+  return changeLessonCompletion(lessonId, true)
+}
 
-  const supabase = await createServerClient()
-  const lessonAccess = await resolveEnrolledLessonAccess({
-    supabase,
-    userId: user.id,
-    lessonId,
-  })
-
-  if (!lessonAccess.ok) {
-    if (lessonAccess.reason === "lesson_not_found") {
-      return { error: "Leccion no encontrada." }
-    }
-
-    return { error: "No estas inscrito." }
-  }
-
-  const adminClient = createServiceRoleClient()
-
-  // Update lesson progress to not completed
-  await adminClient
-    .from("lesson_progress")
-    .update({ completed: false, completed_at: null })
-    .eq("user_id", user.id)
-    .eq("lesson_id", lessonId)
-
-  await syncCourseProgressSnapshot({
-    supabase: adminClient,
-    userId: user.id,
-    courseId: lessonAccess.courseId,
-    courseSlug: lessonAccess.courseSlug,
-    lastLessonId: lessonId,
-    touchLastAccess: true,
-  })
-  revalidateVideoProgressPaths(lessonAccess.courseSlug)
-
-  return {}
+export async function markIncomplete(lessonId: string): Promise<{ error?: string }> {
+  return changeLessonCompletion(lessonId, false)
 }

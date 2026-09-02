@@ -17,6 +17,8 @@ const vercelBypassSecret =
 
 export default defineConfig({
   testDir: "./e2e",
+  // Historical Wompi suites are retained as evidence, not current checkout gates.
+  testIgnore: ["**/wompi-*.spec.ts", "**/payment-progress.spec.ts"],
   globalSetup: "./e2e/global.setup.ts",
   timeout: 60_000,
   expect: {

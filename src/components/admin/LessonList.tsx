@@ -44,9 +44,11 @@ export function LessonList({ courseId, initialLessons }: LessonListProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDeleting, startDeleteTransition] = useTransition()
 
-  useEffect(() => {
+  const [previousInput, setPreviousInput] = useState(initialLessons)
+  if (initialLessons !== previousInput) {
+    setPreviousInput(initialLessons)
     setLessons(initialLessons)
-  }, [initialLessons])
+  }
 
   const shouldPoll = lessons.some(
     (lesson) =>

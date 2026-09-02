@@ -22,7 +22,8 @@ function parseIntentKind(value: string | null): AuthIntentKind | null {
 }
 
 export function getSafeRedirectPath(redirectTo: string | null): string | null {
-  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
+  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//") ||
+      /[\\\u0000-\u001f\u007f]/.test(redirectTo)) {
     return null
   }
 

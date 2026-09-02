@@ -1,14 +1,16 @@
 "use server"
 
-import { createClient } from "@supabase/supabase-js"
+import { revalidatePath } from "next/cache"
 
 import {
   isMissingDiscountRuleNameSnapshotColumn,
   readDiscountRuleNameSnapshot,
 } from "@/lib/discount-rule-snapshot"
+import { normalizePage } from "@/lib/admin-operations"
+import { auditDateBoundary } from "@/lib/admin-review-audit"
 import { getCurrentUser } from "@/lib/supabase/auth"
 import { createServiceRoleClient } from "@/lib/supabase/admin"
-import { enqueuePurchaseConfirmation } from "@/actions/email"
+import { enqueuePurchaseConfirmation } from "@/lib/email-outbox"
 
 import type { Order, OrderDiscountLine, OrderItem, PaymentEvent } from "@/types"
 
@@ -18,16 +20,6 @@ async function verifyAdmin() {
     return null
   }
   return user
-}
-
-// Untyped client used only for tables not yet reflected in the generated types
-// (order_email_outbox). The service role key never leaves the server.
-function createRawServiceClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
 }
 
 const PAGE_SIZE = 20
@@ -99,7 +91,7 @@ export async function getOrders(filters?: {
   if (!admin) return { orders: [], totalCount: 0, page: 1, pageSize: PAGE_SIZE }
 
   const supabase = createServiceRoleClient()
-  const page = Math.max(1, filters?.page ?? 1)
+  const page = normalizePage(filters?.page)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
@@ -112,34 +104,32 @@ export async function getOrders(filters?: {
       .from("orders")
       .select(selectClause, { count: "exact" })
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, to)
 
     if (filters?.status && filters.status !== "all") {
       query = query.eq("status", filters.status)
     }
 
-    if (filters?.dateFrom) {
-      query = query.gte("created_at", filters.dateFrom)
-    }
-
-    if (filters?.dateTo) {
-      query = query.lte("created_at", `${filters.dateTo}T23:59:59`)
-    }
+    const dateFrom = auditDateBoundary(filters?.dateFrom ?? "")
+    const dateTo = auditDateBoundary(filters?.dateTo ?? "", true)
+    if (dateFrom) query = query.gte("created_at", dateFrom)
+    if (dateTo) query = query.lt("created_at", dateTo)
 
     if (filters?.paymentMethod && filters.paymentMethod !== "all") {
       query = query.eq("payment_method", filters.paymentMethod)
     }
 
     if (filters?.combo === "with") {
-      query = query.gt("discount_amount", 0)
+      query = query.gt("combo_discount_amount", 0)
     } else if (filters?.combo === "without") {
-      query = query.eq("discount_amount", 0)
+      query = query.eq("combo_discount_amount", 0)
     }
 
     if (filters?.search) {
-      const term = filters.search.trim()
+      const term = filters.search.trim().slice(0,120).replace(/[,%()\\]/g, " ")
       query = query.or(
-        `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%,wompi_transaction_id.ilike.%${term}%`
+        `reference.ilike.%${term}%,customer_name_snapshot.ilike.%${term}%,customer_email_snapshot.ilike.%${term}%,provider_transaction_id.ilike.%${term}%,wompi_transaction_id.ilike.%${term}%`
       )
     }
 
@@ -160,7 +150,7 @@ export async function getOrders(filters?: {
 
   if (error) {
     console.error("[admin.getOrders]", error)
-    return { orders: [], totalCount: 0, page, pageSize: PAGE_SIZE }
+    throw new Error("No pudimos cargar las ventas. Intenta de nuevo.")
   }
 
   // Fetch items count per order
@@ -238,7 +228,7 @@ export async function getOrderDetail(
   const { data: paymentEvents } = await supabase
     .from("payment_events")
     .select(
-      "id, order_id, source, wompi_transaction_id, external_status, mapped_status, is_applied, reason, payload_hash, payload_json, processed_at"
+      "id, order_id, source, payment_provider, provider_transaction_id, wompi_transaction_id, external_status, mapped_status, is_applied, reason, payload_hash, payload_json, processed_at"
     )
     .eq("order_id", orderId)
     .order("processed_at", { ascending: true })
@@ -263,7 +253,7 @@ export async function getOrderDetail(
   }
 }
 
-export async function getSalesSummary(): Promise<SalesSummary> {
+export async function getSalesSummary(filters?: { dateFrom?: string; dateTo?: string }): Promise<SalesSummary> {
   const admin = await verifyAdmin()
   if (!admin) {
     return {
@@ -276,66 +266,12 @@ export async function getSalesSummary(): Promise<SalesSummary> {
     }
   }
 
-  const supabase = createServiceRoleClient()
-
-  const { data: approvedOrders, error } = await supabase
-    .from("orders")
-    .select("total, discount_amount, payment_method")
-    .eq("status", "approved")
-
-  if (error) {
-    console.error("[admin.getSalesSummary]", error)
-    return {
-      totalOrders: 0,
-      totalRevenue: 0,
-      averageOrderValue: 0,
-      totalDiscountGiven: 0,
-      topPaymentMethod: null,
-      statusDistribution: {},
-    }
-  }
-
-  const orders = approvedOrders ?? []
-  const totalOrders = orders.length
-  const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0)
-  const averageOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0
-  const totalDiscountGiven = orders.reduce((sum, o) => sum + o.discount_amount, 0)
-
-  // Tally payment methods
-  const methodCounts: Record<string, number> = {}
-  for (const o of orders) {
-    if (o.payment_method) {
-      methodCounts[o.payment_method] = (methodCounts[o.payment_method] ?? 0) + 1
-    }
-  }
-
-  let topPaymentMethod: string | null = null
-  let topCount = 0
-  for (const [method, count] of Object.entries(methodCounts)) {
-    if (count > topCount) {
-      topCount = count
-      topPaymentMethod = method
-    }
-  }
-
-  // Status distribution across ALL orders (not just approved)
-  const statusDistribution: Record<string, number> = {}
-  const { data: allOrders } = await supabase
-    .from("orders")
-    .select("status")
-
-  for (const o of allOrders ?? []) {
-    statusDistribution[o.status] = (statusDistribution[o.status] ?? 0) + 1
-  }
-
-  return {
-    totalOrders,
-    totalRevenue,
-    averageOrderValue,
-    totalDiscountGiven,
-    topPaymentMethod,
-    statusDistribution,
-  }
+  const { data, error } = await createServiceRoleClient().rpc("admin_sales_summary", {
+    p_from: auditDateBoundary(filters?.dateFrom ?? "") ?? undefined,
+    p_to: auditDateBoundary(filters?.dateTo ?? "", true) ?? undefined,
+  })
+  if (error || !data) throw new Error("No pudimos cargar el resumen de ventas.")
+  return data as unknown as SalesSummary
 }
 
 export async function resendPurchaseEmail(
@@ -344,34 +280,11 @@ export async function resendPurchaseEmail(
   const admin = await verifyAdmin()
   if (!admin) return { success: false, error: "No autorizado." }
 
-  // Use raw untyped client because order_email_outbox is not yet in the
-  // generated Database types.
-  const rawClient = createRawServiceClient()
-
-  // Reset existing outbox entry to pending so the cron picks it up again,
-  // or create a new one if it does not exist yet.
-  const { error: upsertError } = await rawClient
-    .from("order_email_outbox")
-    .upsert(
-      {
-        order_id: orderId,
-        email_type: "purchase_confirmation",
-        status: "pending",
-        attempts: 0,
-        next_attempt_at: new Date().toISOString(),
-      },
-      { onConflict: "order_id" }
-    )
-
-  if (upsertError) {
-    console.error("[admin.resendPurchaseEmail] upsert failed:", upsertError)
-    try {
-      await enqueuePurchaseConfirmation(orderId)
-    } catch (fallbackError) {
-      console.error("[admin.resendPurchaseEmail] fallback failed:", fallbackError)
-      return { success: false, error: "No se pudo encolar el reenvio. Intenta de nuevo." }
-    }
+  try {
+    await enqueuePurchaseConfirmation(orderId, true)
+    revalidatePath("/admin/ventas")
+    return { success: true }
+  } catch {
+    return { success: false, error: "No se pudo preparar el correo. Revisa que la compra esté aprobada y que no haya otro envío en curso." }
   }
-
-  return { success: true }
 }

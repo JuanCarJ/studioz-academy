@@ -234,14 +234,22 @@ export async function addCourseToCartForUser(input: {
 export async function getCartItemsForUser(input: {
   supabase: RlsClient
   userId: string
+  courseIds?: string[]
+  strict?: boolean
 }): Promise<CartItemWithCourse[]> {
-  const { data, error } = await input.supabase
+  if (input.courseIds?.length === 0) return []
+  let query = input.supabase
     .from("cart_items")
     .select("*, courses(*, instructors(id, full_name))")
     .eq("user_id", input.userId)
     .order("added_at", { ascending: true })
+  if (input.courseIds) query = query.in("course_id", input.courseIds)
+  const { data, error } = await query
 
-  if (error || !data) return []
+  if (error || !data) {
+    if (input.strict) throw new Error("cart_unavailable")
+    return []
+  }
 
   const baseItems: Array<ReturnType<typeof mapCartItem>> = []
   const invalidItemIds: string[] = []
@@ -266,7 +274,8 @@ export async function getCartItemsForUser(input: {
   }
 
   if (invalidItemIds.length > 0) {
-    await input.supabase.from("cart_items").delete().in("id", invalidItemIds)
+    const { error: cleanupError } = await input.supabase.from("cart_items").delete().in("id", invalidItemIds)
+    if (cleanupError && input.strict) throw new Error("cart_cleanup_unavailable")
   }
 
   const validItems = baseItems.filter((item): item is NonNullable<typeof item> => Boolean(item))
